@@ -8,8 +8,7 @@ local default_config = {
 	repl_image_ratio = 0.3,
 	flash_highlight_group = "Visual",
 	flash_duration = 300,
-
-	python_interpreter = "ipython3",
+	python_interpreter = "python3",
 }
 
 M.config = vim.deepcopy(default_config)
@@ -447,12 +446,13 @@ function M.send_selection()
 	send_payload(code, cell_id, filename)
 end
 
--- 3. 全セル
+-- 3. 全セル (修正版: より安全なMarkdown除外判定)
 function M.run_all_cells()
 	M.open_windows()
 	if not job_id then
 		M.start_kernel()
 	end
+
 	local filename = vim.fn.expand("%:t")
 	if filename == "" then
 		filename = "untitled"
@@ -460,23 +460,38 @@ function M.run_all_cells()
 	local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
 	local current_block = {}
 	local current_id = "scratchpad"
+	local is_code_block = true
+
 	if preview_buf then
 		vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, {})
 		append_text(preview_buf, preview_win, { "--- Running All Cells... ---" }, "Title")
 	end
+
 	for i, line in ipairs(lines) do
 		if line:match("^# %%%%") then
-			if #current_block > 0 then
+			if #current_block > 0 and is_code_block then
 				local code = table.concat(current_block, "\n")
 				send_payload(code, current_id, filename)
 			end
+
 			current_block = {}
 			current_id = ensure_cell_id(i, line)
+
+			-- ★ 判定ロジック強化: 行頭付近に [markdown] がある場合のみ除外
+			-- 例: # %% [markdown] id="foo" -> 除外
+			-- 例: # %% id="foo" -> 実行 (idの中にmarkdownが含まれていてもOK)
+			if line:lower():match("^# %%%%+%s*%[markdown%]") then
+				is_code_block = false
+			else
+				is_code_block = true
+			end
 		else
-			table.insert(current_block, line)
+			if is_code_block then
+				table.insert(current_block, line)
+			end
 		end
 	end
-	if #current_block > 0 then
+	if #current_block > 0 and is_code_block then
 		local code = table.concat(current_block, "\n")
 		send_payload(code, current_id, filename)
 	end
@@ -554,7 +569,7 @@ function M.toggle_windows()
 	end
 end
 
--- === カーネル起動 (修正版) ===
+-- === カーネル起動 ===
 
 function M.start_kernel()
 	if job_id then
@@ -567,8 +582,6 @@ function M.start_kernel()
 	local root = vim.fn.fnamemodify(source, ":h:h:h")
 	local script_path = root .. "/lua/jukit/kernel.py"
 
-	-- ★ 設定されたPythonコマンドを構築
-	-- "poetry run python" のような文字列を分割してリストにする
 	local cmd_parts = vim.split(M.config.python_interpreter, " ")
 	table.insert(cmd_parts, script_path)
 
