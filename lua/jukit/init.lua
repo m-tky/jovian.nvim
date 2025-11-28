@@ -9,7 +9,7 @@ local default_config = {
 	flash_highlight_group = "Visual",
 	flash_duration = 300,
 
-	python_interpreter = "python3",
+	python_interpreter = "ipython3",
 }
 
 M.config = vim.deepcopy(default_config)
