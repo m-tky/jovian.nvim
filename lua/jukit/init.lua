@@ -37,6 +37,22 @@ local function generate_id()
 	return id
 end
 
+-- 指定行のテキストからIDを探し、なければ生成して埋め込む
+local function ensure_cell_id(line_num, line_content)
+	local id = line_content:match('id="([%w%-_]+)"')
+	if id then
+		return id
+	else
+		id = generate_id()
+		if line_content:match("^# %%%%") then
+			local new_line = line_content .. ' id="' .. id .. '"'
+			vim.api.nvim_buf_set_lines(0, line_num - 1, line_num, false, { new_line })
+		end
+		return id
+	end
+end
+
+-- 指定行（またはカーソル行）が属するセルIDを取得
 local function get_cell_id(line_num)
 	local line
 	if line_num then
@@ -71,8 +87,9 @@ local function get_cell_id(line_num)
 		if found_id then
 			return found_id
 		else
-			local id = generate_id()
+			-- マーカー行そのものだった場合
 			if line:match("^# %%%%") then
+				local id = generate_id()
 				local new_line = line .. ' id="' .. id .. '"'
 				if line_num then
 					vim.api.nvim_buf_set_lines(0, line_num - 1, line_num, false, { new_line })
@@ -87,6 +104,7 @@ local function get_cell_id(line_num)
 	end
 end
 
+-- フラッシュハイライト
 local function flash_cell(bufnr, start_line, end_line)
 	vim.api.nvim_buf_clear_namespace(bufnr, hl_ns, 0, -1)
 	vim.api.nvim_buf_set_extmark(bufnr, hl_ns, start_line - 1, 0, {
@@ -133,14 +151,12 @@ local function append_text(buf, win, text_lines, highlight_group)
 		return
 	end
 	vim.api.nvim_buf_set_lines(buf, -1, -1, false, text_lines)
-
 	if highlight_group then
 		local last_line = vim.api.nvim_buf_line_count(buf)
 		for i = 0, #text_lines - 1 do
 			vim.api.nvim_buf_add_highlight(buf, -1, highlight_group, last_line - #text_lines + i, 0, -1)
 		end
 	end
-
 	if win and vim.api.nvim_win_is_valid(win) then
 		local count = vim.api.nvim_buf_line_count(buf)
 		vim.api.nvim_win_set_cursor(win, { count, 0 })
@@ -180,7 +196,6 @@ local function append_image(buf, win, image_path, ratio, store_table)
 			if not vim.api.nvim_buf_is_valid(buf) then
 				return
 			end
-
 			local img = image.from_file(image_path, {
 				buffer = buf,
 				window = win,
@@ -191,7 +206,6 @@ local function append_image(buf, win, image_path, ratio, store_table)
 				width = img_width,
 				height = img_height,
 			})
-
 			if img then
 				img:render()
 				if store_table then
@@ -290,7 +304,6 @@ local function on_stdout(chan_id, data, name)
 			if ok and msg then
 				vim.schedule(function()
 					local cell_id = msg.cell_id or "unknown"
-
 					if output_buf and vim.api.nvim_buf_is_valid(output_buf) then
 						if msg.type == "text_file" then
 							local f = io.open(msg.payload, "r")
@@ -303,7 +316,6 @@ local function on_stdout(chan_id, data, name)
 									if lines[#lines] == "" then
 										table.remove(lines, #lines)
 									end
-
 									append_text(output_buf, output_win, { "Out [" .. cell_id .. "]:" }, "Comment")
 									append_text(output_buf, output_win, lines)
 								end
@@ -317,7 +329,6 @@ local function on_stdout(chan_id, data, name)
 							append_text(output_buf, output_win, lines, "ErrorMsg")
 						end
 					end
-
 					local current_cursor_cell_id = get_cell_id()
 					if current_cursor_cell_id == cell_id then
 						M.render_preview(cell_id)
@@ -327,8 +338,6 @@ local function on_stdout(chan_id, data, name)
 		end
 	end
 end
-
--- === 自動更新 ===
 
 function M.check_cursor_cell()
 	if not (preview_win and vim.api.nvim_win_is_valid(preview_win)) then
@@ -340,15 +349,52 @@ function M.check_cursor_cell()
 	end
 end
 
--- === コード送信 ===
+-- === コアロジック: コード送信 (共通化) ===
 
-function M.send_cell()
-	-- ★実行時、ウィンドウが閉じていれば強制的に開く
-	M.open_windows()
-
+local function send_payload(code, cell_id, filename)
 	if not job_id then
 		M.start_kernel()
 	end
+
+	-- REPLログ
+	if output_buf and vim.api.nvim_buf_is_valid(output_buf) then
+		local log_lines = { "", "In [" .. cell_id .. "]:" }
+		for _, l in ipairs(vim.split(code, "\n")) do
+			table.insert(log_lines, "    " .. l)
+		end
+		append_text(output_buf, output_win, log_lines)
+	end
+
+	-- Previewクリア
+	if preview_buf then
+		if M.preview_images then
+			for _, img in ipairs(M.preview_images) do
+				pcall(function()
+					if img.clear then
+						img:clear()
+					end
+				end)
+			end
+		end
+		M.preview_images = {}
+		vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, {})
+		append_text(preview_buf, preview_win, { "", "--- Processing Cell [" .. cell_id .. "]... ---" }, "Special")
+	end
+
+	local msg = vim.fn.json_encode({
+		command = "execute",
+		code = code,
+		cell_id = cell_id,
+		filename = filename,
+	})
+	vim.fn.chansend(job_id, msg .. "\n")
+end
+
+-- === 実行コマンド ===
+
+-- 1. 現在のセルを実行
+function M.send_cell()
+	M.open_windows()
 
 	local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
 	local total_lines = vim.api.nvim_buf_line_count(0)
@@ -370,6 +416,7 @@ function M.send_cell()
 		end_line = end_line + 1
 	end
 
+	-- ハイライト
 	flash_cell(0, start_line, end_line)
 
 	local cell_lines = vim.api.nvim_buf_get_lines(0, start_line - 1, end_line, false)
@@ -378,83 +425,128 @@ function M.send_cell()
 	end
 
 	local cell_id = get_cell_id(start_line)
-
-	if preview_buf then
-		if M.preview_images then
-			for _, img in ipairs(M.preview_images) do
-				pcall(function()
-					if img.clear then
-						img:clear()
-					end
-				end)
-			end
-		end
-		M.preview_images = {}
-
-		vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, {})
-		append_text(preview_buf, preview_win, { "", "--- Processing Cell [" .. cell_id .. "]... ---" }, "Special")
-	end
-
 	local code = table.concat(cell_lines, "\n")
 	local filename = vim.fn.expand("%:t")
 	if filename == "" then
 		filename = "untitled"
 	end
 
-	if output_buf and vim.api.nvim_buf_is_valid(output_buf) then
-		local log_lines = { "", "In [" .. cell_id .. "]:" }
-		for _, l in ipairs(cell_lines) do
-			table.insert(log_lines, "    " .. l)
-		end
-		append_text(output_buf, output_win, log_lines)
-	end
-
-	local msg = vim.fn.json_encode({
-		command = "execute",
-		code = code,
-		cell_id = cell_id,
-		filename = filename,
-	})
-	vim.fn.chansend(job_id, msg .. "\n")
+	send_payload(code, cell_id, filename)
 end
 
--- === ★ ウィンドウ管理 (Toggle/Open/Close) ===
+-- ★ 2. 選択範囲を実行 (Visual Selection)
+function M.send_selection()
+	M.open_windows()
 
--- ウィンドウを開く（すでに開いている場合は再利用、閉じていれば新規作成）
+	-- ビジュアル選択範囲の取得
+	local _, csrow, _, _ = unpack(vim.fn.getpos("'<"))
+	local _, cerow, _, _ = unpack(vim.fn.getpos("'>"))
+
+	-- 行単位で取得 (安定のため)
+	local lines = vim.api.nvim_buf_get_lines(0, csrow - 1, cerow, false)
+	if #lines == 0 then
+		return
+	end
+
+	-- ハイライト
+	flash_cell(0, csrow, cerow)
+
+	-- この選択範囲が含まれるセルIDを取得 (Preview更新のため)
+	local cell_id = get_cell_id(csrow)
+
+	local code = table.concat(lines, "\n")
+	local filename = vim.fn.expand("%:t")
+	if filename == "" then
+		filename = "untitled"
+	end
+
+	send_payload(code, cell_id, filename)
+end
+
+-- 3. 全セルを実行
+function M.run_all_cells()
+	M.open_windows()
+	if not job_id then
+		M.start_kernel()
+	end
+
+	local filename = vim.fn.expand("%:t")
+	if filename == "" then
+		filename = "untitled"
+	end
+	local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+	local current_block = {}
+	local current_id = "scratchpad"
+
+	if preview_buf then
+		vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, {})
+		append_text(preview_buf, preview_win, { "--- Running All Cells... ---" }, "Title")
+	end
+
+	for i, line in ipairs(lines) do
+		if line:match("^# %%%%") then
+			if #current_block > 0 then
+				local code = table.concat(current_block, "\n")
+				send_payload(code, current_id, filename)
+			end
+			current_block = {}
+			current_id = ensure_cell_id(i, line)
+		else
+			table.insert(current_block, line)
+		end
+	end
+	if #current_block > 0 then
+		local code = table.concat(current_block, "\n")
+		send_payload(code, current_id, filename)
+	end
+end
+
+-- 4. カーネル再起動
+function M.restart_kernel()
+	if job_id then
+		vim.fn.jobstop(job_id)
+		job_id = nil
+	end
+	M.repl_images = {}
+	M.preview_images = {}
+	if output_buf and vim.api.nvim_buf_is_valid(output_buf) then
+		vim.api.nvim_buf_set_lines(output_buf, 0, -1, false, { "[Kernel Restarting...]", "" })
+	end
+	if preview_buf and vim.api.nvim_buf_is_valid(preview_buf) then
+		vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, {})
+	end
+	print("Jukit: Kernel restarting...")
+	M.start_kernel()
+end
+
+-- === ウィンドウ管理 ===
+
 function M.open_windows()
 	local code_win = vim.api.nvim_get_current_win()
 
-	-- 1. Preview Window (Vertical Split)
-	-- 「変数の値」ではなく「ウィンドウの実在」を確認
 	if not (preview_win and vim.api.nvim_win_is_valid(preview_win)) then
 		vim.cmd("vsplit")
 		vim.cmd("wincmd L")
-
 		preview_win = vim.api.nvim_get_current_win()
+		preview_buf = vim.api.nvim_create_buf(false, true)
 
-		-- バッファがまだ生きていれば再利用、なければ作成
-		if not (preview_buf and vim.api.nvim_buf_is_valid(preview_buf)) then
-			preview_buf = vim.api.nvim_create_buf(false, true)
-			vim.api.nvim_buf_set_option(preview_buf, "buftype", "nofile")
-			vim.api.nvim_buf_set_name(preview_buf, "JukitPreview")
+		if M.config.preview_width_percent then
+			local width = math.floor(vim.o.columns * (M.config.preview_width_percent / 100))
+			vim.api.nvim_win_set_width(preview_win, width)
 		end
-		vim.api.nvim_win_set_buf(preview_win, preview_buf)
 
-		-- 幅設定
-		local width = math.floor(vim.o.columns * (M.config.preview_width_percent / 100))
-		vim.api.nvim_win_set_width(preview_win, width)
+		vim.api.nvim_buf_set_option(preview_buf, "buftype", "nofile")
+		vim.api.nvim_buf_set_name(preview_buf, "JukitPreview")
+		vim.api.nvim_win_set_buf(preview_win, preview_buf)
 	end
 
 	vim.api.nvim_set_current_win(code_win)
 
-	-- 2. REPL Window (Horizontal Split)
 	if not (output_win and vim.api.nvim_win_is_valid(output_win)) then
 		vim.cmd("split")
 		vim.cmd("wincmd j")
-
 		output_win = vim.api.nvim_get_current_win()
 
-		-- バッファ再利用
 		if not (output_buf and vim.api.nvim_buf_is_valid(output_buf)) then
 			output_buf = vim.api.nvim_create_buf(false, true)
 			vim.api.nvim_buf_set_option(output_buf, "buftype", "nofile")
@@ -463,15 +555,15 @@ function M.open_windows()
 		end
 		vim.api.nvim_win_set_buf(output_win, output_buf)
 
-		-- 高さ設定
-		local height = math.floor(vim.o.lines * (M.config.repl_height_percent / 100))
-		vim.api.nvim_win_set_height(output_win, height)
+		if M.config.repl_height_percent then
+			local height = math.floor(vim.o.lines * (M.config.repl_height_percent / 100))
+			vim.api.nvim_win_set_height(output_win, height)
+		end
 	end
 
 	vim.api.nvim_set_current_win(code_win)
 end
 
--- ウィンドウを閉じる
 function M.close_windows()
 	if preview_win and vim.api.nvim_win_is_valid(preview_win) then
 		vim.api.nvim_win_close(preview_win, true)
@@ -483,11 +575,9 @@ function M.close_windows()
 	end
 end
 
--- トグル機能 (どれか一つでも開いていれば閉じる、そうでなければ開く)
 function M.toggle_windows()
 	local p_open = preview_win and vim.api.nvim_win_is_valid(preview_win)
 	local o_open = output_win and vim.api.nvim_win_is_valid(output_win)
-
 	if p_open or o_open then
 		M.close_windows()
 	else
@@ -530,8 +620,12 @@ function M.setup(opts)
 
 	vim.api.nvim_create_user_command("JukitStart", M.start_kernel, {})
 	vim.api.nvim_create_user_command("JukitRun", M.send_cell, {})
+	-- ★ range=true でビジュアルモード対応
+	vim.api.nvim_create_user_command("JukitSendSelection", M.send_selection, { range = true })
 
-	-- 名前を JukitOpen と JukitToggle に分けました
+	vim.api.nvim_create_user_command("JukitRunAll", M.run_all_cells, {})
+	vim.api.nvim_create_user_command("JukitRestart", M.restart_kernel, {})
+
 	vim.api.nvim_create_user_command("JukitOpen", M.open_windows, {})
 	vim.api.nvim_create_user_command("JukitToggle", M.toggle_windows, {})
 	vim.api.nvim_create_user_command("JukitClean", M.clean_stale_cache, {})
