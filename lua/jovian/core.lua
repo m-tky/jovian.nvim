@@ -10,7 +10,27 @@ end
 
 local function on_stdout(chan_id, data, name)
     if not data then return end
-    for _, line in ipairs(data) do
+    
+    -- バッファリング処理
+    if not State.stdout_buffer then State.stdout_buffer = "" end
+    
+    -- データを結合
+    -- data はテーブル (lines) なので、まずは結合する
+    -- ただし、最後の要素が空文字列でない場合、それは「行の途中」を意味する可能性がある
+    -- vim.fn.jobstart の仕様上、data の最後の要素は通常、次のチャンクへの続きか、改行後の空文字
+    
+    local chunk = table.concat(data, "\n")
+    State.stdout_buffer = State.stdout_buffer .. chunk
+    
+    -- 改行で分割して処理
+    local lines = vim.split(State.stdout_buffer, "\n")
+    
+    -- 最後の要素は「不完全な行」の可能性が高いので、バッファに戻す
+    -- もし最後の要素が空文字なら、直前は改行で終わっていたということなので、
+    -- バッファは空にしてよい。
+    State.stdout_buffer = table.remove(lines)
+    
+    for _, line in ipairs(lines) do
         if line ~= "" then
             local ok, msg = pcall(vim.fn.json_decode, line)
             if ok and msg then
@@ -32,14 +52,19 @@ local function on_stdout(chan_id, data, name)
                             end
                             vim.api.nvim_buf_clear_namespace(target_buf, State.diag_ns, 0, -1)
                             
-                            if msg.error then
+                            -- ★ 修正: status フィールドもチェックする
+                            if msg.error or msg.status == "error" then
                                 UI.set_cell_status(target_buf, msg.cell_id, "error", "✘ Error")
-                                local start_line = State.cell_start_line[msg.cell_id] or 1
-                                local target_line = (start_line - 1) + (msg.error.line - 1)
-                                vim.diagnostic.set(State.diag_ns, target_buf, {{
-                                    lnum = target_line, col = 0, message = msg.error.msg,
-                                    severity = vim.diagnostic.severity.ERROR, source = "Jovian",
-                                }})
+                                
+                                -- エラー情報があれば診断を表示
+                                if msg.error then
+                                    local start_line = State.cell_start_line[msg.cell_id] or 1
+                                    local target_line = (start_line - 1) + (msg.error.line - 1)
+                                    vim.diagnostic.set(State.diag_ns, target_buf, {{
+                                        lnum = target_line, col = 0, message = msg.error.msg,
+                                        severity = vim.diagnostic.severity.ERROR, source = "Jovian",
+                                    }})
+                                end
                             else
                                 UI.set_cell_status(target_buf, msg.cell_id, "done", " Done")
                             end
@@ -52,11 +77,9 @@ local function on_stdout(chan_id, data, name)
                         UI.show_variables(msg.variables)
                     elseif msg.type == "dataframe_data" then
                         UI.show_dataframe(msg)
-                    -- ★ 追加: プロファイル結果
                     elseif msg.type == "profile_stats" then
                         UI.show_profile_stats(msg.text)
-                    -- ★ 追加: クリップボード
-		    elseif msg.type == "inspection_data" then
+                    elseif msg.type == "inspection_data" then
                         UI.show_inspection(msg.data)
                     elseif msg.type == "clipboard_data" then
                         vim.fn.setreg("+", msg.content)

@@ -372,12 +372,21 @@ class JovianKernel:
                                 }
                                 break
                             tb = tb.tb_next
+                        
+                        # ★ 追加: トレースバックから見つからなかった場合のフォールバック
+                        if not error_info:
+                             error_info = {
+                                "line": 1, # 行番号不明
+                                "msg": f"{type(err).__name__}: {str(err)} (Traceback not found in user cell)"
+                            }
                             
         except Exception: 
             self.stderr_proxy.write(traceback.format_exc())
         finally:
             md_path, _ = self._save_markdown_result()
-            msg = {"type": "result_ready", "cell_id": cell_id, "file": md_path}
+            # ★ 修正: status フィールドを追加
+            status = "error" if error_info else "ok"
+            msg = {"type": "result_ready", "cell_id": cell_id, "file": md_path, "status": status}
             if error_info: msg["error"] = error_info
             self.original_stdout.write(json.dumps(msg) + "\n")
             self.original_stdout.flush()
