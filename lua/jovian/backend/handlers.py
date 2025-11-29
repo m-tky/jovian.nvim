@@ -109,7 +109,7 @@ def inspect_object(shell, var_name):
         info = shell.object_inspect(var_name)
         result = {
             "name": info.get('name', var_name),
-            "type": info.get('type_name', 'unknown'),
+            "type": info.get('type_name') or 'unknown',
             "docstring": info.get('docstring') or 'No documentation found.',
             "file": info.get('file', ''),
             "definition": info.get('definition') or ''

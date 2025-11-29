@@ -483,7 +483,8 @@ function M.show_inspection(data)
     vim.api.nvim_buf_set_option(buf, 'filetype', 'python') -- シンタックスハイライト用
 
     local lines = {}
-    table.insert(lines, "# " .. data.name .. " (" .. data.type .. ")")
+    local type_str = (data.type and data.type ~= vim.NIL) and data.type or "unknown"
+    table.insert(lines, "# " .. data.name .. " (" .. type_str .. ")")
     table.insert(lines, "")
     
     if data.definition and data.definition ~= vim.NIL and data.definition ~= "" then
