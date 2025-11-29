@@ -120,6 +120,9 @@ end
 function M.start_kernel()
     if State.job_id then return end
     
+    -- Ensure IDs are unique before starting
+    Utils.fix_duplicate_ids(0)
+    
     local script_path = vim.fn.fnamemodify(debug.getinfo(1).source:sub(2), ":h:h:h") .. "/lua/jovian/backend/main.py"
     local backend_dir = vim.fn.fnamemodify(debug.getinfo(1).source:sub(2), ":h:h:h") .. "/lua/jovian/backend"
     local cmd = {}
