@@ -337,21 +337,7 @@ function M.load_session(args)
     vim.fn.chansend(State.job_id, msg .. "\n")
 end
 
--- ★ 追加: TUIプロット
-function M.plot_tui(args)
-    if not State.job_id then return end
-    local var_name = args.args
-    if var_name == "" then var_name = vim.fn.expand("<cword>") end
 
-    if State.win.output and vim.api.nvim_win_is_valid(State.win.output) then
-        -- ウィンドウ幅から行番号表示などの分（-5文字くらい）を引く
-        width = vim.api.nvim_win_get_width(State.win.output) - 5
-        if width < 20 then width = 20 end -- 最低幅保証
-    end
-    
-    local msg = vim.fn.json_encode({ command = "plot_tui", name = var_name, width = width })
-    vim.fn.chansend(State.job_id, msg .. "\n")
-end
 
 -- コマンド関数を追加
 function M.inspect_object(args)

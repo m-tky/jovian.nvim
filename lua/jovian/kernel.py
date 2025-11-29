@@ -25,8 +25,7 @@ import matplotlib.pyplot as plt
 # オプショナルなライブラリ
 try: import dill
 except ImportError: dill = None
-try: import uniplot
-except ImportError: uniplot = None
+
 
 CACHE_ROOT = ".jovian_cache"
 
@@ -191,19 +190,7 @@ class JovianKernel:
             print(f"Session loaded from {filename}")
         except: self.stderr_proxy.write(traceback.format_exc())
 
-    def _plot_tui(self, var_name, width=60):
-        if uniplot is None:
-            self.stderr_proxy.write("Error: 'uniplot' module not found.\n")
-            return
-        if var_name not in self.shell.user_ns: return
-        val = self.shell.user_ns[var_name]
-        try:
-            import numpy as np
-            if isinstance(val, (list, np.ndarray)):
-                print(f"Plotting {var_name}...")
-                uniplot.plot(val, height=15, width=int(width))
-            else: print(f"{var_name} is not a list or array.")
-        except: self.stderr_proxy.write(traceback.format_exc())
+
 
     def _inspect_object(self, var_name):
         try:
@@ -417,8 +404,7 @@ class JovianKernel:
                     self._save_session(cmd.get('filename'))
                 elif cmd.get('command') == 'load_session':
                     self._load_session(cmd.get('filename'))
-                elif cmd.get('command') == 'plot_tui':
-                    self._plot_tui(cmd.get('name'), cmd.get('width', 60))
+
                 elif cmd.get('command') == 'clean_cache':
                     self._purge_cache(cmd.get('valid_ids', []), cmd.get('filename', 'scratchpad'))
                 elif cmd.get('command') == 'get_variables': self._get_variables()

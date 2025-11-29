@@ -1,142 +1,166 @@
 # 🪐 Jovian.nvim
 
-**Jovian.nvim** is a plugin that provides a Jupyter Notebook-like environment within Neovim.
+**Jovian.nvim** is a powerful Neovim plugin that brings a Jupyter Notebook-like experience directly into your editor. It allows you to execute Python code, visualize data, and manage cells without leaving Neovim, offering a lightweight and keyboard-centric alternative to browser-based notebooks.
 
-It uses the **IPython** kernel to execute code, allowing you to use magic commands, visualize data in the terminal, and view plots, all without leaving your editor. It is designed to be a lightweight, keyboard-centric alternative to browser-based notebooks.
+## ✨ Features
 
-## Features
+*   **IPython Kernel Integration**: Seamlessly execute code using a persistent IPython kernel.
+*   **Cell-Based Execution**: Define code cells using `# %%` markers and run them individually or in batches.
+*   **Rich Output Display**: View execution results (stdout/stderr) in a dedicated split window.
+*   **Data Visualization**:
+    *   **Data Viewer**: Inspect `pandas` DataFrames and `numpy` arrays in a floating spreadsheet view (`:JovianView`).
+    *   **Image Support**: Automatically saves `matplotlib` plots and previews them in a dedicated window.
+*   **Variable Explorer**: Keep track of active variables, their types, and shapes (`:JovianVars`).
+*   **Profiling**: Analyze code performance with built-in `cProfile` integration (`:JovianProfile`).
+*   **Remote Execution (SSH)**: Execute code on a remote server transparently via SSH.
+*   **Session Management**: Save and load your workspace state (variables) using `dill`.
+*   **Diagnostics**: Inline highlighting of Python errors for immediate feedback.
 
-- **IPython Kernel:** Supports standard magic commands (`!ls`, `%time`, `%cd`) and execution.
-- **Output Split:** Displays execution results (stdout/stderr) in a dedicated split window.
-- **Data Viewer:** View `pandas` DataFrames and `numpy` arrays in a floating window (`:JovianView`).
-- **Variable Explorer:** Displays a list of active variables, their types, and shapes (`:JovianVars`).
-- **Inline Diagnostics:** Python errors are highlighted in the code buffer using Neovim's diagnostic interface.
-- **Plotting:**
-  - **TUI:** Renders charts directly in the terminal using Braille characters (`:JovianPlotTUI`).
-  - **Image:** Saves `matplotlib` plots to disk and generates a Markdown preview.
-- **SSH Remote:** Supports executing code on a remote server via SSH.
-- **Session:** Saves/Loads the workspace variables using `dill` (`:JovianSaveSession`).
-- **Profiling:** Runs `cProfile` on a cell and displays the statistics (`:JovianProfile`).
+## 📦 Requirements
 
-## Requirements
+*   **Neovim** (v0.9.0+)
+*   **Python 3**
+*   **Python Packages**:
+    *   Required: `ipython`
+    *   Recommended: `pandas`, `numpy`, `matplotlib`
+    *   Optional: `dill` (for session saving)
 
-- **Neovim** (v0.9.0 or later)
+    ```bash
+    pip install ipython pandas numpy matplotlib dill
+    ```
 
-- **Python 3**
-
-- **Python Packages:**
-  - **Required:** `ipython` (Required for the kernel).
-  - **Recommended:** `pandas`, `numpy`, `matplotlib`.
-  - **Optional:** `uniplot` (for terminal plotting), `dill` (for session saving).
-
-  <!-- end list -->
-
-  ```bash
-  pip install ipython pandas numpy matplotlib uniplot dill
-  ```
-
-## Installation
+## 🚀 Installation
 
 Using [lazy.nvim](https://github.com/folke/lazy.nvim):
 
 ```lua
 {
-    "your-username/jovian.nvim", -- Or local path: dir = "~/path/to/jovian.nvim"
+    "your-username/jovian.nvim",
     ft = "python",
     config = function()
         require("jovian").setup({
             python_interpreter = "python3",
-            -- notify_threshold = 10, -- Notification if execution takes > 10s
         })
     end
 }
 ```
 
-## Configuration
+## ⚙️ Configuration
 
-Default settings:
+Here is the default configuration with all available options:
 
 ```lua
 require("jovian").setup({
-    -- UI
-    preview_width_percent = 40,
-    repl_height_percent = 30,
+    -- UI Settings
+    preview_width_percent = 35,  -- Width of the preview window
+    repl_height_percent = 30,    -- Height of the REPL window
+    preview_image_ratio = 0.3,   -- Image scaling in preview
+    repl_image_ratio = 0.3,      -- Image scaling in REPL
 
     -- Python Environment
     python_interpreter = "python3",
 
-    -- SSH Remote (Optional)
-    -- ssh_host = "user@hostname",
-    -- ssh_python = "/usr/bin/python3",
+    -- SSH Remote Execution (Optional)
+    -- ssh_host = "user@hostname", -- Remote host
+    -- ssh_python = "/usr/bin/python3", -- Remote python path
 
     -- Visuals
-    flash_highlight_group = "Visual",
-    flash_duration = 300,
+    flash_highlight_group = "Visual", -- Highlight group for cell execution flash
+    flash_duration = 300,             -- Duration of the flash in ms
 
     -- Behavior
-    notify_threshold = 10,
+    notify_threshold = 10, -- Notify if execution takes longer than X seconds
 })
 ```
 
-## Keybindings
+## ⌨️ Keybindings
 
-This plugin does not define any keybindings by default. It is recommended to add the following to your `init.lua`:
+Jovian.nvim does not enforce default keybindings. Add the following to your `init.lua` for a recommended setup:
 
 ```lua
 local map = vim.keymap.set
 
 -- Window Management
-map("n", "<leader>jo", "<cmd>JovianOpen<cr>", { desc = "Open Windows" })
-map("n", "<leader>jt", "<cmd>JovianToggle<cr>", { desc = "Toggle Windows" })
+map("n", "<leader>jo", "<cmd>JovianOpen<cr>", { desc = "Open Jovian Windows" })
+map("n", "<leader>jt", "<cmd>JovianToggle<cr>", { desc = "Toggle Jovian Windows" })
 
 -- Execution
-map("n", "<leader>r", "<cmd>JovianRun<cr>", { desc = "Run Cell" })
-map("n", "<leader>R", "<cmd>JovianRunAll<cr>", { desc = "Run All" })
-map("n", "<leader>rp", "<cmd>JovianProfile<cr>", { desc = "Profile Cell" })
+map("n", "<leader>r", "<cmd>JovianRun<cr>", { desc = "Run Current Cell" })
+map("n", "<leader>R", "<cmd>JovianRunAll<cr>", { desc = "Run All Cells" })
+map("v", "<leader>r", "<cmd>JovianSendSelection<cr>", { desc = "Run Selection" })
+
+-- Navigation & Editing
+map("n", "]c", "<cmd>JovianNextCell<cr>", { desc = "Next Cell" })
+map("n", "[c", "<cmd>JovianPrevCell<cr>", { desc = "Previous Cell" })
+map("n", "<leader>cn", "<cmd>JovianNewCellBelow<cr>", { desc = "New Cell Below" })
 
 -- Data & Tools
-map("n", "<leader>jv", "<cmd>JovianVars<cr>", { desc = "Variables" })
-map("n", "<leader>jd", "<cmd>JovianView<cr>", { desc = "Data Viewer" })
-map("n", "<leader>jp", "<cmd>JovianPlotTUI<cr>", { desc = "TUI Plot" })
-map("n", "<leader>ce", "<cmd>JovianClearDiag<cr>", { desc = "Clear Diagnostics" })
-
--- Session
-map("n", "<leader>ss", "<cmd>JovianSaveSession<cr>", { desc = "Save Session" })
-map("n", "<leader>sl", "<cmd>JovianLoadSession<cr>", { desc = "Load Session" })
+map("n", "<leader>jv", "<cmd>JovianVars<cr>", { desc = "Variable Explorer" })
+map("n", "<leader>jd", "<cmd>JovianView<cr>", { desc = "View DataFrame/Array" })
+map("n", "<leader>k", "<cmd>JovianDoc<cr>", { desc = "Inspect Object" })
 
 -- Kernel Control
 map("n", "<leader>kk", "<cmd>JovianRestart<cr>", { desc = "Restart Kernel" })
 map("n", "<leader>ki", "<cmd>JovianInterrupt<cr>", { desc = "Interrupt Kernel" })
 ```
 
-## Commands
+## 🎮 Usage
 
-| Command                | Description                                                      |
-| :--------------------- | :--------------------------------------------------------------- |
-| `:JovianOpen`          | Opens the Output/REPL windows. **Must be run before execution.** |
-| `:JovianRun`           | Executes the current code cell.                                  |
-| `:JovianView [var]`    | Opens a spreadsheet viewer for a DataFrame/Array.                |
-| `:JovianVars`          | Displays a list of active variables.                             |
-| `:JovianPlotTUI [var]` | plots a list/array in the REPL using Braille characters.         |
-| `:JovianCopy [var]`    | Copies a DataFrame/Array to the clipboard as Markdown/CSV.       |
-| `:JovianSaveSession`   | Saves variables to a file (requires `dill`).                     |
-| `:JovianRestart`       | Restarts the kernel process.                                     |
-| `:JovianInterrupt`     | Sends SIGINT to stop the current execution.                      |
+### Working with Cells
 
-## SSH Remote Execution
+Define cells using `# %%`. You can add an optional ID or description:
 
-To execute code on a remote server:
+```python
+# %% id="imports"
+import numpy as np
+import pandas as pd
 
-1.  Set up password-less SSH (public key authentication).
-2.  Configure `ssh_host` in `setup()`:
+# %% id="data-processing"
+df = pd.DataFrame(np.random.randn(10, 4), columns=list('ABCD'))
+print(df)
+```
+
+### Commands Reference
+
+| Command | Description |
+| :--- | :--- |
+| **Execution** | |
+| `:JovianRun` | Execute the current cell. |
+| `:JovianRunAll` | Execute all cells in the buffer. |
+| `:JovianSendSelection` | Execute the selected visual range. |
+| `:JovianProfile` | Profile the current cell using `cProfile`. |
+| **Management** | |
+| `:JovianOpen` | Open the Output and REPL windows. |
+| `:JovianToggle` | Toggle the visibility of Jovian windows. |
+| `:JovianRestart` | Restart the IPython kernel. |
+| `:JovianInterrupt` | Interrupt the current execution (SIGINT). |
+| `:JovianClear` | Clear the REPL output. |
+| `:JovianClean` | Clean stale cache files. |
+| **Data & Tools** | |
+| `:JovianVars` | Show a list of active variables. |
+| `:JovianView [var]` | Open a spreadsheet viewer for a DataFrame or Array. |
+| `:JovianDoc [var]` | Inspect an object (show docstring/info). |
+| `:JovianCopy [var]` | Copy a variable to the clipboard. |
+| **Navigation** | |
+| `:JovianNextCell` | Jump to the next cell. |
+| `:JovianPrevCell` | Jump to the previous cell. |
+| `:JovianNewCellBelow` | Insert a new cell below the current one. |
+| `:JovianNewCellAbove` | Insert a new cell above the current one. |
+| `:JovianMergeBelow` | Merge the current cell with the one below. |
+| **Session** | |
+| `:JovianSaveSession [file]` | Save the current session variables to a file. |
+| `:JovianLoadSession [file]` | Load session variables from a file. |
+
+## 🌐 SSH Remote Execution
+
+Jovian.nvim supports running code on a remote server while keeping your editing experience local.
+
+1.  **Setup SSH**: Ensure you have password-less SSH access (public key auth) to your remote server.
+2.  **Configure**:
     ```lua
     require("jovian").setup({
-        ssh_host = "user@192.168.1.50",
-        ssh_python = "/usr/bin/python3", -- Remote python path
+        ssh_host = "user@remote-server.com",
+        ssh_python = "/path/to/remote/python3", -- Ensure ipython is installed there
     })
     ```
-3.  Jovian will automatically transfer the kernel script and tunnel the output back to Neovim.
-
-## Known Issues
-
-- **Focus on Toggle:** When running `:JovianToggle`, the cursor focus may occasionally remain in the REPL window instead of returning to the code buffer.
+3.  **Run**: Jovian will automatically transfer the kernel script and tunnel the connection. All commands work as if they were local.

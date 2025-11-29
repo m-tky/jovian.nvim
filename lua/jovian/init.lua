@@ -110,7 +110,7 @@ function M.setup(opts)
     vim.api.nvim_create_user_command("JovianLoadSession", Core.load_session, { nargs = "?" })
     
     -- Plotting
-    vim.api.nvim_create_user_command("JovianPlotTUI", Core.plot_tui, { nargs = "?" })
+
 
     vim.api.nvim_create_user_command("JovianDoc", Core.inspect_object, { nargs = "?" })
 
