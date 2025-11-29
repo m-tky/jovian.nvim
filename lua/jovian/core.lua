@@ -81,6 +81,8 @@ local function on_stdout(chan_id, data, name)
                         UI.show_profile_stats(msg.text)
                     elseif msg.type == "inspection_data" then
                         UI.show_inspection(msg.data)
+                    elseif msg.type == "peek_data" then
+                        UI.show_peek(msg.data or msg)
                     elseif msg.type == "clipboard_data" then
                         vim.fn.setreg("+", msg.content)
                         vim.notify("Copied to system clipboard!", vim.log.levels.INFO)
@@ -256,6 +258,41 @@ function M.send_selection()
     M.send_payload(table.concat(lines, "\n"), id, fn)
 end
 
+function M.run_and_next()
+    M.send_cell()
+    local _, e = Utils.get_cell_range()
+    local total = vim.api.nvim_buf_line_count(0)
+    if e < total then
+        vim.api.nvim_win_set_cursor(0, {e + 1, 0})
+        -- If the next line is a header, we are good. If it's a gap, we might want to skip empty lines?
+        -- For now, simple jump is sufficient.
+    end
+end
+
+function M.run_line()
+    if not is_window_open() then return vim.notify("Jovian windows are closed.", vim.log.levels.WARN) end
+    local src_win = vim.api.nvim_get_current_win()
+    vim.api.nvim_set_current_win(src_win)
+    
+    local line = vim.api.nvim_get_current_line()
+    if line == "" then return end
+    
+    UI.flash_range(vim.fn.line("."), vim.fn.line("."))
+    
+    -- For single line execution, we can use a generic ID or try to attribute it to the current cell?
+    -- Attributing to current cell is better for context, but we don't want to mark the whole cell as "Running".
+    -- Let's use "scratchpad" or a temp ID to avoid UI status conflict, OR just use send_payload but suppress status update?
+    -- send_payload updates status. 
+    -- Let's use a special ID suffix or just "line_exec".
+    local id = "line_" .. os.time()
+    local fn = vim.fn.expand("%:t")
+    
+    -- We use send_payload but maybe we want a lighter version?
+    -- send_payload does: status update, append to repl, send json.
+    -- It's fine to use it.
+    M.send_payload(line, id, fn)
+end
+
 function M.run_all_cells()
     if not is_window_open() then return vim.notify("Jovian windows are closed.", vim.log.levels.WARN) end
     local src_win = vim.api.nvim_get_current_win()
@@ -369,6 +406,15 @@ function M.inspect_object(args)
     if var_name == "" then var_name = vim.fn.expand("<cword>") end
     
     local msg = vim.fn.json_encode({ command = "inspect", name = var_name })
+    vim.fn.chansend(State.job_id, msg .. "\n")
+end
+
+function M.peek_symbol(args)
+    if not State.job_id then return vim.notify("Kernel not started", vim.log.levels.WARN) end
+    local var_name = args.args
+    if var_name == "" then var_name = vim.fn.expand("<cword>") end
+    
+    local msg = vim.fn.json_encode({ command = "peek", name = var_name })
     vim.fn.chansend(State.job_id, msg .. "\n")
 end
 

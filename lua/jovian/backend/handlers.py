@@ -117,6 +117,43 @@ def inspect_object(shell, var_name):
         protocol.send_json({"type": "inspection_data", "data": result})
     except: sys.stderr.write(traceback.format_exc())
 
+def peek_object(shell, var_name):
+    try:
+        if var_name not in shell.user_ns:
+            return protocol.send_json({"type": "peek_data", "error": f"Variable '{var_name}' not found"})
+            
+        val = shell.user_ns[var_name]
+        type_name = type(val).__name__
+        
+        # Try to get size
+        size_str = "unknown"
+        try:
+            import sys
+            size = sys.getsizeof(val)
+            if size < 1024: size_str = f"{size} B"
+            elif size < 1024**2: size_str = f"{size/1024:.1f} KB"
+            else: size_str = f"{size/1024**2:.1f} MB"
+        except: pass
+        
+        # Get repr but truncate
+        val_repr = repr(val)
+        if len(val_repr) > 500: val_repr = val_repr[:497] + "..."
+        
+        # Extra info for pandas/numpy
+        shape = ""
+        if hasattr(val, 'shape'):
+            shape = str(val.shape)
+            
+        result = {
+            "name": var_name,
+            "type": type_name,
+            "size": size_str,
+            "repr": val_repr,
+            "shape": shape
+        }
+        protocol.send_json({"type": "peek_data", "data": result})
+    except: sys.stderr.write(traceback.format_exc())
+
 def purge_cache(valid_ids, filename):
     save_dir = utils.get_save_dir(filename)
     if not os.path.exists(save_dir): return

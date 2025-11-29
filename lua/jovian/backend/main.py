@@ -27,8 +27,10 @@ def main():
             elif cmd.get('command') == 'view_dataframe':
                 handlers.get_dataframe_data(kernel.shell, cmd.get('name'))
             elif cmd.get('command') == 'inspect':
-                handlers.inspect_object(kernel.shell, cmd.get('name'))
-            elif cmd.get('command') == 'input_reply': pass 
+                handlers.inspect_object(kernel.shell, cmd['name'])
+            elif cmd.get('command') == 'peek':
+                handlers.peek_object(kernel.shell, cmd['name'])
+            elif cmd.get('command') == 'input_reply': pass
         except (json.JSONDecodeError, KeyboardInterrupt): pass
 
 if __name__ == "__main__":

@@ -113,4 +113,82 @@ function M.get_current_cell_id(lnum)
     return "scratchpad"
 end
 
+-- Cell Editing Features
+
+function M.delete_cell()
+    local s, e = M.get_cell_range()
+    local total = vim.api.nvim_buf_line_count(0)
+    
+    -- Check if the next line is a header
+    if e < total then
+        local next_line = vim.api.nvim_buf_get_lines(0, e, e + 1, false)[1]
+        if next_line and not next_line:match("^# %%%%") then
+            -- If next line is NOT a header (e.g. empty line), delete it too
+            e = e + 1
+        end
+    end
+    
+    vim.api.nvim_buf_set_lines(0, s - 1, e, false, {})
+end
+
+function M.move_cell_up()
+    local s, e = M.get_cell_range()
+    if s <= 1 then return end -- Already at top
+    
+    -- Find previous cell
+    local prev_e = s - 1
+    local prev_s, _ = M.get_cell_range(prev_e)
+    
+    -- Get contents
+    local curr_lines = vim.api.nvim_buf_get_lines(0, s - 1, e, false)
+    local prev_lines = vim.api.nvim_buf_get_lines(0, prev_s - 1, prev_e, false)
+    
+    -- Swap
+    -- Remove both blocks first (from bottom up to keep indices valid)
+    vim.api.nvim_buf_set_lines(0, s - 1, e, false, {})
+    vim.api.nvim_buf_set_lines(0, prev_s - 1, prev_e, false, {})
+    
+    -- Insert in new order
+    vim.api.nvim_buf_set_lines(0, prev_s - 1, prev_s - 1, false, curr_lines)
+    vim.api.nvim_buf_set_lines(0, prev_s + #curr_lines - 1, prev_s + #curr_lines - 1, false, prev_lines)
+    
+    -- Move cursor to new position of moved cell
+    vim.api.nvim_win_set_cursor(0, {prev_s, 0})
+end
+
+function M.move_cell_down()
+    local s, e = M.get_cell_range()
+    local total = vim.api.nvim_buf_line_count(0)
+    if e >= total then return end -- Already at bottom
+    
+    -- Find next cell
+    local next_s = e + 1
+    local _, next_e = M.get_cell_range(next_s)
+    
+    -- Get contents
+    local curr_lines = vim.api.nvim_buf_get_lines(0, s - 1, e, false)
+    local next_lines = vim.api.nvim_buf_get_lines(0, next_s - 1, next_e, false)
+    
+    -- Swap
+    vim.api.nvim_buf_set_lines(0, next_s - 1, next_e, false, {})
+    vim.api.nvim_buf_set_lines(0, s - 1, e, false, {})
+    
+    vim.api.nvim_buf_set_lines(0, s - 1, s - 1, false, next_lines)
+    vim.api.nvim_buf_set_lines(0, s + #next_lines - 1, s + #next_lines - 1, false, curr_lines)
+    
+    -- Move cursor
+    vim.api.nvim_win_set_cursor(0, {s + #next_lines, 0})
+end
+
+function M.split_cell()
+    local cursor_row = vim.fn.line(".")
+    
+    local id = M.generate_id(M.get_all_ids(0))
+    local header = "# %% id=\"" .. id .. "\""
+    
+    -- Insert AFTER the current line
+    -- Add empty line before and after header for clarity
+    vim.api.nvim_buf_set_lines(0, cursor_row, cursor_row, false, {"", header})
+end
+
 return M

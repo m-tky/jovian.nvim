@@ -517,6 +517,45 @@ function M.show_inspection(data)
     local opts = { noremap = true, silent = true }
     vim.api.nvim_buf_set_keymap(buf, "n", "q", ":close<CR>", opts)
     vim.api.nvim_buf_set_keymap(buf, "n", "<Esc>", ":close<CR>", opts)
+    vim.api.nvim_buf_set_keymap(buf, "n", "q", ":close<CR>", opts)
+    vim.api.nvim_buf_set_keymap(buf, "n", "<Esc>", ":close<CR>", opts)
+end
+
+function M.show_peek(data)
+    if data.error then return vim.notify(data.error, vim.log.levels.WARN) end
+    
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_option(buf, 'bufhidden', 'wipe')
+    
+    local lines = {}
+    table.insert(lines, "Name:  " .. data.name)
+    table.insert(lines, "Type:  " .. data.type)
+    table.insert(lines, "Size:  " .. data.size)
+    if data.shape and data.shape ~= "" then
+        table.insert(lines, "Shape: " .. data.shape)
+    end
+    table.insert(lines, "")
+    table.insert(lines, "Value:")
+    for _, l in ipairs(vim.split(data.repr, "\n")) do
+        table.insert(lines, l)
+    end
+    
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    
+    -- Calculate size
+    local width = 0
+    for _, l in ipairs(lines) do if #l > width then width = #l end end
+    width = math.min(width + 4, 80)
+    local height = math.min(#lines + 2, 20)
+    
+    local win = vim.api.nvim_open_win(buf, true, {
+        relative = "cursor", width = width, height = height, row = 1, col = 0,
+        style = "minimal", border = "rounded", title = " Jovian Peek ", title_pos = "center"
+    })
+    
+    local opts = { noremap = true, silent = true }
+    vim.api.nvim_buf_set_keymap(buf, "n", "q", ":close<CR>", opts)
+    vim.api.nvim_buf_set_keymap(buf, "n", "<Esc>", ":close<CR>", opts)
 end
 
 function M.clear_repl()
