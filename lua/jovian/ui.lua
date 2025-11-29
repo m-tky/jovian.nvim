@@ -87,7 +87,7 @@ function M.append_to_repl(text, hl_group)
 end
 
 -- ★ 修正: ストリーム出力 (超シンプルになる)
-function M.append_stream_text(text)
+function M.append_stream_text(text, stream_type)
     if not State.term_chan then return end
     
     -- \r や \n の処理は nvim_open_term が勝手にやってくれるので、
@@ -96,6 +96,13 @@ function M.append_stream_text(text)
     -- ただし、Unixの改行(\n)をターミナル用の改行(\r\n)に変換しておくと表示が崩れにくい
     -- (IPythonはすでに \r\n を送ってくることが多いが念のため)
     local clean_text = text:gsub("\n", "\r\n")
+    
+    -- stderrなら赤くする
+    if stream_type == "stderr" then
+        local RED = "\x1b[31m"
+        local RESET = "\x1b[0m"
+        clean_text = RED .. clean_text .. RESET
+    end
     
     vim.api.nvim_chan_send(State.term_chan, clean_text)
     

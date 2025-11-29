@@ -36,7 +36,7 @@ local function on_stdout(chan_id, data, name)
             if ok and msg then
                 vim.schedule(function()
                     if msg.type == "stream" then
-                        UI.append_stream_text(msg.text)
+                        UI.append_stream_text(msg.text, msg.stream)
                     elseif msg.type == "image_saved" then
                         UI.append_to_repl("[Image Created]: " .. vim.fn.fnamemodify(msg.path, ":t"), "Special")
                     elseif msg.type == "result_ready" then
