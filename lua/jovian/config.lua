@@ -10,6 +10,7 @@ M.defaults = {
     -- Visuals
     flash_highlight_group = "Visual",
     flash_duration = 300,
+    float_border = "rounded", -- Border style for floating windows (single, double, rounded, solid, shadow)
     
     -- Python Environment
     python_interpreter = "python3", 

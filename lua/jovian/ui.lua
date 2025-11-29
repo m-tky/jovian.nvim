@@ -344,7 +344,7 @@ function M.show_variables(vars)
 
     local win = vim.api.nvim_open_win(buf, true, {
         relative = "editor", width = width, height = height, row = row, col = col,
-        style = "minimal", border = "rounded", title = " Variables ", title_pos = "center"
+        style = "minimal", border = Config.options.float_border, title = " Variables ", title_pos = "center"
     })
     
     vim.wo[win].wrap = false
@@ -370,7 +370,7 @@ function M.show_profile_stats(text)
     
     local win = vim.api.nvim_open_win(buf, true, {
         relative = "editor", width = width, height = height, row = row, col = col,
-        style = "minimal", border = "rounded", title = " cProfile Stats ", title_pos = "center"
+        style = "minimal", border = Config.options.float_border, title = " cProfile Stats ", title_pos = "center"
     })
     local opts = { noremap = true, silent = true }
     vim.api.nvim_buf_set_keymap(buf, "n", "q", ":close<CR>", opts)
@@ -448,7 +448,7 @@ function M.show_dataframe(data)
     local col = math.floor((vim.o.columns - width) / 2)
     local win = vim.api.nvim_open_win(buf, true, {
         relative = "editor", width = width, height = height, row = row, col = col,
-        style = "minimal", border = "rounded", title = " " .. data.name .. " ", title_pos = "center"
+        style = "minimal", border = Config.options.float_border, title = " " .. data.name .. " ", title_pos = "center"
     })
     vim.wo[win].wrap = false
     vim.wo[win].cursorline = true
@@ -491,7 +491,7 @@ function M.show_inspection(data)
 
     local win = vim.api.nvim_open_win(buf, true, {
         relative = "editor", width = width, height = height, row = row, col = col,
-        style = "minimal", border = "rounded", title = " Jovian Doc ", title_pos = "center"
+        style = "minimal", border = Config.options.float_border, title = " Jovian Doc ", title_pos = "center"
     })
     
     local opts = { noremap = true, silent = true }
@@ -530,7 +530,7 @@ function M.show_peek(data)
     
     local win = vim.api.nvim_open_win(buf, true, {
         relative = "cursor", width = width, height = height, row = 1, col = 0,
-        style = "minimal", border = "rounded", title = " Jovian Peek ", title_pos = "center"
+        style = "minimal", border = Config.options.float_border, title = " Jovian Peek ", title_pos = "center"
     })
     
     local opts = { noremap = true, silent = true }
