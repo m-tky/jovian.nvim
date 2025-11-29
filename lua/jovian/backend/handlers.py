@@ -1,8 +1,9 @@
-import types
 import json
-import traceback
 import os
 import sys
+import traceback
+import types
+
 import protocol
 import utils
 
@@ -38,8 +39,8 @@ def get_dataframe_data(shell, var_name):
     if var_name not in shell.user_ns: return
     val = shell.user_ns[var_name]
     try:
-        import pandas as pd
         import numpy as np
+        import pandas as pd
         df = None
         if isinstance(val, pd.DataFrame): df = val
         elif isinstance(val, pd.Series): df = val.to_frame()
@@ -61,8 +62,8 @@ def copy_to_clipboard(shell, var_name):
     if var_name not in shell.user_ns: return
     val = shell.user_ns[var_name]
     try:
-        import pandas as pd
         import numpy as np
+        import pandas as pd
         text_data = ""
         if isinstance(val, (pd.DataFrame, pd.Series)):
             try: text_data = val.to_markdown()

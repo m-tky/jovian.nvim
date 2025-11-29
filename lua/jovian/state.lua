@@ -14,8 +14,8 @@ M.diag_ns = vim.api.nvim_create_namespace("JovianDiagnostics")
 M.current_preview_file = nil
 
 -- Mappings
-M.cell_buf_map = {}      -- { cell_id: bufnr }
-M.cell_start_time = {}   -- { cell_id: timestamp }
-M.cell_start_line = {}   -- { cell_id: line_num }
+M.cell_buf_map = {} -- { cell_id: bufnr }
+M.cell_start_time = {} -- { cell_id: timestamp }
+M.cell_start_line = {} -- { cell_id: line_num }
 
 return M
