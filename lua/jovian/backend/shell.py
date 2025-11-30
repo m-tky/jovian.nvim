@@ -86,10 +86,21 @@ class JovianShell:
             self.output_queue.append({"type": "text", "content": err})
             self.stderr_proxy.reset()
 
+    def _ensure_save_dir(self):
+        # Try requested dir
+        save_dir = utils.get_save_dir(self.current_filename, self.current_file_dir)
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+            return save_dir
+        except OSError:
+            # Fallback to CWD-relative
+            save_dir = utils.get_save_dir(self.current_filename, None)
+            os.makedirs(save_dir, exist_ok=True)
+            return save_dir
+
     def _custom_show(self, *args, **kwargs):
         self._sync_queue()
-        save_dir = utils.get_save_dir(self.current_filename, self.current_file_dir)
-        os.makedirs(save_dir, exist_ok=True)
+        save_dir = self._ensure_save_dir()
         filename = f"{self.current_cell_id}_{self.output_counter:02d}.png"
         filepath = os.path.join(save_dir, filename)
         abs_path = os.path.abspath(filepath)
@@ -111,8 +122,7 @@ class JovianShell:
 
     def _save_markdown_result(self):
         self._sync_queue()
-        save_dir = utils.get_save_dir(self.current_filename, self.current_file_dir)
-        os.makedirs(save_dir, exist_ok=True)
+        save_dir = self._ensure_save_dir()
         md_filename = f"{self.current_cell_id}.md"
         md_path = os.path.join(save_dir, md_filename)
         with open(md_path, "w", encoding="utf-8") as f:
@@ -127,7 +137,11 @@ class JovianShell:
                     if safe_content.strip():
                         f.write(f"```text\n{safe_content}\n```\n\n")
                 elif item["type"] == "image":
-                    f.write(f"![Result]({item['path']})\n\n")
+                    # For markdown, we use relative path if possible, or just filename
+                    # But since we are syncing content, the path in MD might need to be adjusted by frontend.
+                    # Let's just use the filename.
+                    img_name = os.path.basename(item['path'])
+                    f.write(f"![Result]({img_name})\n\n")
         return os.path.abspath(md_path), ""
 
     def run_code(self, code, cell_id, filename, file_dir=None):
@@ -180,12 +194,32 @@ class JovianShell:
             self.stderr_proxy.write(traceback.format_exc())
         finally:
             md_path, _ = self._save_markdown_result()
+            
+            # Read back content for syncing
+            content_md = ""
+            try:
+                with open(md_path, "r", encoding="utf-8") as f:
+                    content_md = f.read()
+            except: pass
+
+            images = {}
+            import base64
+            for item in self.output_queue:
+                if item["type"] == "image":
+                    try:
+                        with open(item["path"], "rb") as f:
+                            b64 = base64.b64encode(f.read()).decode("utf-8")
+                            images[os.path.basename(item["path"])] = b64
+                    except: pass
+
             status = "error" if error_info else "ok"
             msg = {
                 "type": "result_ready",
                 "cell_id": cell_id,
-                "file": md_path,
+                "file": md_path, # Remote path, kept for ref
                 "status": status,
+                "content_md": content_md,
+                "images": images
             }
             if error_info:
                 msg["error"] = error_info

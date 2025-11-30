@@ -46,6 +46,51 @@ local function on_stdout(chan_id, data, name)
 					elseif msg.type == "result_ready" then
 						UI.append_to_repl("-> Done: " .. msg.cell_id, "Comment")
 						State.current_preview_file = nil
+                        
+                        -- Sync content to local cache if provided (SSH or Local)
+                        if msg.content_md then
+                            local cell_id = msg.cell_id
+                            local filename = vim.fn.expand("%:t")
+                            if filename == "" then filename = "scratchpad" end
+                            local file_dir = vim.fn.expand("%:p:h")
+                            local cache_dir = file_dir .. "/.jovian_cache/" .. filename
+                            
+                            -- Ensure cache dir exists
+                            vim.fn.mkdir(cache_dir, "p")
+                            
+                            -- Write Images
+                            if msg.images then
+                                for img_name, b64 in pairs(msg.images) do
+                                    local img_path = cache_dir .. "/" .. img_name
+                                    -- Decode base64 and write
+                                    -- Requires base64 CLI or pure lua. 
+                                    -- Since we are in Neovim, we can use vim.base64 (if available? No)
+                                    -- We can use python to decode? Or openssl?
+                                    -- Let's use a simple python one-liner to write it, since we know python is available (we are running it).
+                                    -- Actually, we can just write the bytes if we had them, but we have b64 string.
+                                    -- Let's use vim.fn.system with python to decode and write.
+                                    -- Or better, since we are in LuaJIT, maybe use `vim.base64`? No, it's not standard.
+                                    -- `vim.mpack`? No.
+                                    -- Let's use the `base64` command line tool if available, or python.
+                                    -- Python is safer since we depend on it.
+                                    local write_script = string.format(
+                                        "import base64, sys; open('%s', 'wb').write(base64.b64decode(sys.stdin.read()))",
+                                        img_path
+                                    )
+                                    vim.fn.system({Config.options.python_interpreter, "-c", write_script}, b64)
+                                end
+                            end
+
+                            -- Write MD
+                            local md_path = cache_dir .. "/" .. cell_id .. ".md"
+                            local f = io.open(md_path, "w")
+                            if f then
+                                f:write(msg.content_md)
+                                f:close()
+                                msg.file = md_path -- Update to local path
+                            end
+                        end
+
 						UI.open_markdown_preview(msg.file)
                         UI.update_variables_pane()
 
