@@ -197,6 +197,13 @@ function M.open_windows(target_win)
 			vim.cmd("stopinsert")
 		end
 	end, 50)
+
+    -- Auto-open Vars pane if configured
+    if Config.options.toggle_var then
+        if not (State.win.variables and vim.api.nvim_win_is_valid(State.win.variables)) then
+            M.toggle_variables_pane()
+        end
+    end
 end
 
 function M.close_windows()
@@ -206,6 +213,15 @@ function M.close_windows()
 	if State.win.output and vim.api.nvim_win_is_valid(State.win.output) then
 		vim.api.nvim_win_close(State.win.output, true)
 	end
+    
+    -- Auto-close Vars pane if configured
+    if Config.options.toggle_var then
+        if State.win.variables and vim.api.nvim_win_is_valid(State.win.variables) then
+            vim.api.nvim_win_close(State.win.variables, true)
+            State.win.variables = nil
+        end
+    end
+
 	State.win.preview, State.win.output = nil, nil
 	State.current_preview_file = nil
 end
@@ -804,21 +820,21 @@ function M.toggle_variables_pane()
     end
 
     -- Create Window
-    -- Priority: Above Preview if exists, else Right Column
-    if State.win.preview and vim.api.nvim_win_is_valid(State.win.preview) then
-        vim.api.nvim_set_current_win(State.win.preview)
-        vim.cmd("aboveleft split")
+    -- Priority: Right of REPL if exists
+    if State.win.output and vim.api.nvim_win_is_valid(State.win.output) then
+        vim.api.nvim_set_current_win(State.win.output)
+        vim.cmd("rightbelow vsplit") -- Split to the right, focus new window
     else
-        vim.cmd("vsplit")
-        vim.cmd("wincmd L")
+        -- Fallback: Right column of editor
+        vim.cmd("rightbelow vsplit")
     end
 
     State.win.variables = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_buf(State.win.variables, State.buf.variables)
 
-    -- Apply Height
-    local target_height = Config.options.vars_pane_height
-    vim.api.nvim_win_set_height(State.win.variables, target_height)
+    -- Apply Width
+    local target_width = Config.options.vars_pane_width
+    vim.api.nvim_win_set_width(State.win.variables, target_width)
 
     -- Window Options
     local win = State.win.variables

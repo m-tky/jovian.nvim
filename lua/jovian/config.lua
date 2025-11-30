@@ -4,7 +4,8 @@ M.defaults = {
 	-- UI
 	preview_width_percent = 35,
 	repl_height_percent = 30,
-    vars_pane_height = 10, -- Height of the variables pane (lines)
+    vars_pane_width = 40, -- Width of the variables pane (columns)
+    toggle_var = false, -- Automatically toggle variables pane with UI
 
 	-- Visuals
 	flash_highlight_group = "Visual",
