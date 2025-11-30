@@ -198,7 +198,7 @@ local function on_stdout(chan_id, data, name)
 
 							-- Fix: Check status field as well
 							if msg.error or msg.status == "error" then
-								UI.set_cell_status(target_buf, msg.cell_id, "error", "✘ Error")
+								UI.set_cell_status(target_buf, msg.cell_id, "error", Config.options.ui_symbols.error)
 
 								-- Show diagnostics if error info exists
 								if msg.error then
@@ -215,7 +215,7 @@ local function on_stdout(chan_id, data, name)
 									})
 								end
 							else
-								UI.set_cell_status(target_buf, msg.cell_id, "done", " Done")
+								UI.set_cell_status(target_buf, msg.cell_id, "done", Config.options.ui_symbols.done)
 							end
 						end
 						State.cell_buf_map[msg.cell_id] = nil
@@ -368,7 +368,7 @@ function M.send_payload(code, cell_id, filename)
 	vim.diagnostic.reset(State.diag_ns, current_buf)
 	vim.api.nvim_buf_clear_namespace(current_buf, State.diag_ns, 0, -1)
 
-	UI.set_cell_status(current_buf, cell_id, "running", " Running...")
+	UI.set_cell_status(current_buf, cell_id, "running", Config.options.ui_symbols.running)
 
 	UI.append_to_repl({ "In [" .. cell_id .. "]:" }, "Type")
 	local code_lines = vim.split(code, "\n")
@@ -595,7 +595,7 @@ function M.interrupt_kernel()
 
 		-- Change status to Error if running
 		for cell_id, buf in pairs(State.cell_buf_map) do
-			UI.set_cell_status(buf, cell_id, "error", " Interrupted")
+			UI.set_cell_status(buf, cell_id, "error", Config.options.ui_symbols.interrupted)
 		end
 		State.cell_buf_map = {} -- Clear
 	else

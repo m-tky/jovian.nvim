@@ -6,7 +6,7 @@ M.defaults = {
 	preview_width_percent = 35,
 	repl_height_percent = 30,
     vars_pane_width_percent = 30, -- Width of the variables pane (percent of editor width)
-    toggle_var = false, -- Automatically toggle variables pane with UI
+    toggle_var = true, -- Automatically toggle variables pane with UI
 
 	-- Visuals
 	flash_highlight_group = "Visual",
@@ -18,6 +18,14 @@ M.defaults = {
 
 	-- Behavior
 	notify_threshold = 10,
+    
+    -- UI Symbols
+    ui_symbols = {
+        running = " Running...",
+        done = " Done",
+        error = "✘ Error",
+        interrupted = " Interrupted",
+    },
 }
 
 M.options = vim.deepcopy(M.defaults)
