@@ -10,6 +10,7 @@
 - **Kernel Control**: Start, restart, and interrupt the Python kernel.
 - **Cell Management**: Move, delete, split, and merge cells easily.
 - **Virtual Text Status**: Visual indicators for cell status (`Running`, `Done`, `Error`).
+- **Kernel Selection**: Switch between local and remote (SSH) Python kernels dynamically.
 
 ## 📦 Dependencies
 
@@ -47,7 +48,15 @@ require("jovian").setup({
     preview_width_percent = 35,
     repl_height_percent = 30,
     vars_pane_width_percent = 20, -- Width of the variables pane (% of editor width)
-    toggle_var = false, -- If true, Vars pane opens/closes with JovianToggle/JovianOpen
+    toggle_var = true, -- If true, Vars pane opens/closes with JovianToggle/JovianOpen
+
+    -- UI Symbols (Virtual Text)
+    ui_symbols = {
+        running = " Running...",
+        done = " Done",
+        error = "✘ Error",
+        interrupted = " Interrupted",
+    },
 
     -- Visuals
     flash_highlight_group = "Visual",
@@ -72,8 +81,17 @@ require("jovian").setup({
 ### Key Options
 - **`toggle_var`**: When set to `true`, the Variables Pane will automatically open and close alongside the REPL and Preview windows when you use `JovianToggle` or `JovianOpen`.
 - **`vars_pane_width_percent`**: Controls the width of the Variables Pane as a percentage of the total editor width.
+- **`ui_symbols`**: Customize the text/icons displayed for cell status.
 
 ## 🚀 Commands
+
+### Host Management (SSH & Local)
+- **`:JovianAddHost [name] [ssh_host] [python_path]`**: Add a remote SSH host configuration.
+- **`:JovianAddLocal [name] [python_path]`**: Add a local Python configuration.
+- **`:JovianUse [name]`**: Switch to a specific host configuration.
+- **`:JovianRemoveHost [name]`**: Remove a host configuration.
+
+**Note**: If arguments are omitted, these commands will prompt you interactively.
 
 ### UI & Layout
 - **`:JovianOpen`**: Open the Jovian UI (REPL, Preview, and optionally Vars Pane).

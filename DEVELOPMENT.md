@@ -8,6 +8,7 @@ The core logic is located in `lua/jovian/`:
 
 - **`init.lua`**: The entry point. Handles `setup`, command registration, and autocmds.
 - **`core.lua`**: The brain of the plugin. Manages the Python kernel process, handles communication (sending code, receiving results), and orchestrates the overall logic.
+- **`hosts.lua`**: Manages host configurations (Local/SSH), persistence, and validation.
 - **`ui.lua`**: Handles all UI elements.
     - Manages Windows and Buffers (REPL, Preview, Vars Pane).
     - **Extmark Management**: Handles the creation, deletion, and cleanup of virtual text (cell status).
