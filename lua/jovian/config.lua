@@ -16,10 +16,6 @@ M.defaults = {
 	-- Python Environment
 	python_interpreter = "python3",
 
-	-- Add: SSH Remote Settings
-	ssh_host = nil, -- Example: "user@192.168.1.10" or nil (local)
-	ssh_python = "python3", -- Remote Python command
-
 	-- Behavior
 	notify_threshold = 10,
 }

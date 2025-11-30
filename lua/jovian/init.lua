@@ -81,6 +81,100 @@ function M.setup(opts)
 	vim.api.nvim_create_user_command("JovianRunAll", Core.run_all_cells, {})
 	vim.api.nvim_create_user_command("JovianRestart", Core.restart_kernel, {})
 
+	-- Host Management
+	vim.api.nvim_create_user_command("JovianAddHost", function(opts)
+        local args = vim.split(opts.args, " ")
+        
+        local function process_add(name, host, python)
+            vim.cmd("redraw")
+            local config = { type = "ssh", host = host, python = python }
+            local ok, err = Core.validate_connection(config)
+            if not ok then
+                vim.notify("Validation Failed: " .. err, vim.log.levels.ERROR)
+                return
+            end
+            Core.add_host(name, config)
+        end
+
+        if opts.args == "" or #args < 3 then
+            -- Interactive mode
+            vim.ui.input({ prompt = "Host Name (e.g., my-server): " }, function(name)
+                if not name or name == "" then return end
+                vim.ui.input({ prompt = "SSH Host (e.g., user@1.2.3.4): " }, function(host)
+                    if not host or host == "" then return end
+                    vim.ui.input({ prompt = "Remote Python Path (e.g., /usr/bin/python3): " }, function(python)
+                        if not python or python == "" then return end
+                        process_add(name, host, python)
+                    end)
+                end)
+            end)
+        else
+            process_add(args[1], args[2], args[3])
+        end
+    end, { nargs = "*" })
+
+    vim.api.nvim_create_user_command("JovianAddLocal", function(opts)
+        local args = vim.split(opts.args, " ")
+
+        local function process_add(name, python)
+            vim.cmd("redraw")
+            local config = { type = "local", python = python }
+            local ok, err = Core.validate_connection(config)
+            if not ok then
+                vim.notify("Validation Failed: " .. err, vim.log.levels.ERROR)
+                return
+            end
+            Core.add_host(name, config)
+        end
+
+        if opts.args == "" or #args < 2 then
+            -- Interactive mode
+            vim.ui.input({ prompt = "Config Name (e.g., project-venv): " }, function(name)
+                if not name or name == "" then return end
+                vim.ui.input({ prompt = "Local Python Path (e.g., ./venv/bin/python): ", default = Config.options.python_interpreter }, function(python)
+                    if not python or python == "" then return end
+                    process_add(name, python)
+                end)
+            end)
+        else
+            process_add(args[1], args[2])
+        end
+    end, { nargs = "*" })
+
+vim.api.nvim_create_user_command("JovianUse", function(opts)
+    local name = opts.args
+    if name == "" then
+        -- Interactive selection
+        local data = Core.load_hosts()
+        local names = vim.tbl_keys(data.configs)
+        table.sort(names)
+        vim.ui.select(names, { prompt = "Select Host:" }, function(selected)
+            if selected then
+                Core.use_host(selected)
+            end
+        end)
+    else
+        Core.use_host(name)
+    end
+end, { nargs = "?" })
+
+vim.api.nvim_create_user_command("JovianRemoveHost", function(opts)
+    local name = opts.args
+    if name == "" then
+        -- Interactive selection
+        local data = Core.load_hosts()
+        local names = vim.tbl_keys(data.configs)
+        table.sort(names)
+        vim.ui.select(names, { prompt = "Remove Host:" }, function(selected)
+            if selected then
+                Core.remove_host(selected)
+            end
+        end)
+    else
+        Core.remove_host(name)
+    end
+end, { nargs = "?" })
+
 	-- UI
 	vim.api.nvim_create_user_command("JovianOpen", function()
 		UI.open_windows()

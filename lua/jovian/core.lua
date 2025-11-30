@@ -8,6 +8,131 @@ local function is_window_open()
 	return State.win.output and vim.api.nvim_win_is_valid(State.win.output)
 end
 
+-- Host Management
+M.hosts_file = vim.fn.stdpath("data") .. "/jovian/hosts.json"
+
+function M.ensure_hosts_dir()
+    local dir = vim.fn.fnamemodify(M.hosts_file, ":h")
+    if vim.fn.isdirectory(dir) == 0 then
+        vim.fn.mkdir(dir, "p")
+    end
+end
+
+function M.load_hosts()
+    local data = { configs = {}, current = nil }
+    if vim.fn.filereadable(M.hosts_file) == 1 then
+        local content = table.concat(vim.fn.readfile(M.hosts_file), "\n")
+        local ok, parsed = pcall(vim.fn.json_decode, content)
+        if ok then data = parsed end
+    end
+    
+    -- Ensure local_default exists and matches current config (if not overridden explicitly by user action, but here we treat config as source of truth for default)
+    -- Actually, if user changed config.python_interpreter, we should probably update local_default?
+    -- Let's ensure local_default is always present.
+    if not data.configs.local_default then
+        data.configs.local_default = { type = "local", python = Config.options.python_interpreter }
+        if not data.current then data.current = "local_default" end
+    end
+    return data
+end
+
+function M.save_hosts(data)
+    M.ensure_hosts_dir()
+    local content = vim.fn.json_encode(data)
+    vim.fn.writefile({content}, M.hosts_file)
+end
+
+function M.add_host(name, config)
+    local data = M.load_hosts()
+    data.configs[name] = config
+    M.save_hosts(data)
+    vim.notify("Host '" .. name .. "' added.", vim.log.levels.INFO)
+end
+
+function M.remove_host(name)
+    local data = M.load_hosts()
+    if not data.configs[name] then
+        return vim.notify("Host '" .. name .. "' not found.", vim.log.levels.ERROR)
+    end
+    if name == "local_default" then
+        return vim.notify("Cannot remove default local host.", vim.log.levels.WARN)
+    end
+    
+    data.configs[name] = nil
+    if data.current == name then
+        data.current = "local_default"
+        vim.notify("Removed active host. Switched back to local_default.", vim.log.levels.WARN)
+        M.use_host("local_default") -- This saves and restarts
+    else
+        M.save_hosts(data)
+        vim.notify("Host '" .. name .. "' removed.", vim.log.levels.INFO)
+    end
+end
+
+function M.use_host(name)
+    local data = M.load_hosts()
+    local config = data.configs[name]
+    if not config then
+        return vim.notify("Host '" .. name .. "' not found.", vim.log.levels.ERROR)
+    end
+    
+    -- Update Runtime Config
+    if config.type == "ssh" then
+        Config.options.ssh_host = config.host
+        Config.options.ssh_python = config.python
+        Config.options.python_interpreter = config.python -- Just for reference, not used in SSH mode logic directly but good to sync
+    else
+        Config.options.ssh_host = nil
+        Config.options.ssh_python = nil
+        Config.options.python_interpreter = config.python
+    end
+    
+    data.current = name
+    M.save_hosts(data)
+    vim.notify("Switched to host: " .. name, vim.log.levels.INFO)
+    
+    -- Restart kernel if running
+    if State.job_id then
+        M.restart_kernel()
+    end
+end
+
+function M.validate_connection(config)
+    -- Default to current config if not provided
+    local host = config and config.host or Config.options.ssh_host
+    local python = config and config.python or Config.options.python_interpreter
+    if config and config.type == "ssh" then
+        -- Use provided config values
+        python = config.python
+    elseif config and config.type == "local" then
+        host = nil
+        python = config.python
+    end
+
+    if host then
+        -- Check SSH connectivity
+        UI.append_to_repl("[Jovian] Validating connection to " .. host .. "...", "Special")
+        
+        local ssh_check = vim.fn.system({"ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, "exit"})
+        if vim.v.shell_error ~= 0 then
+            return false, "Could not connect to " .. host .. ". Check SSH config/keys."
+        end
+        
+        local py_check = vim.fn.system({"ssh", host, python, "--version"})
+        if vim.v.shell_error ~= 0 then
+            return false, "Python interpreter '" .. python .. "' not found or not executable on " .. host .. "."
+        end
+    else
+        -- Check local python
+        -- If checking current config, python is already set above.
+        local py_check = vim.fn.system({python, "--version"})
+        if vim.v.shell_error ~= 0 then
+            return false, "Local Python interpreter '" .. python .. "' not found."
+        end
+    end
+    return true, nil
+end
+
 local function on_stdout(chan_id, data, name)
 	if not data then
 		return
@@ -190,6 +315,14 @@ function M.start_kernel()
 
 	-- Ensure IDs are unique before starting
 	Utils.fix_duplicate_ids(0)
+
+    -- Validate Connection
+    local ok, err = M.validate_connection()
+    if not ok then
+        UI.append_to_repl("[Error] " .. err, "ErrorMsg")
+        vim.notify(err, vim.log.levels.ERROR)
+        return
+    end
 
 	local script_path = vim.fn.fnamemodify(debug.getinfo(1).source:sub(2), ":h:h:h") .. "/lua/jovian/backend/main.py"
 	local backend_dir = vim.fn.fnamemodify(debug.getinfo(1).source:sub(2), ":h:h:h") .. "/lua/jovian/backend"
@@ -598,5 +731,21 @@ function M.schedule_structure_check()
         end
     end))
 end
+
+-- Initialize
+vim.schedule(function()
+    local data = M.load_hosts()
+    if data.current and data.configs[data.current] then
+        local config = data.configs[data.current]
+        if config.type == "ssh" then
+            Config.options.ssh_host = config.host
+            Config.options.ssh_python = config.python
+        else
+            Config.options.ssh_host = nil
+            Config.options.ssh_python = nil
+            Config.options.python_interpreter = config.python
+        end
+    end
+end)
 
 return M
