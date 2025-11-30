@@ -62,6 +62,8 @@ local function merge_cell_below()
 	end
 	local line = vim.api.nvim_buf_get_lines(0, e, e + 1, false)[1]
 	if line:match("^# %%%%") then
+        -- Clear status on the header line being removed
+        UI.clear_status_extmarks(0, e + 1, e + 2)
 		vim.api.nvim_buf_set_lines(0, e, e + 1, false, {})
 		vim.notify("Cells merged", vim.log.levels.INFO)
 	else
@@ -125,15 +127,19 @@ function M.setup(opts)
 	-- Cell Editing
 	vim.api.nvim_create_user_command("JovianDeleteCell", function()
 		require("jovian.utils").delete_cell()
+        require("jovian.core").check_structure_change()
 	end, {})
 	vim.api.nvim_create_user_command("JovianMoveCellUp", function()
 		require("jovian.utils").move_cell_up()
+        require("jovian.core").check_structure_change()
 	end, {})
 	vim.api.nvim_create_user_command("JovianMoveCellDown", function()
 		require("jovian.utils").move_cell_down()
+        require("jovian.core").check_structure_change()
 	end, {})
 	vim.api.nvim_create_user_command("JovianSplitCell", function()
 		require("jovian.utils").split_cell()
+        require("jovian.core").check_structure_change()
 	end, {})
 
 	-- Execution Control
@@ -191,6 +197,14 @@ function M.setup(opts)
         pattern = "*.py",
         callback = function()
             Core.clean_stale_cache()
+        end,
+    })
+
+    -- Add: Debounced structure check on text change
+    vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+        pattern = "*.py",
+        callback = function()
+            Core.schedule_structure_check()
         end,
     })
 end

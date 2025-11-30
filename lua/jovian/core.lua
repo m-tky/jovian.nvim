@@ -192,6 +192,10 @@ function M.restart_kernel()
 		State.job_id = nil
 	end
 	UI.append_to_repl("[Kernel Restarting...]", "WarningMsg")
+    
+    -- Clear all status marks as kernel state is lost
+    UI.clear_status_extmarks(0)
+    
 	M.start_kernel()
 end
 
@@ -525,6 +529,27 @@ function M.peek_symbol(args)
 
 	local msg = vim.fn.json_encode({ command = "peek", name = var_name })
 	vim.fn.chansend(State.job_id, msg .. "\n")
+end
+
+-- Add: Structure Check
+function M.check_structure_change()
+    local bufnr = vim.api.nvim_get_current_buf()
+    UI.clean_invalid_extmarks(bufnr)
+end
+
+local structure_timer = nil
+function M.schedule_structure_check()
+    if structure_timer then
+        structure_timer:close()
+    end
+    structure_timer = vim.loop.new_timer()
+    structure_timer:start(200, 0, vim.schedule_wrap(function()
+        M.check_structure_change()
+        if structure_timer then
+            structure_timer:close()
+            structure_timer = nil
+        end
+    end))
 end
 
 return M

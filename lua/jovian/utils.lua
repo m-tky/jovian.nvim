@@ -1,4 +1,5 @@
 local M = {}
+local UI = require("jovian.ui")
 
 -- Seed random number generator once
 math.randomseed(os.time() + math.floor(os.clock() * 1000))
@@ -138,6 +139,22 @@ function M.delete_cell()
 		end
 	end
 
+	-- Clear status for the range being deleted + next line (if it was a header that moved up)
+    -- Actually, we are deleting lines s-1 to e.
+    -- We should clear status on these lines before deletion to be safe,
+    -- AND clear status on the line that will *become* the new s-1 (which is currently e+1)
+    -- because if we delete a cell, the next cell moves up.
+    -- But simpler: just clear the range we are about to delete.
+    -- AND clear the *entire buffer* status? No, that's too aggressive.
+    -- Let's clear the range [s, e] (1-based)
+    UI.clear_status_extmarks(0, s, s) -- Only clear the header line of the deleted cell
+    
+    -- Also clear the line *after* the deleted block because it will shift up
+    -- and might inherit some ghost mark if we are not careful (though extmarks usually move with text).
+    -- The issue is often that the *previous* mark stays.
+    -- Let's clear a bit more context to be safe.
+    -- UI.clear_status_extmarks(0, math.max(1, s - 1), e + 1) -- Removed aggressive clear
+
 	vim.api.nvim_buf_set_lines(0, s - 1, e, false, {})
 end
 
@@ -155,14 +172,18 @@ function M.move_cell_up()
 	local curr_lines = vim.api.nvim_buf_get_lines(0, s - 1, e, false)
 	local prev_lines = vim.api.nvim_buf_get_lines(0, prev_s - 1, prev_e, false)
 
-	-- Swap
-	-- Remove both blocks first (from bottom up to keep indices valid)
-	vim.api.nvim_buf_set_lines(0, s - 1, e, false, {})
-	vim.api.nvim_buf_set_lines(0, prev_s - 1, prev_e, false, {})
+    -- Clear status (User requested to remove virtual text of both cells)
+    UI.clear_status_extmarks(0, s, s)
+    UI.clear_status_extmarks(0, prev_s, prev_s)
 
-	-- Insert in new order
-	vim.api.nvim_buf_set_lines(0, prev_s - 1, prev_s - 1, false, curr_lines)
-	vim.api.nvim_buf_set_lines(0, prev_s + #curr_lines - 1, prev_s + #curr_lines - 1, false, prev_lines)
+	-- Swap using single atomic set_lines to fix undo
+    -- Range to replace: prev_s to e (inclusive 1-based) -> prev_s-1 to e (exclusive 0-based)
+    -- New content: curr_lines + prev_lines
+    local new_lines = {}
+    for _, line in ipairs(curr_lines) do table.insert(new_lines, line) end
+    for _, line in ipairs(prev_lines) do table.insert(new_lines, line) end
+
+    vim.api.nvim_buf_set_lines(0, prev_s - 1, e, false, new_lines)
 
 	-- Move cursor to new position of moved cell
 	vim.api.nvim_win_set_cursor(0, { prev_s, 0 })
@@ -183,12 +204,18 @@ function M.move_cell_down()
 	local curr_lines = vim.api.nvim_buf_get_lines(0, s - 1, e, false)
 	local next_lines = vim.api.nvim_buf_get_lines(0, next_s - 1, next_e, false)
 
-	-- Swap
-	vim.api.nvim_buf_set_lines(0, next_s - 1, next_e, false, {})
-	vim.api.nvim_buf_set_lines(0, s - 1, e, false, {})
+    -- Clear status (User requested to remove virtual text of both cells)
+    UI.clear_status_extmarks(0, s, s)
+    UI.clear_status_extmarks(0, next_s, next_s)
 
-	vim.api.nvim_buf_set_lines(0, s - 1, s - 1, false, next_lines)
-	vim.api.nvim_buf_set_lines(0, s + #next_lines - 1, s + #next_lines - 1, false, curr_lines)
+	-- Swap using single atomic set_lines to fix undo
+    -- Range to replace: s to next_e (inclusive 1-based) -> s-1 to next_e (exclusive 0-based)
+    -- New content: next_lines + curr_lines
+    local new_lines = {}
+    for _, line in ipairs(next_lines) do table.insert(new_lines, line) end
+    for _, line in ipairs(curr_lines) do table.insert(new_lines, line) end
+
+    vim.api.nvim_buf_set_lines(0, s - 1, next_e, false, new_lines)
 
 	-- Move cursor
 	vim.api.nvim_win_set_cursor(0, { s + #next_lines, 0 })
@@ -203,6 +230,9 @@ function M.split_cell()
 	-- Insert AFTER the current line
 	-- Add empty line before and after header for clarity
 	vim.api.nvim_buf_set_lines(0, cursor_row, cursor_row, false, { "", header })
+    
+    -- Clear status on the new lines
+    UI.clear_status_extmarks(0, cursor_row + 1, cursor_row + 2)
 end
 
 return M
