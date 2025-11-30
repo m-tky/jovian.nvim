@@ -142,3 +142,12 @@ Cells display their execution status using virtual text on the header line (`# %
 - **Error**: Indicates an error occurred.
 
 **Stability**: The virtual text system is robust and handles **Undo/Redo** operations gracefully. If you move or delete cells and then undo, the status indicators will be correctly restored or cleared.
+
+## 🙏 Acknowledgements
+
+This plugin is heavily inspired by **[vim-jukit](https://github.com/luk400/vim-jukit)**. We are grateful for the following concepts and implementations that served as a reference:
+
+- **Architecture**: The core design of separating the Neovim frontend from a Python backend that manages the IPython kernel.
+- **Output Capture**: The technique of monkey-patching `sys.stdout` and `sys.stderr` to capture and redirect execution output back to Neovim.
+- **UI Layout**: The effective split-window arrangement for code, REPL, and plot previews.
+- **Caching Structure**: The fundamental approach to managing execution artifacts and persistent caching (which now includes remote host integration).
