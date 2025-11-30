@@ -59,6 +59,16 @@ require("jovian").setup({
 })
 ```
 
+## 📁 Caching & Git
+
+`jovian.nvim` creates a hidden directory named `.jovian_cache` in **the same directory as the file you are editing**. This directory stores intermediate files and metadata.
+
+**Recommendation**: Add this directory to your `.gitignore` (globally or per-project) to keep your repository clean.
+
+```gitignore
+**/.jovian_cache
+```
+
 ### Key Options
 - **`toggle_var`**: When set to `true`, the Variables Pane will automatically open and close alongside the REPL and Preview windows when you use `JovianToggle` or `JovianOpen`.
 - **`vars_pane_width_percent`**: Controls the width of the Variables Pane as a percentage of the total editor width.

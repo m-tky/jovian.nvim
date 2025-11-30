@@ -15,7 +15,10 @@ def main():
             cmd = json.loads(line)
             if cmd.get("command") == "execute":
                 kernel.run_code(
-                    cmd["code"], cmd["cell_id"], cmd.get("filename", "scratchpad")
+                    cmd["code"],
+                    cmd["cell_id"],
+                    cmd.get("filename", "scratchpad"),
+                    cmd.get("file_dir"),
                 )
             elif cmd.get("command") == "profile":
                 kernel.run_profile(cmd["code"], cmd["cell_id"])
@@ -27,7 +30,9 @@ def main():
                 handlers.load_session(kernel.shell, cmd.get("filename"))
             elif cmd.get("command") == "clean_cache":
                 handlers.purge_cache(
-                    cmd.get("valid_ids", []), cmd.get("filename", "scratchpad")
+                    cmd.get("valid_ids", []),
+                    cmd.get("filename", "scratchpad"),
+                    cmd.get("file_dir"),
                 )
             elif cmd.get("command") == "get_variables":
                 handlers.get_variables(kernel.shell)

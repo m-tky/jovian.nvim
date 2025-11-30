@@ -4,10 +4,13 @@ import re
 CACHE_ROOT = ".jovian_cache"
 
 
-def get_save_dir(filename=None):
+def get_save_dir(filename=None, file_dir=None):
     if filename is None:
         filename = "scratchpad"
     safe_name = os.path.basename(filename) or "scratchpad"
+    
+    if file_dir:
+        return os.path.join(file_dir, CACHE_ROOT, safe_name)
     return os.path.join(CACHE_ROOT, safe_name)
 
 

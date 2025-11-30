@@ -155,8 +155,8 @@ def peek_object(shell, var_name):
         protocol.send_json({"type": "peek_data", "data": result})
     except: sys.stderr.write(traceback.format_exc())
 
-def purge_cache(valid_ids, filename):
-    save_dir = utils.get_save_dir(filename)
+def purge_cache(valid_ids, filename, file_dir=None):
+    save_dir = utils.get_save_dir(filename, file_dir)
     if not os.path.exists(save_dir): return
     valid_set = set(valid_ids)
     for f in os.listdir(save_dir):

@@ -128,9 +128,11 @@ function M.clean_stale_cache()
 			table.insert(valid_ids, id)
 		end
 	end
+    local file_dir = vim.fn.expand("%:p:h")
 	local msg = vim.fn.json_encode({
 		command = "clean_cache",
 		filename = filename,
+        file_dir = file_dir,
 		valid_ids = valid_ids,
 	})
 	vim.fn.chansend(State.job_id, msg .. "\n")
@@ -235,6 +237,7 @@ function M.send_payload(code, cell_id, filename)
 		code = code,
 		cell_id = cell_id,
 		filename = filename,
+        file_dir = vim.fn.expand("%:p:h"),
 	})
 	vim.fn.chansend(State.job_id, msg .. "\n")
 end
@@ -414,16 +417,15 @@ function M.show_variables()
 end
 
 function M.check_cursor_cell()
-	if not State.job_id then
-		return
-	end
+	-- if not State.job_id then return end -- Allow checking cache even if kernel is not running
 	vim.schedule(function()
 		local cell_id = Utils.get_current_cell_id()
 		local filename = vim.fn.expand("%:t")
 		if filename == "" then
 			filename = "scratchpad"
 		end
-		local cache_dir = ".jovian_cache/" .. filename
+        local file_dir = vim.fn.expand("%:p:h")
+		local cache_dir = file_dir .. "/.jovian_cache/" .. filename
 		local rel_path = cache_dir .. "/" .. cell_id .. ".md"
 		local md_path = vim.fn.fnamemodify(rel_path, ":p")
 		if State.current_preview_file ~= md_path and vim.fn.filereadable(md_path) == 1 then

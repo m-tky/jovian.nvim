@@ -28,6 +28,7 @@ class JovianShell:
     def __init__(self):
         self.current_cell_id = "unknown"
         self.current_filename = "scratchpad"
+        self.current_file_dir = None
         self.output_counter = 0
         self.output_queue = []
 
@@ -87,7 +88,7 @@ class JovianShell:
 
     def _custom_show(self, *args, **kwargs):
         self._sync_queue()
-        save_dir = utils.get_save_dir(self.current_filename)
+        save_dir = utils.get_save_dir(self.current_filename, self.current_file_dir)
         os.makedirs(save_dir, exist_ok=True)
         filename = f"{self.current_cell_id}_{self.output_counter:02d}.png"
         filepath = os.path.join(save_dir, filename)
@@ -110,7 +111,7 @@ class JovianShell:
 
     def _save_markdown_result(self):
         self._sync_queue()
-        save_dir = utils.get_save_dir(self.current_filename)
+        save_dir = utils.get_save_dir(self.current_filename, self.current_file_dir)
         os.makedirs(save_dir, exist_ok=True)
         md_filename = f"{self.current_cell_id}.md"
         md_path = os.path.join(save_dir, md_filename)
@@ -129,9 +130,10 @@ class JovianShell:
                     f.write(f"![Result]({item['path']})\n\n")
         return os.path.abspath(md_path), ""
 
-    def run_code(self, code, cell_id, filename):
+    def run_code(self, code, cell_id, filename, file_dir=None):
         self.current_cell_id = cell_id
         self.current_filename = filename
+        self.current_file_dir = file_dir
         self.output_counter = 0
         self.output_queue = []
         self.stdout_proxy.reset()
