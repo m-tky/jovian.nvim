@@ -82,18 +82,19 @@ function M.setup(opts)
 	vim.api.nvim_create_user_command("JovianRestart", Core.restart_kernel, {})
 
 	-- Host Management
+    local Hosts = require("jovian.hosts")
 	vim.api.nvim_create_user_command("JovianAddHost", function(opts)
         local args = vim.split(opts.args, " ")
         
         local function process_add(name, host, python)
             vim.cmd("redraw")
             local config = { type = "ssh", host = host, python = python }
-            local ok, err = Core.validate_connection(config)
+            local ok, err = Hosts.validate_connection(config)
             if not ok then
                 vim.notify("Validation Failed: " .. err, vim.log.levels.ERROR)
                 return
             end
-            Core.add_host(name, config)
+            Hosts.add_host(name, config)
         end
 
         if opts.args == "" or #args < 3 then
@@ -119,12 +120,12 @@ function M.setup(opts)
         local function process_add(name, python)
             vim.cmd("redraw")
             local config = { type = "local", python = python }
-            local ok, err = Core.validate_connection(config)
+            local ok, err = Hosts.validate_connection(config)
             if not ok then
                 vim.notify("Validation Failed: " .. err, vim.log.levels.ERROR)
                 return
             end
-            Core.add_host(name, config)
+            Hosts.add_host(name, config)
         end
 
         if opts.args == "" or #args < 2 then
@@ -145,16 +146,16 @@ vim.api.nvim_create_user_command("JovianUse", function(opts)
     local name = opts.args
     if name == "" then
         -- Interactive selection
-        local data = Core.load_hosts()
+        local data = Hosts.load_hosts()
         local names = vim.tbl_keys(data.configs)
         table.sort(names)
         vim.ui.select(names, { prompt = "Select Host:" }, function(selected)
             if selected then
-                Core.use_host(selected)
+                Hosts.use_host(selected)
             end
         end)
     else
-        Core.use_host(name)
+        Hosts.use_host(name)
     end
 end, { nargs = "?" })
 
@@ -162,16 +163,16 @@ vim.api.nvim_create_user_command("JovianRemoveHost", function(opts)
     local name = opts.args
     if name == "" then
         -- Interactive selection
-        local data = Core.load_hosts()
+        local data = Hosts.load_hosts()
         local names = vim.tbl_keys(data.configs)
         table.sort(names)
         vim.ui.select(names, { prompt = "Remove Host:" }, function(selected)
             if selected then
-                Core.remove_host(selected)
+                Hosts.remove_host(selected)
             end
         end)
     else
-        Core.remove_host(name)
+        Hosts.remove_host(name)
     end
 end, { nargs = "?" })
 

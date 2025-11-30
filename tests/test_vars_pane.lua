@@ -13,7 +13,7 @@ local function wait_for(cond, timeout, msg)
 end
 
 print("Setting up Jovian...")
-Jovian.setup({ python_interpreter = "python3" })
+Jovian.setup({ python_interpreter = "python3", toggle_var = false })
 
 -- Create dummy buffer
 local buf = vim.api.nvim_create_buf(true, false)
