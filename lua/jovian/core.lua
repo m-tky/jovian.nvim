@@ -19,21 +19,18 @@ function M.ensure_hosts_dir()
 end
 
 function M.load_hosts()
-    local data = { configs = {}, current = nil }
-    if vim.fn.filereadable(M.hosts_file) == 1 then
-        local content = table.concat(vim.fn.readfile(M.hosts_file), "\n")
-        local ok, parsed = pcall(vim.fn.json_decode, content)
-        if ok then data = parsed end
+    if vim.fn.filereadable(M.hosts_file) == 0 then
+        return {
+            configs = {
+                local_default = { type = "local", python = Config.options.python_interpreter }
+            },
+            current = "local_default"
+        }
     end
-    
-    -- Ensure local_default exists and matches current config (if not overridden explicitly by user action, but here we treat config as source of truth for default)
-    -- Actually, if user changed config.python_interpreter, we should probably update local_default?
-    -- Let's ensure local_default is always present.
-    if not data.configs.local_default then
-        data.configs.local_default = { type = "local", python = Config.options.python_interpreter }
-        if not data.current then data.current = "local_default" end
-    end
-    return data
+    local content = table.concat(vim.fn.readfile(M.hosts_file), "\n")
+    local ok, data = pcall(vim.fn.json_decode, content)
+    if ok then return data end
+    return { configs = {}, current = nil }
 end
 
 function M.save_hosts(data)
@@ -47,26 +44,6 @@ function M.add_host(name, config)
     data.configs[name] = config
     M.save_hosts(data)
     vim.notify("Host '" .. name .. "' added.", vim.log.levels.INFO)
-end
-
-function M.remove_host(name)
-    local data = M.load_hosts()
-    if not data.configs[name] then
-        return vim.notify("Host '" .. name .. "' not found.", vim.log.levels.ERROR)
-    end
-    if name == "local_default" then
-        return vim.notify("Cannot remove default local host.", vim.log.levels.WARN)
-    end
-    
-    data.configs[name] = nil
-    if data.current == name then
-        data.current = "local_default"
-        vim.notify("Removed active host. Switched back to local_default.", vim.log.levels.WARN)
-        M.use_host("local_default") -- This saves and restarts
-    else
-        M.save_hosts(data)
-        vim.notify("Host '" .. name .. "' removed.", vim.log.levels.INFO)
-    end
 end
 
 function M.use_host(name)
@@ -97,20 +74,12 @@ function M.use_host(name)
     end
 end
 
-function M.validate_connection(config)
-    -- Default to current config if not provided
-    local host = config and config.host or Config.options.ssh_host
-    local python = config and config.python or Config.options.python_interpreter
-    if config and config.type == "ssh" then
-        -- Use provided config values
-        python = config.python
-    elseif config and config.type == "local" then
-        host = nil
-        python = config.python
-    end
-
-    if host then
+function M.validate_connection()
+    if Config.options.ssh_host then
         -- Check SSH connectivity
+        local host = Config.options.ssh_host
+        local python = Config.options.ssh_python
+        
         UI.append_to_repl("[Jovian] Validating connection to " .. host .. "...", "Special")
         
         local ssh_check = vim.fn.system({"ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, "exit"})
@@ -124,7 +93,7 @@ function M.validate_connection(config)
         end
     else
         -- Check local python
-        -- If checking current config, python is already set above.
+        local python = Config.options.python_interpreter
         local py_check = vim.fn.system({python, "--version"})
         if vim.v.shell_error ~= 0 then
             return false, "Local Python interpreter '" .. python .. "' not found."
@@ -626,7 +595,7 @@ function M.interrupt_kernel()
 
 		-- Change status to Error if running
 		for cell_id, buf in pairs(State.cell_buf_map) do
-			UI.set_cell_status(buf, cell_id, "error", "⛔ Interrupted")
+			UI.set_cell_status(buf, cell_id, "error", " Interrupted")
 		end
 		State.cell_buf_map = {} -- Clear
 	else
