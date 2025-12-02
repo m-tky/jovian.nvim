@@ -82,6 +82,7 @@ require("jovian").setup({
 - **`toggle_var`**: When set to `true`, the Variables Pane will automatically open and close alongside the REPL and Preview windows when you use `JovianToggle` or `JovianOpen`.
 - **`vars_pane_width_percent`**: Controls the width of the Variables Pane as a percentage of the total editor width.
 - **`ui_symbols`**: Customize the text/icons displayed for cell status.
+- **`python_interpreter`**: Defaults to `"python3"`. Since `jovian.nvim` inherits the shell environment from which Neovim was started, this default works seamlessly with **venv**, **nix**, **direnv**, and other environment managers.
 
 ## 🚀 Commands
 
