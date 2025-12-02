@@ -255,7 +255,9 @@ end, { nargs = "?" })
     vim.api.nvim_create_user_command("JovianToggleVars", UI.toggle_variables_pane, {})
 
 	-- Data & Tools
-	vim.api.nvim_create_user_command("JovianVars", Core.show_variables, {})
+	vim.api.nvim_create_user_command("JovianVars", function()
+        Core.show_variables({ force_float = true }) 
+    end, {})
 	vim.api.nvim_create_user_command("JovianView", Core.view_dataframe, { nargs = "?" })
 	vim.api.nvim_create_user_command("JovianCopy", Core.copy_variable, { nargs = "?" })
 	vim.api.nvim_create_user_command("JovianProfile", Core.run_profile_cell, {})

@@ -12,6 +12,8 @@ end
 local Hosts = require("jovian.hosts")
 
 
+local Handlers = require("jovian.handlers")
+
 local function on_stdout(chan_id, data, name)
 	if not data then
 		return
@@ -23,10 +25,6 @@ local function on_stdout(chan_id, data, name)
 	end
 
 	-- Concatenate data
-	-- data is a table (lines), so concatenate first
-	-- However, if the last element is not empty, it might mean "mid-line"
-	-- vim.fn.jobstart spec: last element is usually continuation or empty string after newline
-
 	local chunk = table.concat(data, "\n")
 	State.stdout_buffer = State.stdout_buffer .. chunk
 
@@ -34,8 +32,6 @@ local function on_stdout(chan_id, data, name)
 	local lines = vim.split(State.stdout_buffer, "\n")
 
 	-- The last element is likely an incomplete line, so put it back in buffer
-	-- If the last element is empty, the previous one ended with newline,
-	-- so buffer can be cleared.
 	State.stdout_buffer = table.remove(lines)
 
 	for _, line in ipairs(lines) do
@@ -43,119 +39,13 @@ local function on_stdout(chan_id, data, name)
 			local ok, msg = pcall(vim.fn.json_decode, line)
 			if ok and msg then
 				vim.schedule(function()
-					if msg.type == "stream" then
-						UI.append_stream_text(msg.text, msg.stream)
-					elseif msg.type == "image_saved" then
-						UI.append_to_repl("[Image Created]: " .. vim.fn.fnamemodify(msg.path, ":t"), "Special")
-					elseif msg.type == "result_ready" then
-						UI.append_to_repl("-> Done: " .. msg.cell_id, "Comment")
-						State.current_preview_file = nil
-                        
-                        -- Sync content to local cache if provided (SSH or Local)
-                        if msg.content_md then
-                            local cell_id = msg.cell_id
-                            local filename = vim.fn.expand("%:t")
-                            if filename == "" then filename = "scratchpad" end
-                            local file_dir = vim.fn.expand("%:p:h")
-                            local cache_dir = file_dir .. "/.jovian_cache/" .. filename
-                            
-                            -- Ensure cache dir exists
-                            vim.fn.mkdir(cache_dir, "p")
-                            
-                            -- Write Images
-                            if msg.images then
-                                for img_name, b64 in pairs(msg.images) do
-                                    local img_path = cache_dir .. "/" .. img_name
-                                    -- Decode base64 and write
-                                    -- Requires base64 CLI or pure lua. 
-                                    -- Since we are in Neovim, we can use vim.base64 (if available? No)
-                                    -- We can use python to decode? Or openssl?
-                                    -- Let's use a simple python one-liner to write it, since we know python is available (we are running it).
-                                    -- Actually, we can just write the bytes if we had them, but we have b64 string.
-                                    -- Let's use vim.fn.system with python to decode and write.
-                                    -- Or better, since we are in LuaJIT, maybe use `vim.base64`? No, it's not standard.
-                                    -- `vim.mpack`? No.
-                                    -- Let's use the `base64` command line tool if available, or python.
-                                    -- Python is safer since we depend on it.
-                                    local write_script = string.format(
-                                        "import base64, sys; open('%s', 'wb').write(base64.b64decode(sys.stdin.read()))",
-                                        img_path
-                                    )
-                                    vim.fn.system({Config.options.python_interpreter, "-c", write_script}, b64)
-                                end
-                            end
-
-                            -- Write MD
-                            local md_path = cache_dir .. "/" .. cell_id .. ".md"
-                            local f = io.open(md_path, "w")
-                            if f then
-                                f:write(msg.content_md)
-                                f:close()
-                                msg.file = md_path -- Update to local path
-                            end
-                        end
-
-						UI.open_markdown_preview(msg.file)
-                        UI.update_variables_pane()
-
-						local target_buf = State.cell_buf_map[msg.cell_id]
-						if target_buf and vim.api.nvim_buf_is_valid(target_buf) then
-							local start_t = State.cell_start_time[msg.cell_id]
-							if start_t and (os.time() - start_t) >= Config.options.notify_threshold then
-								UI.send_notification("Calculation " .. msg.cell_id .. " Finished!", "info")
-							end
-							vim.api.nvim_buf_clear_namespace(target_buf, State.diag_ns, 0, -1)
-
-							-- Fix: Check status field as well
-							if msg.error or msg.status == "error" then
-                                UI.send_notification("Error in cell " .. msg.cell_id, "error")
-								UI.set_cell_status(target_buf, msg.cell_id, "error", Config.options.ui_symbols.error)
-
-								-- Show diagnostics if error info exists
-								if msg.error then
-									local start_line = State.cell_start_line[msg.cell_id] or 1
-									local target_line = (start_line - 1) + (msg.error.line - 1)
-									vim.diagnostic.set(State.diag_ns, target_buf, {
-										{
-											lnum = target_line,
-											col = 0,
-											message = msg.error.msg,
-											severity = vim.diagnostic.severity.ERROR,
-											source = "Jovian",
-										},
-									})
-								end
-							else
-								UI.set_cell_status(target_buf, msg.cell_id, "done", Config.options.ui_symbols.done)
-							end
-						end
-						State.cell_buf_map[msg.cell_id] = nil
-						State.cell_start_time[msg.cell_id] = nil
-						State.cell_start_line[msg.cell_id] = nil
-					elseif msg.type == "variable_list" then
-						UI.show_variables(msg.variables)
-					elseif msg.type == "dataframe_data" then
-						UI.show_dataframe(msg)
-					elseif msg.type == "profile_stats" then
-						UI.show_profile_stats(msg.text)
-					elseif msg.type == "inspection_data" then
-						UI.show_inspection(msg.data)
-					elseif msg.type == "peek_data" then
-						UI.show_peek(msg.data or msg)
-					elseif msg.type == "clipboard_data" then
-						vim.fn.setreg("+", msg.content)
-						vim.notify("Copied to system clipboard!", vim.log.levels.INFO)
-					elseif msg.type == "input_request" then
-						UI.append_to_repl("[Input Requested]: " .. msg.prompt, "Special")
-						vim.ui.input({ prompt = msg.prompt }, function(input)
-							local value = input or ""
-							UI.append_to_repl(value)
-							if State.job_id then
-								local reply = vim.fn.json_encode({ command = "input_reply", value = value })
-								vim.fn.chansend(State.job_id, reply .. "\n")
-							end
-						end)
-					end
+                    local handler_name = "handle_" .. msg.type
+                    if Handlers[handler_name] then
+                        Handlers[handler_name](msg)
+                    else
+                        -- Fallback or ignore
+                        -- vim.notify("Unknown message type: " .. msg.type, vim.log.levels.WARN)
+                    end
 				end)
 			end
 		end
@@ -504,10 +394,15 @@ function M.view_dataframe(args)
 	vim.fn.chansend(State.job_id, msg .. "\n")
 end
 
-function M.show_variables()
+function M.show_variables(opts)
 	if not State.job_id then
 		return vim.notify("Kernel not started", vim.log.levels.WARN)
 	end
+    
+    if opts and opts.force_float then
+        State.vars_request_force_float = true
+    end
+
 	local msg = vim.fn.json_encode({ command = "get_variables" })
 	vim.fn.chansend(State.job_id, msg .. "\n")
 end
