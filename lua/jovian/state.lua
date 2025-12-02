@@ -25,6 +25,8 @@ M.current_preview_file = nil
 -- Mappings
 M.cell_buf_map = {} -- { cell_id: bufnr }
 M.cell_start_time = {} -- { cell_id: timestamp }
+M.cell_status_extmarks = {} -- { [cell_id] = extmark_id }
+M.cell_hashes = {} -- { [cell_id] = hash_string }
 M.cell_start_line = {} -- { cell_id: line_num }
 
 return M

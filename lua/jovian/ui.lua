@@ -311,17 +311,20 @@ function M.set_cell_status(bufnr, cell_id, status, msg)
 			if status == "running" then
 				hl_group = "WarningMsg"
 			elseif status == "done" then
-				hl_group = "String"
-			elseif status == "error" then
-				hl_group = "ErrorMsg"
+		hl_group = "String"
+    elseif status == "stale" then
+        hl_group = "Comment"
+	elseif status == "error" then
+		hl_group = "ErrorMsg"
 			end
 
             -- Defensive: Clear any existing status on this line first
 			vim.api.nvim_buf_clear_namespace(bufnr, State.status_ns, i - 1, i)
-			vim.api.nvim_buf_set_extmark(bufnr, State.status_ns, i - 1, 0, {
+			local extmark_id = vim.api.nvim_buf_set_extmark(bufnr, State.status_ns, i - 1, 0, {
 				virt_text = { { "  " .. msg, hl_group } },
 				virt_text_pos = "eol",
 			})
+            State.cell_status_extmarks[cell_id] = extmark_id
 			return
 		end
 	end
@@ -330,15 +333,20 @@ end
 function M.clean_invalid_extmarks(bufnr)
     if not (bufnr and vim.api.nvim_buf_is_valid(bufnr)) then return end
     
-    local extmarks = vim.api.nvim_buf_get_extmarks(bufnr, State.status_ns, 0, -1, { details = true })
-    for _, mark in ipairs(extmarks) do
-        local id = mark[1]
-        local row = mark[2]
-        -- Check if the line is still a valid cell header
-        local lines = vim.api.nvim_buf_get_lines(bufnr, row, row + 1, false)
-        if #lines == 0 or not lines[1]:match("^# %%%%") then
-            -- Invalid, remove it
-            vim.api.nvim_buf_del_extmark(bufnr, State.status_ns, id)
+    -- Iterate over tracked extmarks
+    for cell_id, extmark_id in pairs(State.cell_status_extmarks) do
+        local mark = vim.api.nvim_buf_get_extmark_by_id(bufnr, State.status_ns, extmark_id, {})
+        if #mark > 0 then
+            local row = mark[1]
+            local lines = vim.api.nvim_buf_get_lines(bufnr, row, row + 1, false)
+            -- Strict check: Line must exist AND contain the correct cell_id
+            if #lines == 0 or not lines[1]:find('id="' .. cell_id .. '"', 1, true) then
+                vim.api.nvim_buf_del_extmark(bufnr, State.status_ns, extmark_id)
+                State.cell_status_extmarks[cell_id] = nil
+            end
+        else
+            -- Extmark already gone (deleted by nvim?)
+            State.cell_status_extmarks[cell_id] = nil
         end
     end
 end
@@ -366,6 +374,7 @@ function M.get_cell_status_extmark(bufnr, line)
             local status = "unknown"
             if hl == "WarningMsg" then status = "running"
             elseif hl == "String" then status = "done"
+            elseif hl == "Comment" then status = "stale"
             elseif hl == "ErrorMsg" then status = "error"
             end
             -- Remove leading "  " from msg

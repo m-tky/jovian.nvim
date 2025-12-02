@@ -26,6 +26,7 @@ M.defaults = {
         done = " Done",
         error = "✘ Error",
         interrupted = " Interrupted",
+        stale = " Stale",
     },
 
     -- Magic Commands

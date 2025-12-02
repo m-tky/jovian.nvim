@@ -164,3 +164,17 @@ def purge_cache(valid_ids, filename, file_dir=None):
         if parts[0] not in valid_set:
                 try: os.remove(os.path.join(save_dir, f))
                 except: pass
+
+def remove_cache(ids_to_remove, filename, file_dir=None):
+    save_dir = utils.get_save_dir(filename, file_dir)
+    if not os.path.exists(save_dir): return
+    
+    remove_set = set(ids_to_remove)
+    for f in os.listdir(save_dir):
+        # Check if file belongs to one of the IDs
+        # Files: {id}.md, {id}_{counter}.png
+        # Heuristic: split by "." or "_" and check first part
+        parts = f.replace('.', '_').split('_')
+        if parts[0] in remove_set:
+            try: os.remove(os.path.join(save_dir, f))
+            except: pass

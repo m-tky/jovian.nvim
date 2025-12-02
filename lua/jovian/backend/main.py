@@ -34,6 +34,12 @@ def main():
                     cmd.get("filename", "scratchpad"),
                     cmd.get("file_dir"),
                 )
+            elif cmd.get("command") == "remove_cache":
+                handlers.remove_cache(
+                    cmd.get("ids", []),
+                    cmd.get("filename", "scratchpad"),
+                    cmd.get("file_dir"),
+                )
             elif cmd.get("command") == "get_variables":
                 handlers.get_variables(kernel.shell)
             elif cmd.get("command") == "view_dataframe":

@@ -231,8 +231,36 @@ function M.split_cell()
 	-- Add empty line before and after header for clarity
 	vim.api.nvim_buf_set_lines(0, cursor_row, cursor_row, false, { "", header })
     
-    -- Clear status on the new lines
+	-- Clear status on the new lines
     UI.clear_status_extmarks(0, cursor_row + 1, cursor_row + 2)
+end
+
+function M.get_cell_hash(text)
+    -- Normalize text: remove empty lines and whitespace-only lines
+    local normalized = text:gsub("\n%s*\n", "\n"):gsub("^%s*\n", ""):gsub("\n%s*$", "")
+    -- Also remove leading/trailing whitespace from each line? 
+    -- User said "empty lines", implying lines that are just newline or whitespace.
+    -- Let's iterate lines and filter.
+    local lines = vim.split(text, "\n")
+    local clean_lines = {}
+    for _, line in ipairs(lines) do
+        -- Remove inline comments (from # to end of line)
+        line = line:gsub("#.*$", "")
+        -- Remove all whitespace (spaces, tabs, newlines)
+        line = line:gsub("%s+", "")
+        
+        if #line > 0 then
+            table.insert(clean_lines, line)
+        end
+    end
+    local clean_text = table.concat(clean_lines, "") -- No newlines needed since we stripped everything
+
+    local hash = 5381
+    for i = 1, #clean_text do
+        local c = string.byte(clean_text, i)
+        hash = ((hash * 33) + c) % 4294967296 -- Modulo 2^32
+    end
+    return string.format("%x", hash)
 end
 
 return M

@@ -317,6 +317,13 @@ end, { nargs = "?" })
 		require("jovian.core").run_line()
 	end, {})
 
+    vim.api.nvim_create_user_command("JovianClearCache", function()
+        require("jovian.core").clear_current_cell_cache()
+    end, {})
+    vim.api.nvim_create_user_command("JovianClearAllCache", function()
+        require("jovian.core").clear_all_cache()
+    end, {})
+
 	-- Keymaps (Optional, user can define their own)
 	if Config.options.keymaps then
 		-- Example keymaps (user can define their own in config)
@@ -359,11 +366,11 @@ end, { nargs = "?" })
 		end,
 	})
 
-    -- Add: Clean stale cache on save
-    vim.api.nvim_create_autocmd("BufWritePost", {
+    -- Add: Clean stale cache on save, close, and exit
+    vim.api.nvim_create_autocmd({ "BufWritePost", "VimLeavePre", "BufUnload" }, {
         pattern = "*.py",
-        callback = function()
-            Core.clean_stale_cache()
+        callback = function(ev)
+            Core.clean_stale_cache(ev.buf)
         end,
     })
 

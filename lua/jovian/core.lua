@@ -162,15 +162,20 @@ local function on_stdout(chan_id, data, name)
 	end
 end
 
-function M.clean_stale_cache()
+function M.clean_stale_cache(bufnr)
 	if not State.job_id then
 		return
 	end
-	local filename = vim.fn.expand("%:t")
+    
+    bufnr = bufnr or 0
+    if not vim.api.nvim_buf_is_valid(bufnr) then return end
+
+	local filename = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(bufnr), ":t")
 	if filename == "" then
 		return
 	end
-	local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+    
+	local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 	local valid_ids = {}
 	for _, line in ipairs(lines) do
 		local id = line:match('id="([%w%-_]+)"')
@@ -178,7 +183,8 @@ function M.clean_stale_cache()
 			table.insert(valid_ids, id)
 		end
 	end
-    local file_dir = vim.fn.expand("%:p:h")
+    
+    local file_dir = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(bufnr), ":p:h")
 	local msg = vim.fn.json_encode({
 		command = "clean_cache",
 		filename = filename,
@@ -186,6 +192,37 @@ function M.clean_stale_cache()
 		valid_ids = valid_ids,
 	})
 	vim.fn.chansend(State.job_id, msg .. "\n")
+end
+
+
+
+function M.clear_cache(ids)
+    if not State.job_id then return end
+    local filename = vim.fn.expand("%:t")
+    if filename == "" then return end
+    local file_dir = vim.fn.expand("%:p:h")
+    
+    local msg = vim.fn.json_encode({
+        command = "remove_cache",
+        filename = filename,
+        file_dir = file_dir,
+        ids = ids
+    })
+    vim.fn.chansend(State.job_id, msg .. "\n")
+end
+
+function M.clear_current_cell_cache()
+    local id = Utils.get_current_cell_id()
+    M.clear_cache({id})
+    UI.set_cell_status(0, id, nil, nil) -- Clear status
+    vim.notify("Cleared cache for cell " .. id, vim.log.levels.INFO)
+end
+
+function M.clear_all_cache()
+    local ids = vim.tbl_keys(Utils.get_all_ids(0))
+    M.clear_cache(ids)
+    UI.clear_status_extmarks(0)
+    vim.notify("Cleared all cache", vim.log.levels.INFO)
 end
 
 function M.start_kernel()
@@ -267,6 +304,7 @@ function M.send_payload(code, cell_id, filename)
 
 	State.cell_buf_map[cell_id] = current_buf
 	State.cell_start_time[cell_id] = os.time()
+    State.cell_hashes[cell_id] = Utils.get_cell_hash(code)
 
 	local lines = vim.api.nvim_buf_get_lines(current_buf, 0, -1, false)
 	for i, line in ipairs(lines) do
@@ -595,6 +633,89 @@ end
 function M.check_structure_change()
     local bufnr = vim.api.nvim_get_current_buf()
     UI.clean_invalid_extmarks(bufnr)
+    
+    -- Check for stale cells
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    local current_cell_id = nil
+    local current_cell_line = nil
+    local current_cell_lines = {}
+    
+    for i, line in ipairs(lines) do
+        local id = line:match('id="([%w%-_]+)"')
+        if id then
+            -- Process previous cell
+            if current_cell_id and #current_cell_lines > 0 then
+                local code = table.concat(current_cell_lines, "\n")
+                local current_hash = Utils.get_cell_hash(code)
+                local stored_hash = State.cell_hashes[current_cell_id]
+                
+                -- DEBUG:
+                -- vim.notify("Checking " .. current_cell_id .. ": " .. tostring(stored_hash) .. " vs " .. tostring(current_hash), vim.log.levels.INFO)
+                
+                if stored_hash and stored_hash ~= current_hash then
+                    -- Mark as stale if currently "done"
+                    -- Use current_cell_line (1-based from ipairs, but extmarks need 0-based or 1-based depending on API)
+                    -- get_cell_status_extmark expects 1-based line number (it converts internally or uses it for lookup)
+                    -- Let's check UI.get_cell_status_extmark implementation.
+                    -- It calls get_extmarks with limit. It doesn't take line number?
+                    -- Wait, UI.get_cell_status_extmark(bufnr, line)
+                    -- In ui.lua: function M.get_cell_status_extmark(bufnr, lnum)
+                    local mark = UI.get_cell_status_extmark(bufnr, current_cell_line)
+                    if mark and (mark.status == "done" or mark.status == "error") then
+                         UI.set_cell_status(bufnr, current_cell_id, "stale", "? Stale")
+                    end
+                elseif stored_hash and stored_hash == current_hash then
+                     -- Revert to done if it was stale?
+                     -- If it was error, we don't know if we should revert to error?
+                     -- Actually, if hash matches stored hash, it means we are back to the state that produced the result.
+                     -- If that result was "error", we should revert to "error".
+                     -- But we don't store the *previous* status (done vs error) in State.
+                     -- We only store the hash.
+                     -- However, the extmark might still be "stale".
+                     -- If we revert, we should probably set it to "done" as a safe default, OR we need to store the result status.
+                     -- For now, let's just revert to "done" as it's the most common success case.
+                     -- Or better: If we don't know, maybe we shouldn't change it back?
+                     -- But the user expects "undo" to restore status.
+                     
+                     -- Let's stick to "done" for now, or improve State to store `cell_status_type`.
+                     local mark = UI.get_cell_status_extmark(bufnr, current_cell_line)
+                     if mark and mark.status == "stale" then
+                         UI.set_cell_status(bufnr, current_cell_id, "done", Config.options.ui_symbols.done)
+                     end
+                end
+            end
+            
+            current_cell_id = id
+            current_cell_line = i -- Record the line number of the header
+            current_cell_lines = {}
+        elseif current_cell_id then
+             if not line:match("^# %%%%") then
+                 table.insert(current_cell_lines, line)
+             end
+        end
+    end
+    
+    -- Process last cell
+    if current_cell_id and #current_cell_lines > 0 then
+        local code = table.concat(current_cell_lines, "\n")
+        local current_hash = Utils.get_cell_hash(code)
+        local stored_hash = State.cell_hashes[current_cell_id]
+        
+        -- DEBUG:
+        -- vim.notify("Checking " .. current_cell_id .. ": " .. tostring(stored_hash) .. " vs " .. tostring(current_hash), vim.log.levels.INFO)
+        
+        if stored_hash and stored_hash ~= current_hash then
+            local mark = UI.get_cell_status_extmark(bufnr, current_cell_line)
+            if mark and (mark.status == "done" or mark.status == "error") then
+                 UI.set_cell_status(bufnr, current_cell_id, "stale", "? Stale")
+            end
+        elseif stored_hash and stored_hash == current_hash then
+             local mark = UI.get_cell_status_extmark(bufnr, current_cell_line)
+             if mark and mark.status == "stale" then
+                 UI.set_cell_status(bufnr, current_cell_id, "done", Config.options.ui_symbols.done)
+             end
+        end
+    end
 end
 
 local structure_timer = nil
