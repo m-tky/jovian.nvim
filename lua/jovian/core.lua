@@ -170,6 +170,10 @@ function M.start_kernel()
 	UI.append_to_repl("[Jovian Kernel Started]")
 	vim.defer_fn(function()
 		M.clean_stale_cache()
+        -- Refresh variables pane if open
+        if State.win.variables and vim.api.nvim_win_is_valid(State.win.variables) then
+            M.show_variables()
+        end
 	end, 500)
 end
 

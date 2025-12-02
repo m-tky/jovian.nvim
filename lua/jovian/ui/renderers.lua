@@ -43,7 +43,11 @@ function M.render_variables_pane(vars)
     table.insert(fmt_lines, sep_line)
 
     if #vars == 0 then
-        table.insert(fmt_lines, "(No variables defined)")
+        if not State.job_id then
+            table.insert(fmt_lines, "(Kernel not started)")
+        else
+            table.insert(fmt_lines, "(No variables defined)")
+        end
     else
         for _, v in ipairs(vars) do
             local line = pad_str(v.name, max_name_w) .. SEPARATOR ..
@@ -136,11 +140,12 @@ function M.show_variables(vars, force_float)
 	-- Create data lines
 	if #vars == 0 then
 		-- Empty state: Show message in the VALUE/INFO column
+        local msg = State.job_id and "(No variables defined)" or "(Kernel not started)"
 		local line = pad_str("", max_name_w)
 			.. SEPARATOR
 			.. pad_str("", max_type_w)
 			.. SEPARATOR
-			.. " (No variables defined)"
+			.. " " .. msg
 		table.insert(fmt_lines, line)
 	else
 		for _, v in ipairs(vars) do
