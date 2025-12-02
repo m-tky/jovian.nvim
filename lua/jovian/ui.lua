@@ -31,6 +31,7 @@ function M.get_or_create_buf(name)
 	local buf = vim.api.nvim_create_buf(false, true)
 	vim.api.nvim_buf_set_name(buf, name)
 	vim.api.nvim_buf_set_option(buf, "buftype", "nofile")
+    vim.api.nvim_buf_set_option(buf, "modifiable", false)
 
 	-- Open as terminal mode here and save channel ID
 	State.term_chan = vim.api.nvim_open_term(buf, {})
@@ -266,38 +267,35 @@ function M.open_markdown_preview(filepath)
 	local old_buf = vim.api.nvim_win_get_buf(State.win.preview)
 
 	local abs_filepath = vim.fn.fnamemodify(filepath, ":p")
-	local file_dir = vim.fn.fnamemodify(abs_filepath, ":h")
 	State.current_preview_file = abs_filepath
-	local cur_win = vim.api.nvim_get_current_win()
-	vim.api.nvim_set_current_win(State.win.preview)
-	vim.cmd("lcd " .. file_dir)
-	vim.cmd("edit! " .. abs_filepath)
+    
+    -- Use bufadd to create/get buffer without switching windows
+    local buf = vim.fn.bufadd(abs_filepath)
+    if buf == 0 then return end -- Failed
+    
+    -- Load the buffer if not loaded
+    if not vim.api.nvim_buf_is_loaded(buf) then
+        vim.fn.bufload(buf)
+    end
+    
+    -- Set buffer to preview window
+    vim.api.nvim_win_set_buf(State.win.preview, buf)
 	
 	-- Set read-only and non-modifiable
-	vim.bo.filetype = "markdown"
-	vim.bo.buftype = "nofile" -- Changed from "" to "nofile" to prevent "E37: No write since last change" if we modify it (though we set it nomodifiable) and to keep it out of swap
-    -- Actually, if it's a real file we want to read it. "nofile" means it's not associated with a file.
-    -- But we ARE reading a file.
-    -- Let's keep buftype="" (normal) but set readonly/nomodifiable.
-    vim.bo.buftype = "" 
-	vim.bo.modifiable = false
-	vim.bo.readonly = true
+	vim.api.nvim_buf_set_option(buf, "filetype", "markdown")
+    -- Keep buftype empty (normal file) but set readonly
+    vim.api.nvim_buf_set_option(buf, "buftype", "")
+    vim.api.nvim_buf_set_option(buf, "modifiable", false)
+    vim.api.nvim_buf_set_option(buf, "readonly", true)
 	
-	vim.wo.wrap = true
+	vim.wo[State.win.preview].wrap = true
 
     -- Cleanup old buffer if it's different and valid
-    local new_buf = vim.api.nvim_get_current_buf()
-    if old_buf and old_buf ~= new_buf and vim.api.nvim_buf_is_valid(old_buf) then
+    if old_buf and old_buf ~= buf and vim.api.nvim_buf_is_valid(old_buf) then
         -- Check if it was a jovian preview buffer (optional, but safer)
         -- For now, we assume anything in the preview window was a preview buffer.
         vim.api.nvim_buf_delete(old_buf, { force = true })
     end
-
-	vim.schedule(function()
-		if vim.api.nvim_win_is_valid(cur_win) then
-			vim.api.nvim_set_current_win(cur_win)
-		end
-	end)
 end
 
 function M.set_cell_status(bufnr, cell_id, status, msg)
@@ -431,7 +429,11 @@ function M.render_variables_pane(vars)
         end
     end
 
+    vim.api.nvim_buf_set_option(buf, "readonly", false)
+    vim.api.nvim_buf_set_option(buf, "modifiable", true)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, fmt_lines)
+    vim.api.nvim_buf_set_option(buf, "modifiable", false)
+    vim.api.nvim_buf_set_option(buf, "readonly", true)
     
     -- Simple highlighting
     vim.api.nvim_buf_add_highlight(buf, -1, "Title", 0, 0, -1)
@@ -554,7 +556,7 @@ function M.show_variables(vars)
 		col = col,
 		style = "minimal",
 		border = Config.options.float_border,
-		title = " Variables ",
+		title = " Jovian Variables ",
 		title_pos = "center",
 	})
 
@@ -836,6 +838,8 @@ function M.toggle_variables_pane()
         vim.api.nvim_buf_set_name(State.buf.variables, "JovianVariables")
         vim.api.nvim_buf_set_option(State.buf.variables, "buftype", "nofile")
         vim.api.nvim_buf_set_option(State.buf.variables, "filetype", "jovian_vars")
+        vim.api.nvim_buf_set_option(State.buf.variables, "modifiable", false)
+        vim.api.nvim_buf_set_option(State.buf.variables, "readonly", true)
     end
 
     -- Create Window
