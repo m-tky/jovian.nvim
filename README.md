@@ -193,7 +193,9 @@ require("jovian").setup({
 - **`:JovianCopy [var]`**: Copy a variable's value to the clipboard.
 - **`:JovianDoc [obj]`**: Inspect an object (docstring, definition).
 - **`:JovianPeek [obj]`**: Peek at an object's value/info.
+- **`:JovianProfile`**: Run the current cell with profiling enabled.
 - **`:JovianCleanCache`**: Manually clean up orphaned cache directories.
+- **`:JovianClearDiag`**: Clear diagnostics from the current buffer.
 
 ## 🖥️ UI Layout
 

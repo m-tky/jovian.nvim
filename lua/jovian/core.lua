@@ -47,6 +47,11 @@ local function on_stdout(chan_id, data, name)
                         -- vim.notify("Unknown message type: " .. msg.type, vim.log.levels.WARN)
                     end
 				end)
+			else
+				-- Failed to decode JSON, likely an error message or debug output
+				vim.schedule(function()
+					vim.notify("Jovian Backend: " .. line, vim.log.levels.WARN)
+				end)
 			end
 		end
 	end
@@ -75,11 +80,13 @@ function M.clean_stale_cache(bufnr)
 	end
     
     local file_dir = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(bufnr), ":p:h")
+    local cache_dir = file_dir .. "/.jovian_cache/" .. filename
+    
 	local msg = vim.fn.json_encode({
-		command = "clean_cache",
+		command = "purge_cache",
 		filename = filename,
-        file_dir = file_dir,
-		valid_ids = valid_ids,
+        file_dir = cache_dir,
+		ids = valid_ids,
 	})
 	vim.fn.chansend(State.job_id, msg .. "\n")
 end
@@ -91,11 +98,12 @@ function M.clear_cache(ids)
     local filename = vim.fn.expand("%:t")
     if filename == "" then return end
     local file_dir = vim.fn.expand("%:p:h")
+    local cache_dir = file_dir .. "/.jovian_cache/" .. filename
     
     local msg = vim.fn.json_encode({
         command = "remove_cache",
         filename = filename,
-        file_dir = file_dir,
+        file_dir = cache_dir,
         ids = ids
     })
     vim.fn.chansend(State.job_id, msg .. "\n")
@@ -131,7 +139,7 @@ function M.start_kernel()
         return
     end
 
-	local script_path = vim.fn.fnamemodify(debug.getinfo(1).source:sub(2), ":h:h:h") .. "/lua/jovian/backend/main.py"
+	local script_path = vim.fn.fnamemodify(debug.getinfo(1).source:sub(2), ":h:h:h") .. "/lua/jovian/backend/kernel_bridge.py"
 	local backend_dir = vim.fn.fnamemodify(debug.getinfo(1).source:sub(2), ":h:h:h") .. "/lua/jovian/backend"
 	local cmd = {}
 
@@ -222,13 +230,22 @@ function M.send_payload(code, cell_id, filename)
 	UI.append_to_repl(indented)
 	UI.append_to_repl({ "" })
 
-	local msg = vim.fn.json_encode({
+	local filename = vim.fn.expand("%:t")
+	if filename == "" then
+		filename = "scratchpad"
+	end
+	local file_dir = vim.fn.expand("%:p:h")
+	local cache_dir = file_dir .. "/.jovian_cache/" .. filename
+	vim.fn.mkdir(cache_dir, "p")
+
+	local payload = {
 		command = "execute",
 		code = code,
 		cell_id = cell_id,
-		filename = filename,
-        file_dir = vim.fn.expand("%:p:h"),
-	})
+		file_dir = cache_dir,
+		cwd = file_dir,
+	}
+	local msg = vim.fn.json_encode(payload)
 	vim.fn.chansend(State.job_id, msg .. "\n")
 end
 
@@ -479,27 +496,7 @@ function M.load_session(args)
 	vim.fn.chansend(State.job_id, msg .. "\n")
 end
 
--- Add: TUI Plot
-function M.plot_tui(args)
-	if not State.job_id then
-		return
-	end
-	local var_name = args.args
-	if var_name == "" then
-		var_name = vim.fn.expand("<cword>")
-	end
 
-	if State.win.output and vim.api.nvim_win_is_valid(State.win.output) then
-		-- Subtract line number width etc. (approx 5 chars) from window width
-		width = vim.api.nvim_win_get_width(State.win.output) - 5
-		if width < 20 then
-			width = 20
-		end -- Minimum width guarantee
-	end
-
-	local msg = vim.fn.json_encode({ command = "plot_tui", name = var_name, width = width })
-	vim.fn.chansend(State.job_id, msg .. "\n")
-end
 
 -- Add command functions
 function M.inspect_object(args)

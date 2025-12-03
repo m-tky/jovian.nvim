@@ -66,7 +66,8 @@ function M.handle_result_ready(msg)
             -- Show diagnostics if error info exists
             if msg.error then
                 local start_line = State.cell_start_line[msg.cell_id] or 1
-                local target_line = (start_line - 1) + (msg.error.line - 1)
+                local err_line = msg.error.line or 1
+                local target_line = (start_line - 1) + (err_line - 1)
                 vim.diagnostic.set(State.diag_ns, target_buf, {
                     {
                         lnum = target_line,
