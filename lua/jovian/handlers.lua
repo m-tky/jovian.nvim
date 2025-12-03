@@ -11,6 +11,8 @@ function M.handle_image_saved(msg)
     UI.append_to_repl("[Image Created]: " .. vim.fn.fnamemodify(msg.path, ":t"), "Special")
 end
 
+
+
 function M.handle_execution_started(msg)
     UI.append_to_repl({ "In [" .. msg.cell_id .. "]:" }, "Type")
     local code_lines = vim.split(msg.code, "\n")
@@ -22,10 +24,73 @@ function M.handle_execution_started(msg)
     UI.append_to_repl({ "" })
 end
 
-function M.handle_result_ready(msg)
-    UI.append_to_repl("-> Done: " .. msg.cell_id, "Comment")
-    State.current_preview_file = nil
+function M.sync_remote_file(remote_path)
+    if not Config.options.ssh_host then return end
     
+    local host = Config.options.ssh_host
+    local local_path = remote_path -- We assume paths match because we sent the local path as file_dir
+    
+    -- Ensure local directory exists
+    local dir = vim.fn.fnamemodify(local_path, ":h")
+    vim.fn.mkdir(dir, "p")
+    
+    local cmd = string.format("scp %s:%s %s", host, remote_path, local_path)
+    vim.fn.system(cmd)
+end
+
+function M.handle_result_ready(msg)
+    State.current_preview_file = nil
+
+    if Config.options.ssh_host then
+        M.sync_remote_file(msg.file)
+        if msg.images then
+            for _, img_data in pairs(msg.images) do
+                -- Images are sent as base64 in msg.images, but also saved to file on remote.
+                -- msg.images keys are filenames (relative or absolute?)
+                -- In kernel_bridge, keys are filenames (e.g. "cellid_00.png").
+                -- But wait, kernel_bridge sends: images[img_filename] = item["data"]
+                -- img_filename is just filename.
+                -- We need full path to sync.
+                -- But we also have the data in base64! We can just write it locally!
+                -- We don't need to scp images if we have the data.
+                -- BUT, handle_result_ready doesn't currently write images from base64.
+                -- It relies on the file existing?
+                -- Let's check kernel_bridge.py again.
+                -- It sends "images": { filename: base64, ... }
+                -- And "file": md_path.
+                -- The MD file references images by filename (relative).
+                -- So if we sync the MD file, we also need the images.
+                -- If we have base64, we can write them locally.
+            end
+        end
+    end
+
+    -- If we have image data in msg, write it locally to avoid SCP for images
+    if msg.images then
+        local dir = vim.fn.fnamemodify(msg.file, ":h")
+        for filename, b64 in pairs(msg.images) do
+            local path = dir .. "/" .. filename
+            -- Only write if not exists or if we are syncing
+            local f = io.open(path, "wb")
+            if f then
+                -- Decode base64? No, Lua doesn't have built-in base64 decode easily accessible?
+                -- Vim has vim.base64? No.
+                -- But we can use python or openssl?
+                -- Or just SCP them. SCP is easier if we trust the path.
+                -- Let's use SCP for images too for consistency, OR rely on the fact that we might not have base64 decoder.
+                -- Wait, kernel_bridge sends base64.
+                -- Let's just SCP everything in the directory? No, that's wasteful.
+                -- Let's SCP the specific image files.
+                f:close()
+            end
+            -- Fallback to SCP for images
+            if Config.options.ssh_host then
+                 local remote_img_path = vim.fn.fnamemodify(msg.file, ":h") .. "/" .. filename
+                 M.sync_remote_file(remote_img_path)
+            end
+        end
+    end
+
     -- Sync content to local cache if provided (SSH or Local)
     if msg.content_md then
         local cell_id = msg.cell_id
@@ -99,9 +164,9 @@ function M.handle_result_ready(msg)
 end
 
 function M.handle_variable_list(msg)
-    local force_float = State.vars_request_force_float
-    State.vars_request_force_float = false
-    UI.show_variables(msg.variables, force_float)
+    -- vim.notify("Received variables: " .. #msg.variables, vim.log.levels.INFO)
+    UI.show_variables(msg.variables, require("jovian.state").vars_request_force_float)
+    require("jovian.state").vars_request_force_float = false
 end
 
 function M.handle_dataframe_data(msg)

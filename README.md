@@ -14,14 +14,17 @@
 - **Cell Management**: Move, delete, split, and merge cells easily.
 - **Virtual Text Status**: Visual indicators for cell status (`Running`, `Done`, `Error`).
 - **Kernel Selection**: Switch between local and remote (SSH) Python kernels dynamically.
+- **Remote Execution**: Seamlessly execute code on remote servers via SSH, with local result preview and variable monitoring.
+- **Interleaved Output**: REPL output is interleaved with code execution for a natural flow.
 - **Magic Command Support**: Syntax highlighting and error suppression for IPython magic commands (`%timeit`, `!ls`, etc.).
 
 ## 📦 Dependencies
 
 ### Required
-- **Python Environment**: You only need `ipython` installed.
+### Required
+- **Python Environment**: You need `ipykernel` and `jupyter_client` installed (both locally and on remote hosts).
   ```bash
-  pip install ipython
+  pip install ipykernel jupyter_client
   ```
 
 ### Recommended
@@ -221,3 +224,4 @@ This plugin is heavily inspired by **[vim-jukit](https://github.com/luk400/vim-j
 - **Output Capture**: The technique of monkey-patching `sys.stdout` and `sys.stderr` to capture and redirect execution output back to Neovim.
 - **UI Layout**: The effective split-window arrangement for code, REPL, and plot previews.
 - **Caching Structure**: The fundamental approach to managing execution artifacts and persistent caching (which now includes remote host integration).
+- **Remote Execution**: The concept of bridging local Neovim with a remote Python kernel via SSH.

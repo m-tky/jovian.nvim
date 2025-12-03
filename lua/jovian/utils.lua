@@ -92,13 +92,13 @@ end
 function M.ensure_cell_id(line_num, line_content)
 	local id = line_content:match('id="([%w%-_]+)"')
 	if id then
-		-- Check if this ID is actually unique in the buffer?
-		-- Performing a full scan here might be expensive but ensures correctness.
-		-- For now, we assume existing IDs are unique unless we are generating a NEW one.
-		-- If we want to be strictly safe, we should check duplicates here too,
-		-- but fix_duplicate_ids should be called on load.
 		return id
 	end
+
+    -- Skip markdown cells
+    if line_content:lower():match("%[markdown%]") then
+        return nil
+    end
 
 	local all_ids = M.get_all_ids(0)
 	id = M.generate_id(all_ids)

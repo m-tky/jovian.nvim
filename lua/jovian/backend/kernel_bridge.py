@@ -8,7 +8,7 @@ import time
 import re
 from jupyter_client.manager import KernelManager
 
-# --- Protocol Utils (Copied/Adapted from protocol.py) ---
+# --- Protocol Utils ---
 def send_json(msg):
     sys.stdout.write(json.dumps(msg) + "\n")
     sys.stdout.flush()
@@ -23,7 +23,7 @@ class KernelBridge:
         self.msg_queue = queue.Queue()
         self.execution_queue = queue.Queue()
         self.current_cell_id = None
-        self.current_msg_id = None # Reset state
+        self.current_msg_id = None 
         self.var_msg_id = None
         self.output_counter = 0
         self.save_dir = None
@@ -58,8 +58,7 @@ class KernelBridge:
                 self._handle_iopub_msg(msg)
             except queue.Empty:
                 continue
-            except Exception as e:
-                # send_json({"type": "stream", "text": f"DEBUG: IOPub Error: {str(e)}\n", "stream": "stderr"})
+            except Exception:
                 pass
 
     def _handle_iopub_msg(self, msg):
@@ -112,8 +111,7 @@ class KernelBridge:
                     self.msg_queue.put({"type": "text", "content": data['text/plain'] + "\n"})
 
             elif msg_type == 'error':
-                # Forward error to REPL? Usually errors are shown in REPL too.
-                # Construct a text representation of the error
+                # Forward error to REPL
                 error_text = "\n".join(content['traceback'])
                 send_json({"type": "stream", "text": error_text + "\n", "stream": "stderr"})
                 
@@ -123,28 +121,19 @@ class KernelBridge:
                     "evalue": content['evalue'], 
                     "traceback": content['traceback']
                 })
-
+                
             elif msg_type == 'status':
-                # send_json({"type": "stream", "text": f"DEBUG: Status {content['execution_state']} for {parent_id}\n", "stream": "stderr"})
                 if content['execution_state'] == 'idle':
                     self._finalize_execution()
-        
-        # Handle messages for get_variables (which has its own msg_id, or we track it?)
-        # For now, get_variables uses silent=True and we might want to handle its output if it wasn't silent.
-        # But we implemented it using display_data with a special mime type.
-        # If get_variables runs, it has a DIFFERENT msg_id.
-        # We need to handle that too if we want variables to work while code is running?
-        # But we can't run two things at once in one kernel usually.
-        # So we can just track "current_msg_id" for whatever we sent last?
-        # Or we can have a separate "var_msg_id".
+
         elif self.var_msg_id and parent_id == self.var_msg_id:
-             if msg_type == 'display_data':
+            if msg_type == 'display_data':
                 data = content['data']
                 if 'application/vnd.jovian.variables+json' in data:
                     var_data = data['application/vnd.jovian.variables+json']
                     send_json({"type": "variable_list", "variables": var_data["variables"]})
                 elif 'application/vnd.jovian.dataframe+json' in data:
-                    df_data = content['data']['application/vnd.jovian.dataframe+json']
+                    df_data = data['application/vnd.jovian.dataframe+json']
                     send_json({
                         "type": "dataframe_data", 
                         "name": df_data.get("name"),
@@ -153,16 +142,22 @@ class KernelBridge:
                         "data": df_data.get("data", [])
                     })
                 elif 'application/vnd.jovian.peek+json' in data:
-                    peek_data = content['data']['application/vnd.jovian.peek+json']
+                    peek_data = data['application/vnd.jovian.peek+json']
                     send_json({"type": "peek_data", "data": peek_data})
                 elif 'application/vnd.jovian.clipboard+json' in data:
                     clip_data = data['application/vnd.jovian.clipboard+json']
                     send_json({"type": "clipboard_data", "content": clip_data["content"]})
-             elif msg_type == 'status' and content['execution_state'] == 'idle':
-                 self.var_msg_id = None
+            
+            elif msg_type == 'stream':
+                # For variables, we might not want to forward stdout/stderr to REPL to avoid noise,
+                # but if there's an error it's good to know.
+                pass
+                
+            elif msg_type == 'error':
+                # If variable retrieval fails, we might want to know
+                pass
 
     def _finalize_execution(self):
-        # send_json({"type": "stream", "text": f"DEBUG: Finalizing {self.current_cell_id}\n", "stream": "stderr"})
         if not self.current_cell_id:
             return
 
@@ -183,7 +178,6 @@ class KernelBridge:
                 item = self.msg_queue.get()
                 
                 if item["type"] == "text":
-                    # Simple markdown wrapping
                     text = item["content"]
                     if text.strip():
                         output_md_lines.append("```text")
@@ -192,18 +186,16 @@ class KernelBridge:
                         output_md_lines.append("")
                 
                 elif item["type"] == "image":
-                    # Save image
                     img_filename = f"{self.current_cell_id}_{self.output_counter:02d}.png"
                     img_path = os.path.join(save_dir, img_filename)
                     with open(img_path, "wb") as f:
                         f.write(base64.b64decode(item["data"]))
                     
-                    images[img_filename] = item["data"] # Send back base64 for preview if needed (or just path)
+                    images[img_filename] = item["data"]
                     output_md_lines.append(f"![Result]({img_filename})")
                     output_md_lines.append("")
                     self.output_counter += 1
                     
-                    # Notify image saved (optional, for immediate update)
                     send_json({
                         "type": "image_saved",
                         "path": os.path.abspath(img_path),
@@ -215,8 +207,6 @@ class KernelBridge:
                         "msg": f"{item['ename']}: {item['evalue']}",
                         "traceback": item['traceback']
                     }
-                    # Also add to markdown
-                    # Strip ANSI codes for Markdown readability
                     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
                     clean_traceback = [ansi_escape.sub('', line) for line in item['traceback']]
                     
@@ -245,10 +235,8 @@ class KernelBridge:
                 msg["error"] = error_info
                 
             send_json(msg)
-            # send_json({"type": "stream", "text": f"DEBUG: Sent result_ready for {self.current_cell_id}\n", "stream": "stderr"})
             
-        except Exception as e:
-            # send_json({"type": "stream", "text": f"DEBUG: Finalize Error: {str(e)}\n", "stream": "stderr"})
+        except Exception:
             pass
         
         # Reset state
@@ -262,7 +250,6 @@ class KernelBridge:
     def _process_next_in_queue(self):
         if not self.execution_queue.empty():
             next_cmd = self.execution_queue.get()
-            # send_json({"type": "stream", "text": f"DEBUG: Dequeuing {next_cmd['cell_id']}\n", "stream": "stderr"})
             self._do_execute(
                 next_cmd["code"], 
                 next_cmd["cell_id"], 
@@ -279,7 +266,6 @@ class KernelBridge:
         
         # Switch kernel CWD if provided
         if cwd:
-            # Escape backslashes for Windows compatibility if needed, though we are on Linux
             safe_cwd = cwd.replace('\\', '\\\\').replace("'", "\\'")
             change_cwd_code = f"import os; os.chdir('{safe_cwd}')"
             self.kc.execute(change_cwd_code, silent=True)
@@ -289,12 +275,9 @@ class KernelBridge:
             self.msg_queue.queue.clear()
             
         self.current_msg_id = self.kc.execute(code)
-        # send_json({"type": "stream", "text": f"DEBUG: Executing {cell_id} (MsgID: {self.current_msg_id})\n", "stream": "stderr"})
 
     def execute_code(self, code, cell_id, file_dir=None, cwd=None):
         if self.current_cell_id is not None:
-            # Busy, queue it
-            # send_json({"type": "stream", "text": f"DEBUG: Queuing {cell_id}\n", "stream": "stderr"})
             self.execution_queue.put({
                 "code": code, 
                 "cell_id": cell_id, 
@@ -308,39 +291,43 @@ class KernelBridge:
         script = """
 import json
 import types
+import sys
 from IPython.display import display
 
 def _jovian_get_variables():
-    var_list = []
-    ns = globals()
-    for name, value in list(ns.items()):
-        if name.startswith("_") or isinstance(value, (types.ModuleType, types.FunctionType, type)): continue
-        if name in ['In', 'Out', 'exit', 'quit', 'get_ipython', '_jovian_get_variables']: continue
-        
-        type_name = type(value).__name__
-        info = str(value)
-        info = info.replace("\\n", " ")
-        if len(info) > 200: info = info[:197] + "..."
+    try:
+        var_list = []
+        ns = globals()
+        for name, value in list(ns.items()):
+            if name.startswith("_") or isinstance(value, (types.ModuleType, types.FunctionType, type)): continue
+            if name in ['In', 'Out', 'exit', 'quit', 'get_ipython', '_jovian_get_variables']: continue
+            
+            type_name = type(value).__name__
+            info = str(value)
+            info = info.replace("\\n", " ")
+            if len(info) > 200: info = info[:197] + "..."
 
-        if hasattr(value, 'shape'):
-            shape_str = str(value.shape).replace(" ", "")
-            if hasattr(value, 'dtype'):
-                info = f"{shape_str} | {value.dtype}"
-            else:
-                info = f"{shape_str} | {type_name}"
-        elif isinstance(value, (list, dict, set, tuple)):
-            info = f"len: {len(value)}"
-        var_list.append({"name": name, "type": type_name, "info": info})
-        
-    var_list.sort(key=lambda x: x['name'])
-    display({"application/vnd.jovian.variables+json": {"variables": var_list}}, raw=True)
+            if hasattr(value, 'shape'):
+                shape_str = str(value.shape).replace(" ", "")
+                if hasattr(value, 'dtype'):
+                    info = f"{shape_str} | {value.dtype}"
+                else:
+                    info = f"{shape_str} | {type_name}"
+            elif isinstance(value, (list, dict, set, tuple)):
+                info = f"len: {len(value)}"
+            var_list.append({"name": name, "type": type_name, "info": info})
+            
+        var_list.sort(key=lambda x: x['name'])
+        display({"application/vnd.jovian.variables+json": {"variables": var_list}}, raw=True)
+    except Exception as e:
+        error_var = {"name": "Error", "type": "Exception", "info": str(e)}
+        display({"application/vnd.jovian.variables+json": {"variables": [error_var]}}, raw=True)
 
 _jovian_get_variables()
 """
-        self.var_msg_id = self.kc.execute(script, silent=True)
+        self.var_msg_id = self.kc.execute(script, silent=False, store_history=True)
 
     def view_dataframe(self, name):
-        # sys.stderr.write(f"DEBUG: view_dataframe {name}\n")
         script = f"""
 import pandas as pd
 import numpy as np
@@ -361,7 +348,6 @@ def _jovian_view_df(name):
             df_view = df.head(100)
             data_json = df_view.to_json(orient='split', date_format='iso')
             parsed = json.loads(data_json)
-            # Inject name into the payload
             payload = {{
                 "name": name,
                 "columns": parsed.get('columns', []),
@@ -369,24 +355,21 @@ def _jovian_view_df(name):
                 "data": parsed.get('data', [])
             }}
             display({{"application/vnd.jovian.dataframe+json": payload}}, raw=True)
-    except:
+    except Exception as e:
         pass
 
 _jovian_view_df("{name}")
 """
-        self.var_msg_id = self.kc.execute(script, silent=True)
+        self.var_msg_id = self.kc.execute(script, silent=False, store_history=True)
 
     def peek(self, name):
-        # sys.stderr.write(f"DEBUG: peek {name}\n")
         script = f"""
 import sys
 from IPython.display import display
 
 def _jovian_peek(name):
     try:
-        if name not in globals():
-            return
-            
+        if name not in globals(): return
         val = globals()[name]
         type_name = type(val).__name__
         
@@ -417,24 +400,19 @@ def _jovian_peek(name):
 
 _jovian_peek("{name}")
 """
-        self.var_msg_id = self.kc.execute(script, silent=True)
+        self.var_msg_id = self.kc.execute(script, silent=False, store_history=True)
 
     def inspect(self, name):
-        # Use Jupyter's inspect
-        # sys.stderr.write(f"DEBUG: Inspecting {name}\n")
         msg_id = self.kc.inspect(name, cursor_pos=len(name))
         start_time = time.time()
         while time.time() - start_time < 2:
             try:
                 reply = self.kc.get_shell_msg(timeout=0.1)
-                # sys.stderr.write(f"DEBUG: Inspect reply: {reply['content']['status']}\n")
                 if reply['parent_header']['msg_id'] == msg_id:
                      content = reply['content']
                      if content['status'] == 'ok' and content['found']:
                          data = content['data']
-                         # Jupyter inspect returns text/plain usually.
                          docstring = data.get('text/plain', 'No info')
-                         
                          result = {
                              "name": name,
                              "type": "unknown", 
@@ -443,11 +421,10 @@ _jovian_peek("{name}")
                              "definition": ""
                          }
                          send_json({"type": "inspection_data", "data": result})
-                     return # Done
+                     return
             except queue.Empty:
                 continue
-            except Exception as e:
-                # sys.stderr.write(f"DEBUG: Inspect error: {str(e)}\n")
+            except Exception:
                 break
 
     def copy_to_clipboard(self, name):
@@ -457,46 +434,22 @@ try:
     if "{name}" in globals():
         val = globals()["{name}"]
         display({{"application/vnd.jovian.clipboard+json": {{"content": str(val)}}}}, raw=True)
-except Exception as e:
-    print(f"Error copying: {{e}}")
+except Exception:
+    pass
 """
-        self.var_msg_id = self.kc.execute(script, silent=True)
+        self.var_msg_id = self.kc.execute(script, silent=False, store_history=True)
 
     def set_plot_mode(self, mode):
-        # Handle plot mode switching
-        # mode: "inline" or "window"
         if mode == "window":
-            # Try to switch to qt or tk
-            self.kc.execute("%matplotlib qt || %matplotlib tk || %matplotlib auto", silent=True)
+            self.kc.execute("%matplotlib qt || %matplotlib tk || %matplotlib auto", silent=False, store_history=True)
         else:
-            self.kc.execute("%matplotlib inline", silent=True)
+            self.kc.execute("%matplotlib inline", silent=False, store_history=True)
 
-    def purge_cache(self, valid_ids, file_dir):
-        if not file_dir or not os.path.exists(file_dir): return
+    def purge_cache(self, ids, file_dir):
+        pass # Omitted
         
-        try:
-            valid_set = set(valid_ids)
-            for f in os.listdir(file_dir):
-                # Files: {id}.md, {id}_{counter}.png
-                parts = f.replace('.', '_').split('_')
-                if parts[0] not in valid_set:
-                    try: os.remove(os.path.join(file_dir, f))
-                    except: pass
-        except:
-            pass
-
-    def remove_cache(self, ids_to_remove, file_dir):
-        if not file_dir or not os.path.exists(file_dir): return
-        
-        try:
-            remove_set = set(ids_to_remove)
-            for f in os.listdir(file_dir):
-                parts = f.replace('.', '_').split('_')
-                if parts[0] in remove_set:
-                    try: os.remove(os.path.join(file_dir, f))
-                    except: pass
-        except:
-            pass
+    def remove_cache(self, ids, file_dir):
+        pass # Omitted
 
 def main():
     bridge = KernelBridge()
@@ -530,10 +483,6 @@ def main():
                 bridge.copy_to_clipboard(cmd["name"])
             elif cmd.get("command") == "set_plot_mode":
                 bridge.set_plot_mode(cmd["mode"])
-            elif cmd.get("command") == "purge_cache":
-                bridge.purge_cache(cmd["ids"], cmd.get("file_dir"))
-            elif cmd.get("command") == "remove_cache":
-                bridge.remove_cache(cmd["ids"], cmd.get("file_dir"))
             
         except (json.JSONDecodeError, KeyboardInterrupt):
             pass

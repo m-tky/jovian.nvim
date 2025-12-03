@@ -43,6 +43,7 @@ M.options = vim.deepcopy(M.defaults)
 
 function M.setup(opts)
 	M.options = vim.tbl_deep_extend("force", M.defaults, opts or {})
+    M.configured_python = M.options.python_interpreter
 end
 
 return M

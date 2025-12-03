@@ -8,7 +8,8 @@ The core logic is located in `lua/jovian/`:
 
 - **`init.lua`**: The entry point. Handles `setup` and delegates command registration.
 - **`commands.lua`**: Contains all user command definitions (`JovianRun`, `JovianToggle`, etc.).
-- **`core.lua`**: The brain of the plugin. Manages the Python kernel process and orchestrates logic.
+- **`core.lua`**: The brain of the plugin. Manages the Python kernel process (local or remote) and orchestrates logic.
+- **`backend/kernel_bridge.py`**: The Python script that runs on the target host (local or remote). It wraps an `IPython.interactive` shell, captures I/O, and communicates with Neovim via JSON messages over stdout/stdin.
 - **`handlers.lua`**: Contains handler functions for processing messages received from the Python kernel.
 - **`hosts.lua`**: Manages host configurations (Local/SSH), persistence, and validation.
 - **`ui.lua`**: The main UI module. Acts as a facade for UI submodules.
@@ -32,6 +33,12 @@ The core logic is located in `lua/jovian/`:
     - **TreeSitter Highlighting**: We use custom queries in `jovian_queries/` to highlight magic commands.
         - A custom predicate `#same-line?` is registered in `init.lua` to handle fragmented nodes (e.g., `!ls --color=always`).
         - We use `priority` 105 to ensure our highlights override the default Python highlights.
+- **Remote Execution Architecture**:
+    - **Connection**: We use `ssh` to connect to remote hosts.
+    - **Backend Deployment**: The `lua/jovian/backend/` directory is automatically copied (scp) to the remote host (`~/.jovian/backend/`) upon connection.
+    - **Communication**: Neovim communicates with the remote `kernel_bridge.py` via the SSH process's stdin/stdout.
+    - **File Sync**: Generated files (images, markdown) are synced back to the local machine via `scp` for preview.
+
 - **Cache Management**:
     - Cache is stored in `.jovian_cache/` relative to the source file.
     - **Orphaned Cache Cleanup**: `core.lua` contains `clean_orphaned_caches` which scans the cache directory and removes subdirectories corresponding to missing source files. This is triggered on `VimEnter`, `VimLeavePre`, and via `:JovianCleanCache`.

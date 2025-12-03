@@ -88,7 +88,7 @@ function M.clean_stale_cache(bufnr)
         file_dir = cache_dir,
 		ids = valid_ids,
 	})
-	vim.fn.chansend(State.job_id, msg .. "\n")
+    pcall(vim.fn.chansend, State.job_id, msg .. "\n")
 end
 
 
@@ -150,16 +150,18 @@ function M.start_kernel()
 
 		-- Transfer local backend directory to remote
 		-- 1. scp -r to transfer directory
-		-- 2. execute via ssh (specify main.py directly)
+		-- 2. execute via ssh (specify kernel_bridge.py directly)
 		-- Remote location: /tmp/jovian_backend
 
-		-- First remove old remote directory (just in case)
-		vim.fn.system(string.format("ssh %s 'rm -rf /tmp/jovian_backend'", host))
+		-- First remove old remote directory and recreate it
+		vim.fn.system(string.format("ssh %s 'rm -rf /tmp/jovian_backend && mkdir -p /tmp/jovian_backend'", host))
 
-		local scp_cmd = string.format("scp -r %s %s:/tmp/jovian_backend", backend_dir, host)
+		-- Copy contents of backend_dir to remote /tmp/jovian_backend
+        -- We use backend_dir/. to copy contents
+		local scp_cmd = string.format("scp -r %s/. %s:/tmp/jovian_backend", backend_dir, host)
 		vim.fn.system(scp_cmd) -- Synchronous execution to ensure file transfer
 
-		cmd = { "ssh", host, remote_python, "-u", "/tmp/jovian_backend/main.py" }
+		cmd = { "ssh", host, remote_python, "-u", "/tmp/jovian_backend/kernel_bridge.py" }
 		UI.append_to_repl("[Jovian] Connecting to remote: " .. host, "Special")
 	else
 		-- Local execution
@@ -278,6 +280,9 @@ function M.send_cell()
 	UI.flash_range(s, e)
 	local lines = vim.api.nvim_buf_get_lines(0, s - 1, e, false)
 	if #lines > 0 and lines[1]:match("^# %%%%") then
+        if lines[1]:lower():match("%[markdown%]") then
+            return vim.notify("Skipping markdown cell", vim.log.levels.INFO)
+        end
 		table.remove(lines, 1)
 	end
 	local id = Utils.get_current_cell_id(s)
@@ -418,6 +423,7 @@ function M.show_variables(opts)
     end
 
 	local msg = vim.fn.json_encode({ command = "get_variables" })
+    -- UI.append_to_repl("[Jovian] Requesting variables...", "Comment")
 	vim.fn.chansend(State.job_id, msg .. "\n")
 end
 
@@ -425,6 +431,7 @@ function M.check_cursor_cell()
 	-- if not State.job_id then return end -- Allow checking cache even if kernel is not running
 	vim.schedule(function()
 		local cell_id = Utils.get_current_cell_id()
+        if not cell_id then return end
 		local filename = vim.fn.expand("%:t")
 		if filename == "" then
 			filename = "scratchpad"

@@ -11,18 +11,23 @@ function M.ensure_hosts_dir()
 end
 
 function M.load_hosts()
+    local data
     if vim.fn.filereadable(M.hosts_file) == 0 then
-        return {
-            configs = {
-                local_default = { type = "local", python = Config.options.python_interpreter }
-            },
+        data = {
+            configs = {},
             current = "local_default"
         }
+    else
+        local content = table.concat(vim.fn.readfile(M.hosts_file), "\n")
+        local ok, decoded = pcall(vim.fn.json_decode, content)
+        data = ok and decoded or { configs = {}, current = "local_default" }
     end
-    local content = table.concat(vim.fn.readfile(M.hosts_file), "\n")
-    local ok, data = pcall(vim.fn.json_decode, content)
-    if ok then return data end
-    return { configs = {}, current = nil }
+
+    -- Ensure local_default exists and is synced with configured python
+    local default_python = Config.configured_python or Config.options.python_interpreter
+    data.configs["local_default"] = { type = "local", python = default_python }
+
+    return data
 end
 
 function M.save_hosts(data)
