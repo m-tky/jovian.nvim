@@ -2,9 +2,9 @@ local M = {}
 
 M.defaults = {
 	-- UI
-	preview_width_percent = 35,
-	repl_height_percent = 30,
-    vars_pane_width_percent = 20, -- Width of the variables pane (percent of editor width)
+	preview_width_percent = 30,
+	repl_height_percent = 25,
+    vars_pane_width_percent = 25, -- Width of the variables pane (percent of editor width)
     toggle_var = true, -- Automatically toggle variables pane with UI
 
 	-- Visuals
@@ -13,7 +13,7 @@ M.defaults = {
 	float_border = "rounded", -- Border style for floating windows (single, double, rounded, solid, shadow)
 
 	-- Python Environment
-	python_interpreter = "/home/user/venv/bin/python3",
+	python_interpreter = "python3",
 
 	-- Behavior
 	notify_threshold = 10,

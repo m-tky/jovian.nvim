@@ -233,10 +233,6 @@ function M.setup()
 	-- Kernel Control
 	vim.api.nvim_create_user_command("JovianInterrupt", Core.interrupt_kernel, {})
 
-	-- Session
-	vim.api.nvim_create_user_command("JovianSaveSession", Core.save_session, { nargs = "?" })
-	vim.api.nvim_create_user_command("JovianLoadSession", Core.load_session, { nargs = "?" })
-
 	-- Plotting
 	vim.api.nvim_create_user_command("JovianDoc", function(opts)
 		require("jovian.core").inspect_object(opts)
@@ -285,6 +281,9 @@ function M.setup()
         require("jovian.core").clean_orphaned_caches()
         vim.notify("Cleaned orphaned caches", vim.log.levels.INFO)
     end, {})
+	vim.api.nvim_create_user_command("JovianRunAbove", function()
+		require("jovian.core").run_cells_above()
+	end, {})
 end
 
 return M

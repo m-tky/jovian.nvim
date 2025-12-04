@@ -97,9 +97,9 @@ You can configure `jovian.nvim` by passing a table to the `setup` function.
 ```lua
 require("jovian").setup({
     -- UI Settings
-    preview_width_percent = 35,
-    repl_height_percent = 30,
-    vars_pane_width_percent = 20, -- Width of the variables pane (% of editor width)
+    preview_width_percent = 30,
+    repl_height_percent = 25,
+    vars_pane_width_percent = 25, -- Width of the variables pane (% of editor width)
     toggle_var = true, -- If true, Vars pane opens/closes with JovianToggle/JovianOpen
 
     -- UI Symbols (Virtual Text)
@@ -167,12 +167,13 @@ require("jovian").setup({
 - **`:JovianToggle`**: Toggle the visibility of the Jovian UI.
 - **`:JovianClear`**: Clear the REPL output.
 - **`:JovianToggleVars`**: Manually toggle the Variables Pane.
-- **`:JovianTogglePlot`**: Toggle between inline and window plot view modes.
+- **`:JovianTogglePlot`**: Toggle between inline and window plot view modes. In window mode, plots are displayed in an external window (via TkAgg) while still being captured for the preview pane.
 
 ### Execution
 - **`:JovianRun`**: Run the current cell.
 - **`:JovianRunAndNext`**: Run the current cell and move to the next one.
 - **`:JovianRunAll`**: Run all cells in the file.
+- **`:JovianRunAbove`**: Run all cells from the beginning of the file up to and including the current cell.
 - **`:JovianRunLine`**: Run the current line.
 - **`:JovianSendSelection`**: Run the visually selected code.
 

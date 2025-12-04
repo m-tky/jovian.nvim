@@ -407,6 +407,43 @@ function M.run_all_cells()
 	end
 end
 
+function M.run_cells_above()
+	if not is_window_open() then
+		return vim.notify("Jovian windows are closed.", vim.log.levels.WARN)
+	end
+	local src_win = vim.api.nvim_get_current_win()
+	vim.api.nvim_set_current_win(src_win)
+	if not State.job_id then
+		M.start_kernel()
+	end
+	local fn = vim.fn.expand("%:t")
+	if fn == "" then
+		fn = "untitled"
+	end
+
+    local cursor_line = vim.fn.line(".")
+    local _, end_line = Utils.get_cell_range(cursor_line)
+	local lines = vim.api.nvim_buf_get_lines(0, 0, end_line, false)
+    
+	local blk, bid, is_code = {}, "scratchpad", true
+	for i, line in ipairs(lines) do
+		if line:match("^# %%%%") then
+			if #blk > 0 and is_code then
+				M.send_payload(table.concat(blk, "\n"), bid, fn)
+			end
+			blk, bid = {}, Utils.ensure_cell_id(i, line)
+			is_code = not line:lower():match("^# %%%%+%s*%[markdown%]")
+		else
+			if is_code then
+				table.insert(blk, line)
+			end
+		end
+	end
+	if #blk > 0 and is_code then
+		M.send_payload(table.concat(blk, "\n"), bid, fn)
+	end
+end
+
 function M.view_dataframe(args)
 	if not State.job_id then
 		return vim.notify("Kernel not started", vim.log.levels.WARN)
@@ -474,33 +511,6 @@ function M.interrupt_kernel()
 	end
 end
 
--- Add: Save session command
-function M.save_session(args)
-	if not State.job_id then
-		return
-	end
-	local filename = args.args
-	if filename == "" then
-		filename = "jovian_session.pkl"
-	end -- Default name
-
-	local msg = vim.fn.json_encode({ command = "save_session", filename = filename })
-	vim.fn.chansend(State.job_id, msg .. "\n")
-end
-
--- Add: Load session command
-function M.load_session(args)
-	if not State.job_id then
-		M.start_kernel()
-	end
-	local filename = args.args
-	if filename == "" then
-		filename = "jovian_session.pkl"
-	end
-
-	local msg = vim.fn.json_encode({ command = "load_session", filename = filename })
-	vim.fn.chansend(State.job_id, msg .. "\n")
-end
 
 
 

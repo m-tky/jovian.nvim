@@ -565,9 +565,26 @@ except Exception:
         
         # Then switch backend
         if mode == "window":
-            # Try magic first, then explicit switch if needed
-            cmd += "%matplotlib tk\n"
-            cmd += "try:\n    import matplotlib.pyplot as plt\n    plt.switch_backend('TkAgg')\nexcept: pass"
+            # Try to switch to a windowed backend with fallbacks
+            cmd += """
+try:
+    import matplotlib.pyplot as plt
+    backends = ['TkAgg', 'Qt5Agg', 'QtAgg', 'MacOSX']
+    switched = False
+    for backend in backends:
+        try:
+            plt.switch_backend(backend)
+            switched = True
+            break
+        except:
+            continue
+    
+    if not switched:
+        # Fallback to auto/magic if explicit switch fails
+        get_ipython().run_line_magic('matplotlib', 'auto')
+except:
+    pass
+"""
         else:
             cmd += "%matplotlib inline"
             
