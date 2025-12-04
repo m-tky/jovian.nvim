@@ -198,6 +198,7 @@ require("jovian").setup({
 - **`:JovianDoc [obj]`**: Inspect an object (docstring, definition).
 - **`:JovianPeek [obj]`**: Peek at an object's value/info.
 - **`:JovianProfile`**: Run the current cell with profiling enabled.
+- **`:JovianBackend`**: Print the current Matplotlib backend to the REPL.
 - **`:JovianCleanCache`**: Manually clean up orphaned cache directories.
 - **`:JovianClearDiag`**: Clear diagnostics from the current buffer.
 

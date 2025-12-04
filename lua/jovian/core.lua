@@ -285,6 +285,23 @@ function M.copy_variable(args)
 	vim.fn.chansend(State.job_id, msg .. "\n")
 end
 
+function M.print_backend()
+	if not State.job_id then
+		return vim.notify("Kernel not started", vim.log.levels.WARN)
+	end
+    -- We use a hidden execution to print the backend
+    local code = "import matplotlib; print(f'[Jovian] Current Backend: {matplotlib.get_backend()}')"
+    local payload = {
+        command = "execute",
+        code = code,
+        cell_id = "backend_check",
+        file_dir = vim.fn.expand("%:p:h"),
+        cwd = vim.fn.expand("%:p:h"),
+    }
+    local msg = vim.fn.json_encode(payload)
+    vim.fn.chansend(State.job_id, msg .. "\n")
+end
+
 function M.send_cell()
 	if not is_window_open() then
 		return vim.notify("Jovian windows are closed. Use :JovianOpen or :JovianToggle first.", vim.log.levels.WARN)
