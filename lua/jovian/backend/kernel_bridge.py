@@ -385,7 +385,7 @@ _jovian_patch_matplotlib()
         # Switch kernel CWD if provided
         if cwd:
             safe_cwd = cwd.replace('\\', '\\\\').replace("'", "\\'")
-            change_cwd_code = f"import os; os.chdir('{safe_cwd}')"
+            change_cwd_code = f"import os; import sys; os.chdir('{safe_cwd}'); sys.path.insert(0, '{safe_cwd}') if '{safe_cwd}' not in sys.path else None"
             self.kc.execute(change_cwd_code, silent=True)
         
         # Clear queue
