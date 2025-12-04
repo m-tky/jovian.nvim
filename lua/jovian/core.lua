@@ -44,7 +44,6 @@ local function on_stdout(chan_id, data, name)
                         Handlers[handler_name](msg)
                     else
                         -- Fallback or ignore
-                        -- vim.notify("Unknown message type: " .. msg.type, vim.log.levels.WARN)
                     end
 				end)
 			else
@@ -123,6 +122,42 @@ function M.clear_all_cache()
     vim.notify("Cleared all cache", vim.log.levels.INFO)
 end
 
+function M._prepare_kernel_command(script_path, backend_dir)
+    local cmd = {}
+    if Config.options.connection_file then
+        -- Connect to existing kernel via connection file
+        cmd = vim.split(Config.options.python_interpreter, " ")
+        table.insert(cmd, script_path)
+        table.insert(cmd, "--connection-file")
+        table.insert(cmd, Config.options.connection_file)
+        UI.append_to_repl("[Jovian] Connecting to kernel via: " .. Config.options.connection_file, "Special")
+    elseif Config.options.ssh_host then
+        local host = Config.options.ssh_host
+        local remote_python = Config.options.ssh_python
+
+        -- Transfer local backend directory to remote
+        -- 1. scp -r to transfer directory
+        -- 2. execute via ssh (specify kernel_bridge.py directly)
+        -- Remote location: /tmp/jovian_backend
+
+        -- First remove old remote directory and recreate it
+        vim.fn.system(string.format("ssh %s 'rm -rf /tmp/jovian_backend && mkdir -p /tmp/jovian_backend'", host))
+
+        -- Copy contents of backend_dir to remote /tmp/jovian_backend
+        -- We use backend_dir/. to copy contents
+        local scp_cmd = string.format("scp -r %s/. %s:/tmp/jovian_backend", backend_dir, host)
+        vim.fn.system(scp_cmd) -- Synchronous execution to ensure file transfer
+
+        cmd = { "ssh", host, remote_python, "-u", "/tmp/jovian_backend/kernel_bridge.py" }
+        UI.append_to_repl("[Jovian] Connecting to remote: " .. host, "Special")
+    else
+        -- Local execution
+        cmd = vim.split(Config.options.python_interpreter, " ")
+        table.insert(cmd, script_path)
+    end
+    return cmd
+end
+
 function M.start_kernel()
 	if State.job_id then
 		return
@@ -141,39 +176,7 @@ function M.start_kernel()
 
 	local script_path = vim.fn.fnamemodify(debug.getinfo(1).source:sub(2), ":h:h:h") .. "/lua/jovian/backend/kernel_bridge.py"
 	local backend_dir = vim.fn.fnamemodify(debug.getinfo(1).source:sub(2), ":h:h:h") .. "/lua/jovian/backend"
-	local cmd = {}
-
-    if Config.options.connection_file then
-        -- Connect to existing kernel via connection file
-        cmd = vim.split(Config.options.python_interpreter, " ")
-        table.insert(cmd, script_path)
-        table.insert(cmd, "--connection-file")
-        table.insert(cmd, Config.options.connection_file)
-        UI.append_to_repl("[Jovian] Connecting to kernel via: " .. Config.options.connection_file, "Special")
-	elseif Config.options.ssh_host then
-		local host = Config.options.ssh_host
-		local remote_python = Config.options.ssh_python
-
-		-- Transfer local backend directory to remote
-		-- 1. scp -r to transfer directory
-		-- 2. execute via ssh (specify kernel_bridge.py directly)
-		-- Remote location: /tmp/jovian_backend
-
-		-- First remove old remote directory and recreate it
-		vim.fn.system(string.format("ssh %s 'rm -rf /tmp/jovian_backend && mkdir -p /tmp/jovian_backend'", host))
-
-		-- Copy contents of backend_dir to remote /tmp/jovian_backend
-        -- We use backend_dir/. to copy contents
-		local scp_cmd = string.format("scp -r %s/. %s:/tmp/jovian_backend", backend_dir, host)
-		vim.fn.system(scp_cmd) -- Synchronous execution to ensure file transfer
-
-		cmd = { "ssh", host, remote_python, "-u", "/tmp/jovian_backend/kernel_bridge.py" }
-		UI.append_to_repl("[Jovian] Connecting to remote: " .. host, "Special")
-	else
-		-- Local execution
-		cmd = vim.split(Config.options.python_interpreter, " ")
-		table.insert(cmd, script_path)
-	end
+	local cmd = M._prepare_kernel_command(script_path, backend_dir)
 
 	State.job_id = vim.fn.jobstart(cmd, {
 		on_stdout = on_stdout,
@@ -591,9 +594,6 @@ function M.check_structure_change()
                 local current_hash = Utils.get_cell_hash(code)
                 local stored_hash = State.cell_hashes[current_cell_id]
                 
-                -- DEBUG:
-                -- vim.notify("Checking " .. current_cell_id .. ": " .. tostring(stored_hash) .. " vs " .. tostring(current_hash), vim.log.levels.INFO)
-                
                 if stored_hash and stored_hash ~= current_hash then
                     -- Mark as stale if currently "done"
                     -- Use current_cell_line (1-based from ipairs, but extmarks need 0-based or 1-based depending on API)
@@ -642,9 +642,6 @@ function M.check_structure_change()
         local code = table.concat(current_cell_lines, "\n")
         local current_hash = Utils.get_cell_hash(code)
         local stored_hash = State.cell_hashes[current_cell_id]
-        
-        -- DEBUG:
-        -- vim.notify("Checking " .. current_cell_id .. ": " .. tostring(stored_hash) .. " vs " .. tostring(current_hash), vim.log.levels.INFO)
         
         if stored_hash and stored_hash ~= current_hash then
             local mark = UI.get_cell_status_extmark(bufnr, current_cell_line)
