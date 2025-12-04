@@ -66,29 +66,19 @@ function M.handle_result_ready(msg)
     end
 
     -- If we have image data in msg, write it locally to avoid SCP for images
-    if msg.images then
-        local dir = vim.fn.fnamemodify(msg.file, ":h")
-        for filename, b64 in pairs(msg.images) do
-            local path = dir .. "/" .. filename
-            -- Only write if not exists or if we are syncing
-            local f = io.open(path, "wb")
-            if f then
-                -- Decode base64? No, Lua doesn't have built-in base64 decode easily accessible?
-                -- Vim has vim.base64? No.
-                -- But we can use python or openssl?
-                -- Or just SCP them. SCP is easier if we trust the path.
-                -- Let's use SCP for images too for consistency, OR rely on the fact that we might not have base64 decoder.
-                -- Wait, kernel_bridge sends base64.
-                -- Let's just SCP everything in the directory? No, that's wasteful.
-                -- Let's SCP the specific image files.
-                f:close()
-            end
-            -- Fallback to SCP for images
-            if Config.options.ssh_host then
-                 local remote_img_path = vim.fn.fnamemodify(msg.file, ":h") .. "/" .. filename
-                 M.sync_remote_file(remote_img_path)
-            end
-        end
+    -- If we have image data in msg, we might need to write it locally if we are remote.
+    -- But if we are local, kernel_bridge already wrote it.
+    -- The previous logic here was truncating files. We should rely on the sync logic below or SCP.
+    
+    if msg.images and Config.options.ssh_host then
+        -- For SSH, we need to sync. 
+        -- We can either use SCP (slow) or write from base64 (fast).
+        -- Let's use the base64 writing logic which is already present below for 'content_md' block,
+        -- but we might need it here too if 'content_md' is not set?
+        -- Actually, 'content_md' is usually set for execution results.
+        
+        -- Let's just rely on the SCP fallback or the python-based writer below.
+        -- Removing the truncation block.
     end
 
     -- Sync content to local cache if provided (SSH or Local)

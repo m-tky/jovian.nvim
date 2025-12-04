@@ -589,6 +589,12 @@ try:
         get_ipython().run_line_magic('matplotlib', 'auto')
 except:
     pass
+
+try:
+    import matplotlib
+    print(f"[Jovian] Active Backend: {matplotlib.get_backend()}")
+except:
+    pass
 """
         else:
             cmd += "%matplotlib inline"
