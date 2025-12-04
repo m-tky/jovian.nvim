@@ -9,7 +9,7 @@
 # 2. Run the cell using `:JovianRun` (or your configured keybinding).
 # 3. Observe the output in the REPL and Preview windows.
 
-# %%
+# %% id="3HBWq2Im4lG4"
 import time
 import numpy as np
 import matplotlib.pyplot as plt
@@ -24,7 +24,7 @@ print("This is a standard print statement.")
 # Define some variables. Open the Variables Pane (`:JovianToggleVars`) to see them.
 # You can also use `:JovianPeek <var>` or `:JovianDoc <var>` to inspect them.
 
-# %%
+# %% id="GXgCRKCxI0Y5"
 x = 42
 y = 3.14159
 name = "Jovian"
@@ -39,7 +39,7 @@ print(f"Defined variables: x={x}, y={y}, name={name}")
 # `jovian.nvim` supports inline plotting using `matplotlib`.
 # The plots will appear in the Preview window (if `image.nvim` is set up).
 
-# %%
+# %% id="TlpGIK9UeSLf"
 # Simple Sine Wave
 t = np.linspace(0, 2*np.pi, 100)
 s = np.sin(t)
@@ -59,7 +59,7 @@ plt.show()
 # You can view pandas DataFrames.
 # Use `:JovianView df` to see the dataframe in a floating window.
 
-# %%
+# %% id="GnX0A6OI-4C9"
 # Create a sample DataFrame
 data = {
     'Date': pd.date_range(start='2023-01-01', periods=5),
@@ -78,13 +78,14 @@ print(df)
 # 
 # IPython magic commands are supported.
 
-# %%
+# %% id="yzQIP21QQfB2"
 # Time the execution of a list comprehension
 %timeit [i**2 for i in range(1000)]
 
-# %%
+# %% id="EAhY9ljLcp88"
 # Run a shell command
 !echo "Current Directory:"
+!pip install pyqt5
 !pwd
 
 # %% [markdown]
@@ -92,7 +93,7 @@ print(df)
 # 
 # Long-running cells show "Running..." status.
 
-# %%
+# %% id="ZiL5ICSQW54J"
 print("Starting long task...")
 for i in range(5):
     time.sleep(0.5)
@@ -104,7 +105,7 @@ print("Done!")
 # 
 # Errors are captured and displayed nicely in the preview.
 
-# %%
+# %% id="lXBTaWpt_3G8"
 # This will raise an error
 def cause_error():
     return 1 / 0
