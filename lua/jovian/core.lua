@@ -109,7 +109,8 @@ function M.clear_cache(ids)
 end
 
 function M.clear_current_cell_cache()
-    local id = Utils.get_current_cell_id()
+    local id = Utils.get_current_cell_id(nil, false)
+    if not id then return end
     M.clear_cache({id})
     UI.set_cell_status(0, id, nil, nil) -- Clear status
     vim.notify("Cleared cache for cell " .. id, vim.log.levels.INFO)
@@ -321,7 +322,7 @@ function M.send_cell()
         end
 		table.remove(lines, 1)
 	end
-	local id = Utils.get_current_cell_id(s)
+	local id = Utils.get_current_cell_id(s, true)
 	local fn = vim.fn.expand("%:t")
 	if fn == "" then
 		fn = "untitled"
@@ -340,7 +341,7 @@ function M.run_profile_cell()
 	if #lines > 0 and lines[1]:match("^# %%%%") then
 		table.remove(lines, 1)
 	end
-	local id = Utils.get_current_cell_id(s)
+	local id = Utils.get_current_cell_id(s, true)
 	M.profile_cell(table.concat(lines, "\n"), id)
 end
 
@@ -357,7 +358,7 @@ function M.send_selection()
 		return
 	end
 	UI.flash_range(csrow, cerow)
-	local id = Utils.get_current_cell_id(csrow)
+	local id = Utils.get_current_cell_id(csrow, true)
 	local fn = vim.fn.expand("%:t")
 	if fn == "" then
 		fn = "untitled"
@@ -503,7 +504,7 @@ end
 function M.check_cursor_cell()
 	-- if not State.job_id then return end -- Allow checking cache even if kernel is not running
 	vim.schedule(function()
-		local cell_id = Utils.get_current_cell_id()
+		local cell_id = Utils.get_current_cell_id(nil, false)
         if not cell_id then return end
 		local filename = vim.fn.expand("%:t")
 		if filename == "" then

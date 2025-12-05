@@ -23,6 +23,38 @@ def send_json(msg):
     sys.stdout.write(json.dumps(msg) + "\n")
     sys.stdout.flush()
 
+def process_console_output(text):
+    # Simple terminal emulator for \r and \n to handle progress bars (tqdm)
+    lines = [[]]
+    row = 0
+    col = 0
+    
+    for char in text:
+        if char == '\n':
+            row += 1
+            col = 0
+            if len(lines) <= row:
+                lines.append([])
+        elif char == '\r':
+            col = 0
+        elif char == '\b':
+            col = max(0, col - 1)
+        else:
+            # Ensure line exists (handled by \n logic, but first line is pre-created)
+            current_line = lines[row]
+            # Pad if needed
+            while len(current_line) < col:
+                current_line.append(' ')
+            
+            if len(current_line) == col:
+                current_line.append(char)
+            else:
+                current_line[col] = char
+            col += 1
+    
+    # Join lines
+    return "\n".join(["".join(line) for line in lines])
+
 # --- Kernel Bridge ---
 class KernelBridge:
     def __init__(self, connection_file=None):
@@ -278,18 +310,27 @@ _jovian_patch_matplotlib()
             md_filename = f"{self.current_cell_id}.md"
             md_path = os.path.join(save_dir, md_filename)
 
+            pending_text = []
+
             while not self.msg_queue.empty():
                 item = self.msg_queue.get()
                 
                 if item["type"] == "text":
-                    text = item["content"]
-                    if text.strip():
+                    pending_text.append(item["content"])
+                    continue
+                
+                # Flush pending text before processing other items
+                if pending_text:
+                    full_text = "".join(pending_text)
+                    processed_text = process_console_output(full_text)
+                    if processed_text.strip():
                         output_md_lines.append("```text")
-                        output_md_lines.append(text.rstrip())
+                        output_md_lines.append(processed_text.rstrip())
                         output_md_lines.append("```")
                         output_md_lines.append("")
+                    pending_text = []
                 
-                elif item["type"] == "image":
+                if item["type"] == "image":
                     img_data_b64 = item["data"]
                     if not img_data_b64:
                         send_json({"type": "debug", "msg": "Skipping empty image data"})
@@ -325,6 +366,20 @@ _jovian_patch_matplotlib()
                         "msg": f"{item['ename']}: {item['evalue']}",
                         "traceback": item['traceback']
                     }
+                    
+                    # Extract line number from traceback
+                    # Look for the last occurrence of a line referring to an ipython input
+                    line_num = 1
+                    for line in item['traceback']:
+                        # Remove ANSI codes for regex matching
+                        clean_line = re.sub(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])', '', line)
+                        match = re.search(r'File "<ipython-input-[^>]+>", line (\d+)', clean_line)
+                        if match:
+                            line_num = int(match.group(1))
+                            send_json({"type": "debug", "msg": f"Matched line {line_num} in: {clean_line.strip()}"})
+                    
+                    send_json({"type": "debug", "msg": f"Final extracted line: {line_num}"})
+                    error_info["line"] = line_num
                     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
                     clean_traceback = [ansi_escape.sub('', line) for line in item['traceback']]
                     
@@ -332,6 +387,16 @@ _jovian_patch_matplotlib()
                     output_md_lines.append("```")
                     output_md_lines.append("\n".join(clean_traceback))
                     output_md_lines.append("```")
+
+            # Flush remaining text
+            if pending_text:
+                full_text = "".join(pending_text)
+                processed_text = process_console_output(full_text)
+                if processed_text.strip():
+                    output_md_lines.append("```text")
+                    output_md_lines.append(processed_text.rstrip())
+                    output_md_lines.append("```")
+                    output_md_lines.append("")
 
             # Write Markdown file
             with open(md_path, "w", encoding="utf-8") as f:

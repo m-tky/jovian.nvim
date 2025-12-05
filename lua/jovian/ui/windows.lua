@@ -158,6 +158,9 @@ function M.open_markdown_preview(filepath)
     -- Load the buffer if not loaded
     if not vim.api.nvim_buf_is_loaded(buf) then
         vim.fn.bufload(buf)
+    else
+        -- Force reload from disk to pick up changes
+        vim.cmd("checktime " .. buf)
     end
     
     -- Set buffer to preview window

@@ -110,7 +110,7 @@ function M.ensure_cell_id(line_num, line_content)
 	return id
 end
 
-function M.get_current_cell_id(lnum)
+function M.get_current_cell_id(lnum, create)
 	local s, _ = M.get_cell_range(lnum)
 	local lines = vim.api.nvim_buf_get_lines(0, s - 1, s, false)
 	local line = lines[1] or ""
@@ -119,7 +119,11 @@ function M.get_current_cell_id(lnum)
 		return id
 	end
 	if line:match("^# %%%%") then
-		return M.ensure_cell_id(s, line)
+        if create then
+		    return M.ensure_cell_id(s, line)
+        else
+            return nil
+        end
 	end
 	return "scratchpad"
 end

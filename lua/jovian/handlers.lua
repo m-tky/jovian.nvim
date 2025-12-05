@@ -11,6 +11,9 @@ function M.handle_image_saved(msg)
     UI.append_to_repl("[Image Created]: " .. vim.fn.fnamemodify(msg.path, ":t"), "Special")
 end
 
+function M.handle_debug(msg)
+    UI.append_to_repl("[Debug]: " .. msg.msg, "Comment")
+end
 
 
 function M.handle_execution_started(msg)
@@ -133,7 +136,7 @@ function M.handle_result_ready(msg)
             if msg.error then
                 local start_line = State.cell_start_line[msg.cell_id] or 1
                 local err_line = msg.error.line or 1
-                local target_line = (start_line - 1) + (err_line - 1)
+                local target_line = (start_line - 1) + err_line
                 vim.diagnostic.set(State.diag_ns, target_buf, {
                     {
                         lnum = target_line,
