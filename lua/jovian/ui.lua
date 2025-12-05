@@ -15,6 +15,9 @@ M.toggle_windows = Windows.toggle_windows
 M.open_markdown_preview = Windows.open_markdown_preview
 M.toggle_variables_pane = Windows.toggle_variables_pane
 M.update_variables_pane = Windows.update_variables_pane
+M.pin_cell = Windows.pin_cell
+M.unpin = Windows.unpin
+M.toggle_pin_window = Windows.toggle_pin_window
 
 M.render_variables_pane = Renderers.render_variables_pane
 M.show_variables = Renderers.show_variables

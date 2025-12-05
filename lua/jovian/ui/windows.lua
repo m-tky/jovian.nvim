@@ -95,6 +95,13 @@ function M.open_windows(target_win)
         end
     end
 
+    -- Auto-open Pin pane if configured
+    if Config.options.toggle_pin then
+        if not (State.win.pin and vim.api.nvim_win_is_valid(State.win.pin)) then
+            M.open_pin_window()
+        end
+    end
+
     -- Trigger preview check immediately
     require("jovian.core").check_cursor_cell()
 end
@@ -117,6 +124,24 @@ function M.close_windows()
 
 	State.win.preview, State.win.output = nil, nil
 	State.current_preview_file = nil
+    
+    if State.win.pin and vim.api.nvim_win_is_valid(State.win.pin) then
+        -- Only close if toggle_pin is true, OR if we are forcing close?
+        -- Usually close_windows implies closing everything related to Jovian.
+        -- But if toggle_pin is false, maybe user wants to keep it?
+        -- User said "JovianToggle ... also toggle pin if chosen".
+        -- So if toggle_pin is true, we close it. If false, we leave it?
+        -- But JovianToggle calls close_windows.
+        -- Let's assume close_windows closes everything, but open_windows only opens what's configured.
+        -- Wait, if toggle_pin is false, JovianToggle should NOT toggle pin.
+        -- But JovianToggle calls close_windows which closes everything.
+        -- So we should only close pin here if toggle_pin is true.
+        
+        if Config.options.toggle_pin then
+            vim.api.nvim_win_close(State.win.pin, true)
+            State.win.pin = nil
+        end
+    end
 end
 
 function M.toggle_windows()
@@ -179,7 +204,12 @@ function M.open_markdown_preview(filepath)
     if old_buf and old_buf ~= buf and vim.api.nvim_buf_is_valid(old_buf) then
         -- Check if it was a jovian preview buffer (optional, but safer)
         -- For now, we assume anything in the preview window was a preview buffer.
-        vim.api.nvim_buf_delete(old_buf, { force = true })
+        
+        -- Check if the buffer is displayed in any other window (e.g. Pin window)
+        local wins = vim.fn.win_findbuf(old_buf)
+        if #wins == 0 then
+            vim.api.nvim_buf_delete(old_buf, { force = true })
+        end
     end
 end
 
@@ -241,6 +271,185 @@ function M.update_variables_pane()
     if State.win.variables and vim.api.nvim_win_is_valid(State.win.variables) then
         require("jovian.core").show_variables()
     end
+end
+
+function M.open_pin_window()
+    if State.win.pin and vim.api.nvim_win_is_valid(State.win.pin) then
+        return
+    end
+
+    -- Capture current window to restore focus later
+    local cur_win = vim.api.nvim_get_current_win()
+
+    local target_win = State.win.preview
+    if not (target_win and vim.api.nvim_win_is_valid(target_win)) then
+        -- If preview is not open, open it first (it handles splitting)
+        M.open_windows()
+        
+        -- Check if open_windows already opened the pin window (due to toggle_pin config)
+        if State.win.pin and vim.api.nvim_win_is_valid(State.win.pin) then
+            return
+        end
+        
+        target_win = State.win.preview
+    end
+    
+    if not (target_win and vim.api.nvim_win_is_valid(target_win)) then
+        return -- Should not happen
+    end
+    
+    vim.api.nvim_set_current_win(target_win)
+    vim.cmd("belowright split")
+    State.win.pin = vim.api.nvim_get_current_win()
+    
+    -- Set height
+    local height = math.floor(vim.o.lines * (Config.options.pin_height_percent / 100))
+    vim.api.nvim_win_set_height(State.win.pin, height)
+    
+    -- Window options
+    local win = State.win.pin
+    vim.wo[win].number = false
+    vim.wo[win].relativenumber = false
+    vim.wo[win].signcolumn = "no"
+    vim.wo[win].foldcolumn = "0"
+    vim.wo[win].fillchars = "eob: "
+    vim.wo[win].wrap = true
+    
+    -- Restore focus to original window if possible
+    if cur_win and vim.api.nvim_win_is_valid(cur_win) then
+        vim.api.nvim_set_current_win(cur_win)
+    end
+
+    -- If we have a pinned file, load it. Otherwise show placeholder.
+    if State.current_pin_file then
+        M.pin_cell(State.current_pin_file)
+    else
+        local buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "No pinned content" })
+        vim.api.nvim_buf_set_option(buf, "buftype", "nofile")
+        vim.api.nvim_buf_set_option(buf, "modifiable", false)
+        vim.api.nvim_win_set_buf(State.win.pin, buf)
+        
+        -- Apply window options again as setting buffer might reset some? No, win options persist.
+        -- But let's be safe.
+        local win = State.win.pin
+        vim.wo[win].number = false
+        vim.wo[win].relativenumber = false
+        vim.wo[win].signcolumn = "no"
+        vim.wo[win].wrap = true
+    end
+end
+
+function M.pin_cell(filepath)
+    local abs_filepath = vim.fn.fnamemodify(filepath, ":p")
+    State.current_pin_file = abs_filepath
+    
+    -- Only update buffer if window is ALREADY open
+    if not (State.win.pin and vim.api.nvim_win_is_valid(State.win.pin)) then
+        return
+    end
+    
+    -- Capture old buffer
+    local old_buf = vim.api.nvim_win_get_buf(State.win.pin)
+    
+    -- Create/Get buffer
+    local buf = vim.fn.bufadd(abs_filepath)
+    if buf == 0 then return end
+    
+    if not vim.api.nvim_buf_is_loaded(buf) then
+        vim.fn.bufload(buf)
+    else
+        vim.cmd("checktime " .. buf)
+    end
+    
+    vim.api.nvim_win_set_buf(State.win.pin, buf)
+    
+    vim.api.nvim_buf_set_option(buf, "filetype", "markdown")
+    vim.api.nvim_buf_set_option(buf, "buftype", "")
+    vim.api.nvim_buf_set_option(buf, "modifiable", false)
+    vim.api.nvim_buf_set_option(buf, "readonly", true)
+    
+    -- Cleanup old buffer if valid and different
+    -- Be careful not to delete the buffer if it's used in preview window!
+    -- Check if old_buf is displayed in any other window
+    if old_buf and old_buf ~= buf and vim.api.nvim_buf_is_valid(old_buf) then
+        local wins = vim.fn.win_findbuf(old_buf)
+        if #wins == 0 then
+            vim.api.nvim_buf_delete(old_buf, { force = true })
+        end
+    end
+end
+
+function M.unpin()
+    State.current_pin_file = nil
+    
+    if State.win.pin and vim.api.nvim_win_is_valid(State.win.pin) then
+        -- Capture old buffer
+        local old_buf = vim.api.nvim_win_get_buf(State.win.pin)
+        
+        -- Show placeholder
+        local buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "No pinned content" })
+        vim.api.nvim_buf_set_option(buf, "buftype", "nofile")
+        vim.api.nvim_buf_set_option(buf, "modifiable", false)
+        vim.api.nvim_win_set_buf(State.win.pin, buf)
+        
+        local win = State.win.pin
+        vim.wo[win].number = false
+        vim.wo[win].relativenumber = false
+        vim.wo[win].signcolumn = "no"
+        vim.wo[win].wrap = true
+        
+        -- Cleanup old buffer if valid and different
+        if old_buf and old_buf ~= buf and vim.api.nvim_buf_is_valid(old_buf) then
+            local wins = vim.fn.win_findbuf(old_buf)
+            if #wins == 0 then
+                vim.api.nvim_buf_delete(old_buf, { force = true })
+            end
+        end
+    end
+end
+
+function M.toggle_pin_window()
+    if State.win.pin and vim.api.nvim_win_is_valid(State.win.pin) then
+        -- Capture windows to lock
+        local wins_to_lock = {}
+        if State.win.output and vim.api.nvim_win_is_valid(State.win.output) then
+            table.insert(wins_to_lock, State.win.output)
+        end
+        if State.win.variables and vim.api.nvim_win_is_valid(State.win.variables) then
+            table.insert(wins_to_lock, State.win.variables)
+        end
+        if State.win.preview and vim.api.nvim_win_is_valid(State.win.preview) then
+            table.insert(wins_to_lock, State.win.preview)
+        end
+        
+        -- Lock dimensions
+        local original_opts = {}
+        for _, win in ipairs(wins_to_lock) do
+            original_opts[win] = {
+                wfw = vim.wo[win].winfixwidth,
+                wfh = vim.wo[win].winfixheight
+            }
+            vim.wo[win].winfixwidth = true
+            vim.wo[win].winfixheight = true
+        end
+        
+        vim.api.nvim_win_close(State.win.pin, true)
+        State.win.pin = nil
+        
+        -- Restore dimensions
+        for win, opts in pairs(original_opts) do
+            if vim.api.nvim_win_is_valid(win) then
+                vim.wo[win].winfixwidth = opts.wfw
+                vim.wo[win].winfixheight = opts.wfh
+            end
+        end
+        
+        return
+    end
+    
+    M.open_pin_window()
 end
 
 return M

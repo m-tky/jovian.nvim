@@ -2,10 +2,12 @@ local M = {}
 
 M.defaults = {
 	-- UI
-	preview_width_percent = 30,
+	preview_width_percent = 25,
 	repl_height_percent = 25,
+    pin_height_percent = 20, -- Height of the pinned result window (percent of editor height)
     vars_pane_width_percent = 25, -- Width of the variables pane (percent of editor width)
     toggle_var = true, -- Automatically toggle variables pane with UI
+    toggle_pin = true, -- Automatically toggle pinned window with UI
 
 	-- Visuals
 	flash_highlight_group = "Visual",

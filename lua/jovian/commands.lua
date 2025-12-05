@@ -248,6 +248,32 @@ function M.setup()
     vim.api.nvim_create_user_command("JovianTogglePlot", function()
         require("jovian.core").toggle_plot_view()
     end, {})
+    
+    -- Pinning
+    vim.api.nvim_create_user_command("JovianPin", function()
+        local id = Utils.get_current_cell_id(nil, false)
+        if not id then return vim.notify("No cell found", vim.log.levels.WARN) end
+        
+        local filename = vim.fn.expand("%:t")
+        if filename == "" then filename = "scratchpad" end
+        local file_dir = vim.fn.expand("%:p:h")
+        local cache_dir = file_dir .. "/.jovian_cache/" .. filename
+        local md_path = cache_dir .. "/" .. id .. ".md"
+        
+        if vim.fn.filereadable(md_path) == 0 then
+            return vim.notify("No output found for cell " .. id, vim.log.levels.WARN)
+        end
+        
+        UI.pin_cell(md_path)
+    end, {})
+    
+    vim.api.nvim_create_user_command("JovianUnpin", function()
+        UI.unpin()
+    end, {})
+    
+    vim.api.nvim_create_user_command("JovianTogglePin", function()
+        UI.toggle_pin_window()
+    end, {})
 
 	-- Cell Editing
 	vim.api.nvim_create_user_command("JovianDeleteCell", function()
