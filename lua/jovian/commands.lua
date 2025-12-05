@@ -24,7 +24,11 @@ end
 
 local function goto_prev_cell()
 	local cursor = vim.fn.line(".")
-	for i = cursor - 1, 1, -1 do
+    -- Get start of current cell to ensure we jump to the *previous* cell,
+    -- not the start of the current one.
+    local s, _ = Utils.get_cell_range(cursor)
+    
+	for i = s - 1, 1, -1 do
 		local line = vim.api.nvim_buf_get_lines(0, i - 1, i, false)[1]
 		if line:match("^# %%%%") then
 			vim.api.nvim_win_set_cursor(0, { i, 0 })
