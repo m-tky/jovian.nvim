@@ -16,7 +16,6 @@
 - **Kernel Selection**: Switch between local and remote (SSH) Python kernels dynamically.
 - **Remote Execution**: Seamlessly execute code on remote servers via SSH, with local result preview and variable monitoring.
 - **Interleaved Output**: REPL output is interleaved with code execution for a natural flow.
-- **Cell Navigation**: Quickly jump between cells using a fuzzy finder (`:JovianCells`), with support for searching code content within cells.
 - **Magic Command Support**: Syntax highlighting and error suppression for IPython magic commands (`%timeit`, `!ls`, etc.).
 
 ## 📦 Dependencies
@@ -33,7 +32,6 @@
     - **Linux**: `libnotify` (provides `notify-send`).
     - **macOS**: `osascript` (usually pre-installed).
 - **[jupytext.nvim](https://github.com/GCBallesteros/jupytext.nvim)**: Highly recommended for seamless conversion between `.ipynb` files and the percent-formatted python files (`.py`) used by this plugin. It allows you to open `.ipynb` files directly as `.py` files in Neovim.
-- **[snacks.nvim](https://github.com/folke/snacks.nvim)**: Required for the `:JovianCells` picker functionality.
 
 ### Important (For Image Support)
 - **[image.nvim](https://github.com/3rd/image.nvim)**: Required for displaying plots and images within Neovim.
@@ -73,12 +71,6 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim):
     dependencies = {
         "3rd/image.nvim", -- Required for image/plot support
         "GCBallesteros/jupytext.nvim", -- Recommended for .ipynb conversion
-        {
-            "folke/snacks.nvim",
-            opts = {
-                picker = { enabled = true },
-            },
-        },
     },
     config = function()
         -- Configure image.nvim (Required for plots)
@@ -214,7 +206,6 @@ require("jovian").setup({
 - **`:JovianMoveCellUp` / `:JovianMoveCellDown`**: Move the current cell up or down.
 - **`:JovianMergeBelow`**: Merge the current cell with the one below.
 - **`:JovianSplitCell`**: Split the current cell at the cursor.
-- **`:JovianCells`**: Open a fuzzy picker to list and search cells. Supports searching by cell title or code content (e.g., function definitions, variables).
 
 ### Data & Inspection
 - **`:JovianVars`**: Show variables in a floating window (forces float even if pane is open).
