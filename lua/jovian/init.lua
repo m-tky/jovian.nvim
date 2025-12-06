@@ -6,6 +6,7 @@ local Session = require("jovian.session")
 function M.setup(opts)
 	Config.setup(opts)
     require("jovian.diagnostics").setup()
+    require("jovian.highlights").setup()
 
     -- TreeSitter Queries
     local plugin_root = debug.getinfo(1).source:sub(2):match("(.*/)") .. "../.."

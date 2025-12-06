@@ -53,13 +53,7 @@
               })
             end
             
-            -- Setup snacks.nvim
-            local snacks_ok, snacks = pcall(require, "snacks")
-            if snacks_ok then
-              snacks.setup({
-                picker = { enabled = true },
-              })
-            end
+
 
             -- Setup jovian.nvim
             require("jovian").setup({
@@ -78,7 +72,7 @@
                 start = [
                   pkgs.vimPlugins.image-nvim
                   pkgs.vimPlugins.jupytext-nvim
-                  pkgs.vimPlugins.snacks-nvim
+
                 ];
               };
             };

@@ -24,6 +24,8 @@ M.defaults = {
 	},
 
 	ui = {
+		transparent_float = false,
+		winblend = 0,
 		layouts = {
 			{
 				elements = {

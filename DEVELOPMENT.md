@@ -18,6 +18,7 @@ The core logic is located in `lua/jovian/`:
 
 - **`init.lua`**: The entry point. Handles `setup` and delegates command registration.
 - **`commands.lua`**: Contains all user command definitions (`JovianRun`, `JovianToggle`, etc.).
+- **`highlights.lua`**: Defines custom highlight groups (`JovianFloat`, `JovianHeader`, etc.) and links them to standard groups.
 - **`core.lua`**: The brain of the plugin. Manages the Python kernel process (local or remote) and orchestrates logic.
 - **`backend/kernel_bridge.py`**: The Python script that runs on the target host (local or remote). It wraps an `IPython.interactive` shell, captures I/O, and communicates with Neovim via JSON messages. It also handles plot display, supporting both inline images and external windows (via TkAgg) simultaneously.
 - **`handlers.lua`**: Contains handler functions for processing messages received from the Python kernel.
