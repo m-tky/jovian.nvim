@@ -2,6 +2,7 @@ local M = {}
 local UI = require("jovian.ui")
 local Config = require("jovian.config")
 local State = require("jovian.state")
+local Session = require("jovian.session")
 
 function M.handle_stream(msg)
     UI.append_stream_text(msg.text, msg.stream)
@@ -27,95 +28,12 @@ function M.handle_execution_started(msg)
     UI.append_to_repl({ "" })
 end
 
-function M.sync_remote_file(remote_path)
-    if not Config.options.ssh_host then return end
-    
-    local host = Config.options.ssh_host
-    local local_path = remote_path -- We assume paths match because we sent the local path as file_dir
-    
-    -- Ensure local directory exists
-    local dir = vim.fn.fnamemodify(local_path, ":h")
-    vim.fn.mkdir(dir, "p")
-    
-    local cmd = string.format("scp %s:%s %s", host, remote_path, local_path)
-    vim.fn.system(cmd)
-end
+
 
 function M.handle_result_ready(msg)
     State.current_preview_file = nil
 
-    if Config.options.ssh_host then
-        M.sync_remote_file(msg.file)
-        if msg.images then
-            for _, img_data in pairs(msg.images) do
-                -- Images are sent as base64 in msg.images, but also saved to file on remote.
-                -- msg.images keys are filenames (relative or absolute?)
-                -- In kernel_bridge, keys are filenames (e.g. "cellid_00.png").
-                -- But wait, kernel_bridge sends: images[img_filename] = item["data"]
-                -- img_filename is just filename.
-                -- We need full path to sync.
-                -- But we also have the data in base64! We can just write it locally!
-                -- We don't need to scp images if we have the data.
-                -- BUT, handle_result_ready doesn't currently write images from base64.
-                -- It relies on the file existing?
-                -- Let's check kernel_bridge.py again.
-                -- It sends "images": { filename: base64, ... }
-                -- And "file": md_path.
-                -- The MD file references images by filename (relative).
-                -- So if we sync the MD file, we also need the images.
-                -- If we have base64, we can write them locally.
-            end
-        end
-    end
-
-    -- If we have image data in msg, write it locally to avoid SCP for images
-    -- If we have image data in msg, we might need to write it locally if we are remote.
-    -- But if we are local, kernel_bridge already wrote it.
-    -- The previous logic here was truncating files. We should rely on the sync logic below or SCP.
-    
-    if msg.images and Config.options.ssh_host then
-        -- For SSH, we need to sync. 
-        -- We can either use SCP (slow) or write from base64 (fast).
-        -- Let's use the base64 writing logic which is already present below for 'content_md' block,
-        -- but we might need it here too if 'content_md' is not set?
-        -- Actually, 'content_md' is usually set for execution results.
-        
-        -- Let's just rely on the SCP fallback or the python-based writer below.
-        -- Removing the truncation block.
-    end
-
-    -- Sync content to local cache if provided (SSH or Local)
-    if msg.content_md then
-        local cell_id = msg.cell_id
-        local filename = vim.fn.expand("%:t")
-        if filename == "" then filename = "scratchpad" end
-        local file_dir = vim.fn.expand("%:p:h")
-        local cache_dir = file_dir .. "/.jovian_cache/" .. filename
-        
-        -- Ensure cache dir exists
-        vim.fn.mkdir(cache_dir, "p")
-        
-        -- Write Images
-        if msg.images then
-            for img_name, b64 in pairs(msg.images) do
-                local img_path = cache_dir .. "/" .. img_name
-                local write_script = string.format(
-                    "import base64, sys; open('%s', 'wb').write(base64.b64decode(sys.stdin.read()))",
-                    img_path
-                )
-                vim.fn.system({Config.options.python_interpreter, "-c", write_script}, b64)
-            end
-        end
-
-        -- Write MD
-        local md_path = cache_dir .. "/" .. cell_id .. ".md"
-        local f = io.open(md_path, "w")
-        if f then
-            f:write(msg.content_md)
-            f:close()
-            msg.file = md_path -- Update to local path
-        end
-    end
+    Session.save_execution_result(msg)
 
     UI.open_markdown_preview(msg.file)
     UI.update_variables_pane()

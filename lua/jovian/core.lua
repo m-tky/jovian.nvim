@@ -2,7 +2,10 @@ local M = {}
 local State = require("jovian.state")
 local Config = require("jovian.config")
 local UI = require("jovian.ui")
+local UI = require("jovian.ui")
 local Utils = require("jovian.utils")
+local Cell = require("jovian.cell")
+local Session = require("jovian.session")
 
 local function is_window_open()
 	return State.win.output and vim.api.nvim_win_is_valid(State.win.output)
@@ -56,72 +59,7 @@ local function on_stdout(chan_id, data, name)
 	end
 end
 
-function M.clean_stale_cache(bufnr)
-	if not State.job_id then
-		return
-	end
-    
-    bufnr = bufnr or 0
-    if not vim.api.nvim_buf_is_valid(bufnr) then return end
 
-	local filename = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(bufnr), ":t")
-	if filename == "" then
-		return
-	end
-    
-	local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-	local valid_ids = {}
-	for _, line in ipairs(lines) do
-		local id = line:match('id="([%w%-_]+)"')
-		if id then
-			table.insert(valid_ids, id)
-		end
-	end
-    
-    local file_dir = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(bufnr), ":p:h")
-    local cache_dir = file_dir .. "/.jovian_cache/" .. filename
-    
-	local msg = vim.fn.json_encode({
-		command = "purge_cache",
-		filename = filename,
-        file_dir = cache_dir,
-		ids = valid_ids,
-	})
-    pcall(vim.fn.chansend, State.job_id, msg .. "\n")
-end
-
-
-
-function M.clear_cache(ids)
-    if not State.job_id then return end
-    local filename = vim.fn.expand("%:t")
-    if filename == "" then return end
-    local file_dir = vim.fn.expand("%:p:h")
-    local cache_dir = file_dir .. "/.jovian_cache/" .. filename
-    
-    local msg = vim.fn.json_encode({
-        command = "remove_cache",
-        filename = filename,
-        file_dir = cache_dir,
-        ids = ids
-    })
-    vim.fn.chansend(State.job_id, msg .. "\n")
-end
-
-function M.clear_current_cell_cache()
-    local id = Utils.get_current_cell_id(nil, false)
-    if not id then return end
-    M.clear_cache({id})
-    UI.set_cell_status(0, id, nil, nil) -- Clear status
-    vim.notify("Cleared cache for cell " .. id, vim.log.levels.INFO)
-end
-
-function M.clear_all_cache()
-    local ids = vim.tbl_keys(Utils.get_all_ids(0))
-    M.clear_cache(ids)
-    UI.clear_status_extmarks(0)
-    vim.notify("Cleared all cache", vim.log.levels.INFO)
-end
 
 function M._prepare_kernel_command(script_path, backend_dir)
     local cmd = {}
@@ -165,7 +103,7 @@ function M.start_kernel()
 	end
 
 	-- Ensure IDs are unique before starting
-	Utils.fix_duplicate_ids(0)
+	Cell.fix_duplicate_ids(0)
 
     -- Validate Connection
     local ok, err = Hosts.validate_connection()
@@ -189,7 +127,7 @@ function M.start_kernel()
 	})
 	UI.append_to_repl("[Jovian Kernel Started]")
 	vim.defer_fn(function()
-		M.clean_stale_cache()
+		Session.clean_stale_cache()
         -- Refresh variables pane if open
         if State.win.variables and vim.api.nvim_win_is_valid(State.win.variables) then
             M.show_variables()
@@ -224,7 +162,7 @@ function M.send_payload(code, cell_id, filename)
 
 	State.cell_buf_map[cell_id] = current_buf
 	State.cell_start_time[cell_id] = os.time()
-    State.cell_hashes[cell_id] = Utils.get_cell_hash(code)
+    State.cell_hashes[cell_id] = Cell.get_cell_hash(code)
 
 	local lines = vim.api.nvim_buf_get_lines(current_buf, 0, -1, false)
 	for i, line in ipairs(lines) do
@@ -258,7 +196,7 @@ function M.send_payload(code, cell_id, filename)
 	}
     
     -- Store hash for stale detection
-    State.cell_hashes[cell_id] = Utils.get_cell_hash(code)
+    State.cell_hashes[cell_id] = Cell.get_cell_hash(code)
     
 	local msg = vim.fn.json_encode(payload)
 	vim.fn.chansend(State.job_id, msg .. "\n")
@@ -313,7 +251,7 @@ function M.send_cell()
 	end
 	local src_win = vim.api.nvim_get_current_win()
 	vim.api.nvim_set_current_win(src_win)
-	local s, e = Utils.get_cell_range()
+	local s, e = Cell.get_cell_range()
 	UI.flash_range(s, e)
 	local lines = vim.api.nvim_buf_get_lines(0, s - 1, e, false)
 	if #lines > 0 and lines[1]:match("^# %%%%") then
@@ -322,7 +260,7 @@ function M.send_cell()
         end
 		table.remove(lines, 1)
 	end
-	local id = Utils.get_current_cell_id(s, true)
+	local id = Cell.get_current_cell_id(s, true)
 	local fn = vim.fn.expand("%:t")
 	if fn == "" then
 		fn = "untitled"
@@ -336,12 +274,12 @@ function M.run_profile_cell()
 		return vim.notify("Jovian windows are closed.", vim.log.levels.WARN)
 	end
 	local src_win = vim.api.nvim_get_current_win()
-	local s, e = Utils.get_cell_range()
+	local s, e = Cell.get_cell_range()
 	local lines = vim.api.nvim_buf_get_lines(0, s - 1, e, false)
 	if #lines > 0 and lines[1]:match("^# %%%%") then
 		table.remove(lines, 1)
 	end
-	local id = Utils.get_current_cell_id(s, true)
+	local id = Cell.get_current_cell_id(s, true)
 	M.profile_cell(table.concat(lines, "\n"), id)
 end
 
@@ -358,7 +296,7 @@ function M.send_selection()
 		return
 	end
 	UI.flash_range(csrow, cerow)
-	local id = Utils.get_current_cell_id(csrow, true)
+	local id = Cell.get_current_cell_id(csrow, true)
 	local fn = vim.fn.expand("%:t")
 	if fn == "" then
 		fn = "untitled"
@@ -368,7 +306,7 @@ end
 
 function M.run_and_next()
 	M.send_cell()
-	local _, e = Utils.get_cell_range()
+	local _, e = Cell.get_cell_range()
 	local total = vim.api.nvim_buf_line_count(0)
 	if e < total then
 		vim.api.nvim_win_set_cursor(0, { e + 1, 0 })
@@ -425,7 +363,7 @@ function M.run_all_cells()
 			if #blk > 0 and is_code then
 				M.send_payload(table.concat(blk, "\n"), bid, fn)
 			end
-			blk, bid = {}, Utils.ensure_cell_id(i, line)
+			blk, bid = {}, Cell.ensure_cell_id(i, line)
 			is_code = not line:lower():match("^# %%%%+%s*%[markdown%]")
 		else
 			if is_code then
@@ -453,7 +391,7 @@ function M.run_cells_above()
 	end
 
     local cursor_line = vim.fn.line(".")
-    local _, end_line = Utils.get_cell_range(cursor_line)
+    local _, end_line = Cell.get_cell_range(cursor_line)
 	local lines = vim.api.nvim_buf_get_lines(0, 0, end_line, false)
     
 	local blk, bid, is_code = {}, "scratchpad", true
@@ -462,7 +400,7 @@ function M.run_cells_above()
 			if #blk > 0 and is_code then
 				M.send_payload(table.concat(blk, "\n"), bid, fn)
 			end
-			blk, bid = {}, Utils.ensure_cell_id(i, line)
+			blk, bid = {}, Cell.ensure_cell_id(i, line)
 			is_code = not line:lower():match("^# %%%%+%s*%[markdown%]")
 		else
 			if is_code then
@@ -501,24 +439,7 @@ function M.show_variables(opts)
 	vim.fn.chansend(State.job_id, msg .. "\n")
 end
 
-function M.check_cursor_cell()
-	-- if not State.job_id then return end -- Allow checking cache even if kernel is not running
-	vim.schedule(function()
-		local cell_id = Utils.get_current_cell_id(nil, false)
-        if not cell_id then return end
-		local filename = vim.fn.expand("%:t")
-		if filename == "" then
-			filename = "scratchpad"
-		end
-        local file_dir = vim.fn.expand("%:p:h")
-		local cache_dir = file_dir .. "/.jovian_cache/" .. filename
-		local rel_path = cache_dir .. "/" .. cell_id .. ".md"
-		local md_path = vim.fn.fnamemodify(rel_path, ":p")
-		if State.current_preview_file ~= md_path and vim.fn.filereadable(md_path) == 1 then
-			UI.open_markdown_preview(md_path)
-		end
-	end)
-end
+
 
 function M.interrupt_kernel()
 	if not State.job_id then
@@ -572,133 +493,7 @@ function M.peek_symbol(args)
 	vim.fn.chansend(State.job_id, msg .. "\n")
 end
 
--- Add: Structure Check
-function M.clean_orphaned_caches(dir)
-    dir = dir or vim.fn.getcwd()
-    local cache_root = dir .. "/.jovian_cache"
-    
-    if vim.fn.isdirectory(cache_root) == 0 then
-        return
-    end
-    
-    -- Iterate over directories in .jovian_cache
-    local scanner = vim.loop.fs_scandir(cache_root)
-    if scanner then
-        while true do
-            local name, type = vim.loop.fs_scandir_next(scanner)
-            if not name then break end
-            
-            if type == "directory" then
-                -- Check if the corresponding source file exists
-                -- The cache directory name is the filename (e.g., "script.py")
-                local source_file = dir .. "/" .. name
-                if vim.fn.filereadable(source_file) == 0 then
-                    -- Source file missing, delete cache
-                    local cache_path = cache_root .. "/" .. name
-                    vim.fn.delete(cache_path, "rf")
-                    -- vim.notify("Cleaned orphaned cache: " .. name, vim.log.levels.INFO)
-                end
-            end
-        end
-    end
-end
 
-function M.check_structure_change()
-    local bufnr = vim.api.nvim_get_current_buf()
-    UI.clean_invalid_extmarks(bufnr)
-    
-    -- Check for stale cells
-    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-    local current_cell_id = nil
-    local current_cell_line = nil
-    local current_cell_lines = {}
-    
-    for i, line in ipairs(lines) do
-        local id = line:match('id="([%w%-_]+)"')
-        if id then
-            -- Process previous cell
-            if current_cell_id and #current_cell_lines > 0 then
-                local code = table.concat(current_cell_lines, "\n")
-                local current_hash = Utils.get_cell_hash(code)
-                local stored_hash = State.cell_hashes[current_cell_id]
-                
-                if stored_hash and stored_hash ~= current_hash then
-                    -- Mark as stale if currently "done"
-                    -- Use current_cell_line (1-based from ipairs, but extmarks need 0-based or 1-based depending on API)
-                    -- get_cell_status_extmark expects 1-based line number (it converts internally or uses it for lookup)
-                    -- Let's check UI.get_cell_status_extmark implementation.
-                    -- It calls get_extmarks with limit. It doesn't take line number?
-                    -- Wait, UI.get_cell_status_extmark(bufnr, line)
-                    -- In ui.lua: function M.get_cell_status_extmark(bufnr, lnum)
-                    local mark = UI.get_cell_status_extmark(bufnr, current_cell_line)
-                    if mark and (mark.status == "done" or mark.status == "error") then
-                         UI.set_cell_status(bufnr, current_cell_id, "stale", "? Stale")
-                    end
-                elseif stored_hash and stored_hash == current_hash then
-                     -- Revert to done if it was stale?
-                     -- If it was error, we don't know if we should revert to error?
-                     -- Actually, if hash matches stored hash, it means we are back to the state that produced the result.
-                     -- If that result was "error", we should revert to "error".
-                     -- But we don't store the *previous* status (done vs error) in State.
-                     -- We only store the hash.
-                     -- However, the extmark might still be "stale".
-                     -- If we revert, we should probably set it to "done" as a safe default, OR we need to store the result status.
-                     -- For now, let's just revert to "done" as it's the most common success case.
-                     -- Or better: If we don't know, maybe we shouldn't change it back?
-                     -- But the user expects "undo" to restore status.
-                     
-                     -- Let's stick to "done" for now, or improve State to store `cell_status_type`.
-                     local mark = UI.get_cell_status_extmark(bufnr, current_cell_line)
-                     if mark and mark.status == "stale" then
-                         UI.set_cell_status(bufnr, current_cell_id, "done", Config.options.ui_symbols.done)
-                     end
-                end
-            end
-            
-            current_cell_id = id
-            current_cell_line = i -- Record the line number of the header
-            current_cell_lines = {}
-        elseif current_cell_id then
-             if not line:match("^# %%%%") then
-                 table.insert(current_cell_lines, line)
-             end
-        end
-    end
-    
-    -- Process last cell
-    if current_cell_id and #current_cell_lines > 0 then
-        local code = table.concat(current_cell_lines, "\n")
-        local current_hash = Utils.get_cell_hash(code)
-        local stored_hash = State.cell_hashes[current_cell_id]
-        
-        if stored_hash and stored_hash ~= current_hash then
-            local mark = UI.get_cell_status_extmark(bufnr, current_cell_line)
-            if mark and (mark.status == "done" or mark.status == "error") then
-                 UI.set_cell_status(bufnr, current_cell_id, "stale", "? Stale")
-            end
-        elseif stored_hash and stored_hash == current_hash then
-             local mark = UI.get_cell_status_extmark(bufnr, current_cell_line)
-             if mark and mark.status == "stale" then
-                 UI.set_cell_status(bufnr, current_cell_id, "done", Config.options.ui_symbols.done)
-             end
-        end
-    end
-end
-
-local structure_timer = nil
-function M.schedule_structure_check()
-    if structure_timer then
-        structure_timer:close()
-    end
-    structure_timer = vim.loop.new_timer()
-    structure_timer:start(200, 0, vim.schedule_wrap(function()
-        M.check_structure_change()
-        if structure_timer then
-            structure_timer:close()
-            structure_timer = nil
-        end
-    end))
-end
 
 -- Initialize
 vim.schedule(function()

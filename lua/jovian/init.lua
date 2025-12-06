@@ -4,6 +4,7 @@ local Core = require("jovian.core")
 local M = {}
 local Config = require("jovian.config")
 local Core = require("jovian.core")
+local Session = require("jovian.session")
 
 function M.setup(opts)
 	Config.setup(opts)
@@ -77,7 +78,7 @@ function M.setup(opts)
 		pattern = "*",
 		callback = function()
 			if vim.bo.filetype == "python" then
-				Core.check_cursor_cell()
+				Session.check_cursor_cell()
 			end
 		end,
 	})
@@ -86,7 +87,7 @@ function M.setup(opts)
     vim.api.nvim_create_autocmd({ "BufWritePost", "VimLeavePre", "BufUnload" }, {
         pattern = "*.py",
         callback = function(ev)
-            Core.clean_stale_cache(ev.buf)
+            Session.clean_stale_cache(ev.buf)
         end,
     })
 
@@ -94,7 +95,7 @@ function M.setup(opts)
     vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
         pattern = "*.py",
         callback = function()
-            Core.schedule_structure_check()
+            Session.schedule_structure_check()
         end,
     })
 
@@ -103,14 +104,14 @@ function M.setup(opts)
         pattern = "*",
         callback = function()
             -- Run for the current working directory
-            Core.clean_orphaned_caches(vim.fn.getcwd())
+            Session.clean_orphaned_caches(vim.fn.getcwd())
             
             -- Also run for the directory of the current file if it's different
             local buf_name = vim.api.nvim_buf_get_name(0)
             if buf_name ~= "" then
                 local buf_dir = vim.fn.fnamemodify(buf_name, ":p:h")
                 if buf_dir ~= vim.fn.getcwd() then
-                    Core.clean_orphaned_caches(buf_dir)
+                    Session.clean_orphaned_caches(buf_dir)
                 end
             end
         end,
@@ -120,7 +121,7 @@ function M.setup(opts)
     vim.api.nvim_create_autocmd("VimResized", {
         pattern = "*",
         callback = function()
-            require("jovian.ui.windows").resize_windows()
+            require("jovian.ui").resize_windows()
         end,
     })
 end

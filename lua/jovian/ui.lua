@@ -4,20 +4,22 @@ local State = require("jovian.state")
 
 -- Submodules
 local Windows = require("jovian.ui.windows")
+local Layout = require("jovian.ui.layout")
 local Renderers = require("jovian.ui.renderers")
 local VirtualText = require("jovian.ui.virtual_text")
 local Shared = require("jovian.ui.shared")
 
 -- Re-export functions
-M.open_windows = Windows.open_windows
+M.open_windows = Layout.open_windows
 M.close_windows = Windows.close_windows
-M.toggle_windows = Windows.toggle_windows
+M.toggle_windows = Layout.toggle_windows
+M.resize_windows = Layout.resize_windows
 M.open_markdown_preview = Windows.open_markdown_preview
-M.toggle_variables_pane = Windows.toggle_variables_pane
-M.update_variables_pane = Windows.update_variables_pane
+M.toggle_variables_pane = Layout.toggle_variables_pane
+M.update_variables_pane = Layout.update_variables_pane
 M.pin_cell = Windows.pin_cell
 M.unpin = Windows.unpin
-M.toggle_pin_window = Windows.toggle_pin_window
+M.toggle_pin_window = Layout.toggle_pin_window
 
 M.render_variables_pane = Renderers.render_variables_pane
 M.show_variables = Renderers.show_variables
@@ -40,23 +42,23 @@ M.append_stream_text = Shared.append_stream_text
 
 function M.clear_repl()
 	if State.buf.output and vim.api.nvim_buf_is_valid(State.buf.output) then
-		-- Terminal buffer cannot be cleared with set_lines,
-		-- so recreate the buffer (forcefully)
-		vim.api.nvim_buf_delete(State.buf.output, { force = true })
-		State.buf.output = nil
-		State.term_chan = nil
-
-		-- Redraw (if window is open)
-        -- We need to call open_windows to recreate the buffer and attach it
-        -- But open_windows checks if window is valid.
-        -- If window is valid, we just need to set the new buffer.
+        local old_buf = State.buf.output
         
+        -- Create new buffer first
+        local new_buf = Windows.get_or_create_buf("JovianConsole")
+        State.buf.output = new_buf
+        
+        -- If window is open, switch to new buffer immediately
         if State.win.output and vim.api.nvim_win_is_valid(State.win.output) then
-             local new_buf = Windows.get_or_create_buf("JovianConsole")
-             State.buf.output = new_buf
              vim.api.nvim_win_set_buf(State.win.output, new_buf)
-             M.append_to_repl("[Jovian Console Cleared]", "Special")
+             Windows.apply_window_options(State.win.output, { wrap = true })
         end
+        
+        -- Now safe to delete old buffer
+		vim.api.nvim_buf_delete(old_buf, { force = true })
+        -- State.term_chan is updated by get_or_create_buf
+        
+        M.append_to_repl("[Jovian Console Cleared]", "Special")
 	end
 end
 

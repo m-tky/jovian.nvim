@@ -2,6 +2,8 @@ local M = {}
 local Core = require("jovian.core")
 local UI = require("jovian.ui")
 local Utils = require("jovian.utils")
+local Cell = require("jovian.cell")
+local Session = require("jovian.session")
 local Hosts = require("jovian.hosts")
 local Config = require("jovian.config")
 
@@ -14,7 +16,7 @@ local function goto_next_cell()
 		if line:match("^# %%%%") then
 			vim.api.nvim_win_set_cursor(0, { i, 0 })
 			vim.cmd("normal! zz")
-			local s, e = Utils.get_cell_range(i)
+			local s, e = Cell.get_cell_range(i)
 			UI.flash_range(s, e)
 			return
 		end
@@ -26,14 +28,14 @@ local function goto_prev_cell()
 	local cursor = vim.fn.line(".")
     -- Get start of current cell to ensure we jump to the *previous* cell,
     -- not the start of the current one.
-    local s, _ = Utils.get_cell_range(cursor)
+    local s, _ = Cell.get_cell_range(cursor)
     
 	for i = s - 1, 1, -1 do
 		local line = vim.api.nvim_buf_get_lines(0, i - 1, i, false)[1]
 		if line:match("^# %%%%") then
 			vim.api.nvim_win_set_cursor(0, { i, 0 })
 			vim.cmd("normal! zz")
-			local s, e = Utils.get_cell_range(i)
+			local s, e = Cell.get_cell_range(i)
 			UI.flash_range(s, e)
 			return
 		end
@@ -42,8 +44,8 @@ local function goto_prev_cell()
 end
 
 local function insert_cell_below()
-	local _, e = Utils.get_cell_range()
-	local new_id = Utils.generate_id()
+	local _, e = Cell.get_cell_range()
+	local new_id = Cell.generate_id()
 	local lines = { "", '# %% id="' .. new_id .. '"', "" }
 	vim.api.nvim_buf_set_lines(0, e, e, false, lines)
 	vim.api.nvim_win_set_cursor(0, { e + 3, 0 })
@@ -51,8 +53,8 @@ local function insert_cell_below()
 end
 
 local function insert_markdown_cell_below()
-	local _, e = Utils.get_cell_range()
-	local new_id = Utils.generate_id()
+	local _, e = Cell.get_cell_range()
+	local new_id = Cell.generate_id()
 	local lines = { "", '# %% [markdown] id="' .. new_id .. '"', "" }
 	vim.api.nvim_buf_set_lines(0, e, e, false, lines)
 	vim.api.nvim_win_set_cursor(0, { e + 3, 0 })
@@ -60,8 +62,8 @@ local function insert_markdown_cell_below()
 end
 
 local function insert_cell_above()
-	local s, _ = Utils.get_cell_range()
-	local new_id = Utils.generate_id()
+	local s, _ = Cell.get_cell_range()
+	local new_id = Cell.generate_id()
 	local lines = { '# %% id="' .. new_id .. '"', "", "" }
 	vim.api.nvim_buf_set_lines(0, s - 1, s - 1, false, lines)
 	vim.api.nvim_win_set_cursor(0, { s + 1, 0 })
@@ -69,7 +71,7 @@ local function insert_cell_above()
 end
 
 local function merge_cell_below()
-	local _, e = Utils.get_cell_range()
+	local _, e = Cell.get_cell_range()
 	local total = vim.api.nvim_buf_line_count(0)
 	if e >= total then
 		return vim.notify("No cell below", vim.log.levels.WARN)
@@ -213,8 +215,15 @@ function M.setup()
 		UI.open_windows()
 	end, {})
 	vim.api.nvim_create_user_command("JovianToggle", UI.toggle_windows, {})
-	vim.api.nvim_create_user_command("JovianClear", UI.clear_repl, {})
-	vim.api.nvim_create_user_command("JovianClean", Core.clean_stale_cache, {})
+	vim.api.nvim_create_user_command("JovianClearREPL", UI.clear_repl, {})
+	vim.api.nvim_create_user_command("JovianClean", function(opts)
+        if opts.bang then
+            require("jovian.session").clean_orphaned_caches()
+            vim.notify("Cleaned orphaned caches", vim.log.levels.INFO)
+        end
+        -- Always clean stale cache for current buffer as well
+        require("jovian.session").clean_stale_cache(0)
+    end, { bang = true })
 	vim.api.nvim_create_user_command("JovianClearDiag", UI.clear_diagnostics, {})
     vim.api.nvim_create_user_command("JovianToggleVars", UI.toggle_variables_pane, {})
 
@@ -251,10 +260,10 @@ function M.setup()
     
     -- Pinning
     vim.api.nvim_create_user_command("JovianPin", function()
-        local id = Utils.get_current_cell_id(nil, false)
+        local id = Cell.get_current_cell_id(nil, false)
         if not id then return vim.notify("No cell found", vim.log.levels.WARN) end
         
-        local md_path = Utils.get_cell_md_path(id)
+        local md_path = Cell.get_cell_md_path(id)
         
         if vim.fn.filereadable(md_path) == 0 then
             return vim.notify("No output found for cell " .. id, vim.log.levels.WARN)
@@ -273,20 +282,20 @@ function M.setup()
 
 	-- Cell Editing
 	vim.api.nvim_create_user_command("JovianDeleteCell", function()
-		require("jovian.utils").delete_cell()
-        require("jovian.core").check_structure_change()
+		require("jovian.cell").delete_cell()
+        require("jovian.session").check_structure_change()
 	end, {})
 	vim.api.nvim_create_user_command("JovianMoveCellUp", function()
-		require("jovian.utils").move_cell_up()
-        require("jovian.core").check_structure_change()
+		require("jovian.cell").move_cell_up()
+        require("jovian.session").check_structure_change()
 	end, {})
 	vim.api.nvim_create_user_command("JovianMoveCellDown", function()
-		require("jovian.utils").move_cell_down()
-        require("jovian.core").check_structure_change()
+		require("jovian.cell").move_cell_down()
+        require("jovian.session").check_structure_change()
 	end, {})
 	vim.api.nvim_create_user_command("JovianSplitCell", function()
-		require("jovian.utils").split_cell()
-        require("jovian.core").check_structure_change()
+		require("jovian.cell").split_cell()
+        require("jovian.session").check_structure_change()
 	end, {})
 
 	-- Execution Control
@@ -297,17 +306,13 @@ function M.setup()
 		require("jovian.core").run_line()
 	end, {})
 
-    vim.api.nvim_create_user_command("JovianClearCache", function()
-        require("jovian.core").clear_current_cell_cache()
-    end, {})
-    vim.api.nvim_create_user_command("JovianClearAllCache", function()
-        require("jovian.core").clear_all_cache()
-    end, {})
-
-    vim.api.nvim_create_user_command("JovianCleanCache", function()
-        require("jovian.core").clean_orphaned_caches()
-        vim.notify("Cleaned orphaned caches", vim.log.levels.INFO)
-    end, {})
+    vim.api.nvim_create_user_command("JovianClearCache", function(opts)
+        if opts.bang then
+            require("jovian.session").clear_all_cache()
+        else
+            require("jovian.session").clear_current_cell_cache()
+        end
+    end, { bang = true })
 	vim.api.nvim_create_user_command("JovianRunAbove", function()
 		require("jovian.core").run_cells_above()
 	end, {})
