@@ -12,15 +12,12 @@
 ## 📖 Table of Contents
 
 - [Features](#-features)
+- [Try with Nix](#-try-with-nix)
 - [Requirements](#-requirements)
 - [Installation](#-installation)
-- [Configuration](#-configuration)
 - [Usage Guide](#-usage-guide)
-  - [Running Code](#running-code)
-  - [Managing Cells](#managing-cells)
-  - [Working with Data](#working-with-data)
-  - [Remote Development (SSH)](#remote-development-ssh)
 - [Keybindings](#-recommended-keybindings)
+- [Configuration](#-configuration)
 - [How it Works](#-how-it-works)
 - [Command Reference](#-command-reference)
 - [Customization](#-customization)
@@ -42,20 +39,34 @@
 
 ---
 
-## 📋 Requirements
+## ⚡ Try with Nix
 
-- **Neovim** (v0.9+)
-- **Python 3** (with `pip`)
-- **Dependencies** (installed in your Python environment):
-  ```bash
-  pip install ipykernel jupyter_client
-  ```
-- **[image.nvim](https://github.com/3rd/image.nvim)** (Required for plot viewing)
-- **[jupytext.nvim](https://github.com/GCBallesteros/jupytext.nvim)** (Recommended for `.ipynb` support)
+No install needed! If you have [Nix](https://nixos.org/), try `jovian.nvim` instantly:
+
+```bash
+nix develop github:m-tky/jovian.nvim
+# Inside the shell:
+nvim-jovian demo_jovian.py
+```
+
+> [!NOTE]
+> This trial environment uses the **Kitty** terminal backend for image rendering. Run inside [Kitty](https://sw.kovidgoyal.net/kitty/) for best results.
 
 ---
 
-## ⚡ Installation
+## 📋 Requirements
+
+- **Neovim** (v0.9+)
+- **Python 3** with dependencies:
+  ```bash
+  pip install ipykernel jupyter_client
+  ```
+- **[image.nvim](https://github.com/3rd/image.nvim)** — Required for plot viewing
+- **[jupytext.nvim](https://github.com/GCBallesteros/jupytext.nvim)** — Recommended for `.ipynb` support
+
+---
+
+## 📦 Installation
 
 Using [lazy.nvim](https://github.com/folke/lazy.nvim):
 
@@ -63,11 +74,11 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim):
 {
     "jovian-org/jovian.nvim",
     dependencies = {
-        "3rd/image.nvim", -- For plots
-        "GCBallesteros/jupytext.nvim", -- For .ipynb files
+        "3rd/image.nvim",
+        "GCBallesteros/jupytext.nvim",
     },
     config = function()
-        -- 1. Setup image.nvim (Adjust backend to your terminal, e.g., "ueberzug" or "kitty")
+        -- Setup image.nvim (adjust backend to your terminal)
         require("image").setup({
             backend = "kitty", 
             processor = "magick_cli",
@@ -76,15 +87,9 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim):
             window_overlap_clear_enabled = true,
         })
 
-        -- 2. Setup jovian.nvim
+        -- Setup jovian.nvim
         require("jovian").setup({
-            python_interpreter = "python3", -- Or absolute path to venv python
-            
-            -- Optional: Configure UI
-            ui = {
-                transparent_float = true, -- Transparent floating windows
-                winblend = 0,             -- Opacity (0-100)
-            }
+            python_interpreter = "python3",
         })
     end
 }
@@ -92,9 +97,26 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim):
 
 ---
 
-## ⌨️ Recommended Keybindings
+## 🎮 Usage Guide
 
-`jovian.nvim` does not enforce keybindings. Add these to your config for a standard experience:
+### Running Code
+- Define cells with `# %%`
+- Run with `:JovianRun` — output appears in the Preview Window
+- Check virtual text status (`Running`, `Done`) on cell headers
+
+### Working with Data
+- `:JovianVars` — View active variables
+- `:JovianView` — Inspect DataFrames in a floating window
+- `:JovianDoc <obj>` / `:JovianPeek <obj>` — View docstrings or quick values
+
+### Remote Development (SSH)
+1. `:JovianAddHost my-server user@1.2.3.4 /usr/bin/python3`
+2. `:JovianUse my-server`
+3. Code runs remotely, results display locally!
+
+---
+
+## ⌨️ Recommended Keybindings
 
 ```lua
 local map = vim.keymap.set
@@ -105,55 +127,33 @@ map("n", "<leader>x", "<cmd>JovianRunAndNext<CR>", { desc = "Run & Next" })
 map("n", "<leader>R", "<cmd>JovianRunAll<CR>", { desc = "Run All Cells" })
 
 -- UI
-map("n", "<leader>jo", "<cmd>JovianOpen<CR>", { desc = "Open Jovian UI" })
+map("n", "<leader>jo", "<cmd>JovianOpen<CR>", { desc = "Open UI" })
 map("n", "<leader>jt", "<cmd>JovianToggle<CR>", { desc = "Toggle UI" })
-map("n", "<leader>jv", "<cmd>JovianVars<CR>", { desc = "Show Variables" })
+map("n", "<leader>jv", "<cmd>JovianVars<CR>", { desc = "Variables" })
 
--- Cell Management
+-- Navigation
 map("n", "]c", "<cmd>JovianNextCell<CR>", { desc = "Next Cell" })
 map("n", "[c", "<cmd>JovianPrevCell<CR>", { desc = "Prev Cell" })
-map("n", "<leader>cn", "<cmd>JovianNewCellBelow<CR>", { desc = "New Cell Below" })
 ```
-
----
-
-## 🎮 Usage Guide
-
-### Running Code
-- **Cells**: Define cells with `# %%`.
-- **Execute**: Use `:JovianRun` to run the current cell. Output appears in the **Preview Window**.
-- **Status**: Check the virtual text (`Running`, `Done`) on the cell header.
-
-### Working with Data
-- **Variables**: Use `:JovianVars` to see a table of active variables.
-- **DataFrames**: Place cursor on a DataFrame variable and run `:JovianView` to see it in a floating window.
-- **Inspection**: Use `:JovianDoc <obj>` to view docstrings or `:JovianPeek <obj>` for a quick value check.
-
-### Remote Development (SSH)
-1.  **Add Host**: `:JovianAddHost my-server user@1.2.3.4 /usr/bin/python3`
-2.  **Connect**: `:JovianUse my-server`
-3.  **Run**: Code runs on the remote server, but results (including plots!) show up locally in Neovim.
 
 ---
 
 ## ⚙️ Configuration
 
 <details>
-<summary>Click to see full default configuration</summary>
+<summary>Click to expand full configuration options</summary>
 
 ```lua
 require("jovian").setup({
     ui = {
         transparent_float = false,
         winblend = 0,
-        layouts = {
-            -- Customize window splits here
-        }
+        layouts = { ... }
     },
     ui_symbols = {
-        running = " Running...",
-        done = " Done",
-        error = " Error",
+        running = " Running...",
+        done = " Done",
+        error = " Error",
     },
     python_interpreter = "python3",
     notify_mode = "all", -- "all", "error", "none"
@@ -163,101 +163,99 @@ require("jovian").setup({
 
 ---
 
----
-
 ## 🧠 How it Works
 
-`jovian.nvim` operates by bridging Neovim with a persistent Python process:
+`jovian.nvim` bridges Neovim with a persistent Python process:
 
-1.  **Kernel Bridge**: When you start a session, the plugin launches a Python script (`kernel_bridge.py`) in the background (locally or via SSH).
-2.  **Communication**: Neovim sends code and commands to this script via **standard input/output (stdin/stdout)** using JSON messages.
-3.  **Execution**: The bridge wraps an embedded **IPython kernel**, allowing it to execute code, capture output (stdout/stderr), and inspect variables.
-4.  **Plotting**: Plots generated by Matplotlib/Plotly are saved as temporary images and rendered in Neovim using **image.nvim**.
+1. **Kernel Bridge** — Launches `kernel_bridge.py` in the background (local or SSH)
+2. **Communication** — JSON messages via stdin/stdout
+3. **Execution** — Wraps an embedded IPython kernel
+4. **Plotting** — Saves plots as images, rendered via `image.nvim`
 
-This architecture ensures that your Neovim UI remains responsive even while heavy computations are running in the background.
+This keeps Neovim responsive while heavy computations run in the background.
 
 ---
 
 ## 📚 Command Reference
 
-### Execution
-| Command | Description |
-| :--- | :--- |
-| `:JovianRun` | Run the current cell. |
-| `:JovianRunAndNext` | Run the current cell and jump to the next one. |
-| `:JovianRunAll` | Run all cells in the file. |
-| `:JovianRunAbove` | Run all cells from the start up to the current cell. |
-| `:JovianRunLine` | Run the current line. |
-| `:JovianSendSelection` | Run the visually selected code. |
-| `:JovianStart` | Manually start the kernel. |
-| `:JovianRestart` | Restart the kernel. |
-| `:JovianInterrupt` | Interrupt execution. |
+<details>
+<summary>Execution Commands</summary>
 
-### UI & Layout
 | Command | Description |
 | :--- | :--- |
-| `:JovianOpen` | Open the full UI (REPL, Preview, Vars). |
-| `:JovianToggle` | Toggle UI visibility. |
-| `:JovianClearREPL` | Clear the REPL output buffer. |
-| `:JovianToggleVars` | Toggle the Variables Pane. |
-| `:JovianTogglePlot` | Toggle between inline and window plot modes. |
-| `:JovianTogglePin` | Toggle the Pin window. |
-| `:JovianPin` | Pin the current cell's output to the Pin window. |
-| `:JovianUnpin` | Clear the Pin window. |
+| `:JovianRun` | Run current cell |
+| `:JovianRunAndNext` | Run and jump to next |
+| `:JovianRunAll` | Run all cells |
+| `:JovianRunAbove` | Run cells up to current |
+| `:JovianRunLine` | Run current line |
+| `:JovianSendSelection` | Run selection |
+| `:JovianStart` | Start kernel |
+| `:JovianRestart` | Restart kernel |
+| `:JovianInterrupt` | Interrupt execution |
+</details>
 
-### Cell Management
-| Command | Description |
-| :--- | :--- |
-| `:JovianNextCell` / `:JovianPrevCell` | Jump to next/previous cell. |
-| `:JovianNewCellBelow` / `:JovianNewCellAbove` | Insert a new code cell. |
-| `:JovianNewMarkdownCellBelow` | Insert a new markdown cell. |
-| `:JovianDeleteCell` | Delete the current cell. |
-| `:JovianMoveCellUp` / `:JovianMoveCellDown` | Move the current cell up/down. |
-| `:JovianMergeBelow` | Merge current cell with the one below. |
-| `:JovianSplitCell` | Split current cell at cursor. |
+<details>
+<summary>UI & Layout Commands</summary>
 
-### Data & Inspection
 | Command | Description |
 | :--- | :--- |
-| `:JovianVars` | Show variables in a floating window. |
-| `:JovianView [var]` | View a DataFrame or variable in a float. |
-| `:JovianCopy [var]` | Copy variable value to clipboard. |
-| `:JovianDoc [obj]` | Show docstring/definition. |
-| `:JovianPeek [obj]` | Quick peek at object value. |
-| `:JovianProfile` | Run cell with profiling. |
-| `:JovianBackend` | Show current Matplotlib backend. |
-| `:JovianClean(!)` | Clean stale caches (use `!` for orphaned caches). |
-| `:JovianClearCache(!)` | Clear cache for current cell (use `!` for all). |
-| `:JovianClearDiag` | Clear diagnostics. |
+| `:JovianOpen` | Open full UI |
+| `:JovianToggle` | Toggle UI |
+| `:JovianClearREPL` | Clear REPL |
+| `:JovianToggleVars` | Toggle Variables |
+| `:JovianTogglePlot` | Toggle plot mode |
+| `:JovianPin` / `:JovianUnpin` | Pin/unpin output |
+</details>
 
-### Host Management
+<details>
+<summary>Cell Management Commands</summary>
+
 | Command | Description |
 | :--- | :--- |
-| `:JovianAddHost` | Add a remote SSH host. |
-| `:JovianAddLocal` | Add a local Python config. |
-| `:JovianUse` | Switch to a host/config. |
-| `:JovianRemoveHost` | Remove a host config. |
+| `:JovianNextCell` / `:JovianPrevCell` | Navigate cells |
+| `:JovianNewCellBelow` / `:JovianNewCellAbove` | Insert cell |
+| `:JovianDeleteCell` | Delete cell |
+| `:JovianMoveCellUp` / `:JovianMoveCellDown` | Move cell |
+| `:JovianMergeBelow` | Merge cells |
+| `:JovianSplitCell` | Split cell |
+</details>
+
+<details>
+<summary>Data & Inspection Commands</summary>
+
+| Command | Description |
+| :--- | :--- |
+| `:JovianVars` | Show variables |
+| `:JovianView [var]` | View DataFrame |
+| `:JovianCopy [var]` | Copy to clipboard |
+| `:JovianDoc [obj]` | View docstring |
+| `:JovianPeek [obj]` | Quick peek |
+| `:JovianProfile` | Profile cell |
+| `:JovianClean(!)` | Clean caches |
+</details>
+
+<details>
+<summary>Host Management Commands</summary>
+
+| Command | Description |
+| :--- | :--- |
+| `:JovianAddHost` | Add SSH host |
+| `:JovianAddLocal` | Add local config |
+| `:JovianUse` | Switch host |
+| `:JovianRemoveHost` | Remove host |
+</details>
 
 ---
 
-### 🎨 Customization (Highlights)
+## 🎨 Customization
 
-Override these groups to match your theme:
-- `JovianFloat`, `JovianFloatBorder` (Windows)
-- `JovianHeader`, `JovianSeparator` (Tables)
-- `JovianVariable`, `JovianType`, `JovianValue` (Variables)
+Override these highlight groups to match your theme:
 
----
-
-## ⚡ Try with Nix
-
-No install needed! If you have Nix:
-
-```bash
-nix develop github:m-tky/jovian.nvim
-# Inside the shell:
-nvim-jovian demo_jovian.py
-```
+| Group | Purpose |
+| :--- | :--- |
+| `JovianFloat`, `JovianFloatBorder` | Floating windows |
+| `JovianHeader`, `JovianSeparator` | Table elements |
+| `JovianVariable`, `JovianType`, `JovianValue` | Variables pane |
 
 ---
 
