@@ -60,7 +60,7 @@ end
 
 
 
-function M._prepare_kernel_command(script_path, backend_dir)
+function M._prepare_kernel_command(script_path)
     local cmd = {}
     if Config.options.connection_file then
         -- Connect to existing kernel via connection file
@@ -72,20 +72,6 @@ function M._prepare_kernel_command(script_path, backend_dir)
     elseif Config.options.ssh_host then
         local host = Config.options.ssh_host
         local remote_python = Config.options.ssh_python
-
-        -- Transfer local backend directory to remote
-        -- 1. scp -r to transfer directory
-        -- 2. execute via ssh (specify kernel_bridge.py directly)
-        -- Remote location: /tmp/jovian_backend
-
-        -- First remove old remote directory and recreate it
-        vim.fn.system(string.format("ssh %s 'rm -rf /tmp/jovian_backend && mkdir -p /tmp/jovian_backend'", host))
-
-        -- Copy contents of backend_dir to remote /tmp/jovian_backend
-        -- We use backend_dir/. to copy contents
-        local scp_cmd = string.format("scp -r %s/. %s:/tmp/jovian_backend", backend_dir, host)
-        vim.fn.system(scp_cmd) -- Synchronous execution to ensure file transfer
-
         cmd = { "ssh", host, remote_python, "-u", "/tmp/jovian_backend/kernel_bridge.py" }
         UI.append_to_repl("[Jovian] Connecting to remote: " .. host, "Special")
     else
@@ -96,48 +82,93 @@ function M._prepare_kernel_command(script_path, backend_dir)
     return cmd
 end
 
-function M.start_kernel()
+function M.sync_backend(host, backend_dir, on_success, on_error)
+    -- 1. Remove old remote directory
+    vim.fn.jobstart(string.format("ssh %s 'rm -rf /tmp/jovian_backend && mkdir -p /tmp/jovian_backend'", host), {
+        on_exit = function(_, code)
+            if code ~= 0 then
+                if on_error then on_error("Failed to prepare remote directory on " .. host) end
+                return
+            end
+            
+            -- 2. Copy contents
+            local scp_cmd = string.format("scp -r %s/. %s:/tmp/jovian_backend", backend_dir, host)
+            vim.fn.jobstart(scp_cmd, {
+                on_exit = function(_, scp_code)
+                    if scp_code ~= 0 then
+                        if on_error then on_error("Failed to sync backend to " .. host) end
+                    else
+                        if on_success then on_success() end
+                    end
+                end
+            })
+        end
+    })
+end
+
+function M.start_kernel(on_ready)
+    -- If called from command, on_ready might be a table (args). Ignore it.
+    if type(on_ready) ~= "function" then on_ready = nil end
+
 	if State.job_id then
+        if on_ready then on_ready() end
 		return
 	end
 
 	-- Ensure IDs are unique before starting
 	Cell.fix_duplicate_ids(0)
 
-    -- Validate Connection
-    local ok, err = Hosts.validate_connection()
-    if not ok then
+    -- Async Validation and Start
+    Hosts.validate_connection(nil, function()
+        -- Success callback
+        local script_path = vim.fn.fnamemodify(debug.getinfo(1).source:sub(2), ":h:h:h") .. "/lua/jovian/backend/kernel_bridge.py"
+        local backend_dir = vim.fn.fnamemodify(debug.getinfo(1).source:sub(2), ":h:h:h") .. "/lua/jovian/backend"
+        
+        local function launch()
+            local cmd = M._prepare_kernel_command(script_path)
+            State.job_id = vim.fn.jobstart(cmd, {
+                on_stdout = on_stdout,
+                on_stderr = on_stdout,
+                stdout_buffered = false,
+                on_exit = function()
+                    State.job_id = nil
+                end,
+            })
+            UI.append_to_repl("[Jovian Kernel Started]")
+            vim.defer_fn(function()
+                Session.clean_stale_cache()
+                -- Refresh variables pane if open
+                if State.win.variables and vim.api.nvim_win_is_valid(State.win.variables) then
+                    M.show_variables()
+                end
+                
+                -- Initialize plot mode from config
+                if Config.options.plot_view_mode then
+                    local msg = vim.json.encode({ command = "set_plot_mode", mode = Config.options.plot_view_mode })
+                    vim.api.nvim_chan_send(State.job_id, msg .. "\n")
+                end
+                
+                if on_ready then on_ready() end
+            end, 500)
+        end
+
+        if Config.options.ssh_host then
+            UI.append_to_repl("[Jovian] Syncing backend to remote...", "Special")
+            M.sync_backend(Config.options.ssh_host, backend_dir, function()
+                launch()
+            end, function(err)
+                UI.append_to_repl("[Error] " .. err, "ErrorMsg")
+                vim.notify(err, vim.log.levels.ERROR)
+            end)
+        else
+            launch()
+        end
+
+    end, function(err)
+        -- Error callback
         UI.append_to_repl("[Error] " .. err, "ErrorMsg")
         vim.notify(err, vim.log.levels.ERROR)
-        return
-    end
-
-	local script_path = vim.fn.fnamemodify(debug.getinfo(1).source:sub(2), ":h:h:h") .. "/lua/jovian/backend/kernel_bridge.py"
-	local backend_dir = vim.fn.fnamemodify(debug.getinfo(1).source:sub(2), ":h:h:h") .. "/lua/jovian/backend"
-	local cmd = M._prepare_kernel_command(script_path, backend_dir)
-
-	State.job_id = vim.fn.jobstart(cmd, {
-		on_stdout = on_stdout,
-		on_stderr = on_stdout,
-		stdout_buffered = false,
-		on_exit = function()
-			State.job_id = nil
-		end,
-	})
-	UI.append_to_repl("[Jovian Kernel Started]")
-	vim.defer_fn(function()
-		Session.clean_stale_cache()
-        -- Refresh variables pane if open
-        if State.win.variables and vim.api.nvim_win_is_valid(State.win.variables) then
-            M.show_variables()
-        end
-        
-        -- Initialize plot mode from config
-        if Config.options.plot_view_mode then
-            local msg = vim.fn.json_encode({ command = "set_plot_mode", mode = Config.options.plot_view_mode })
-            vim.fn.chansend(State.job_id, msg .. "\n")
-        end
-	end, 500)
+    end)
 end
 
 function M.restart_kernel()
@@ -155,7 +186,10 @@ end
 
 function M.send_payload(code, cell_id, filename)
 	if not State.job_id then
-		M.start_kernel()
+		M.start_kernel(function()
+            M.send_payload(code, cell_id, filename)
+        end)
+        return
 	end
 	local current_buf = vim.api.nvim_get_current_buf()
 
@@ -197,34 +231,40 @@ function M.send_payload(code, cell_id, filename)
     -- Store hash for stale detection
     State.cell_hashes[cell_id] = Cell.get_cell_hash(code)
     
-	local msg = vim.fn.json_encode(payload)
-	vim.fn.chansend(State.job_id, msg .. "\n")
+	local msg = vim.json.encode(payload)
+	vim.api.nvim_chan_send(State.job_id, msg .. "\n")
 end
 
 -- Add: Profiling
 function M.profile_cell(code, cell_id)
 	if not State.job_id then
-		M.start_kernel()
+		M.start_kernel(function()
+            M.profile_cell(code, cell_id)
+        end)
+        return
 	end
-	local msg = vim.fn.json_encode({
+	local msg = vim.json.encode({
 		command = "profile",
 		code = code,
 		cell_id = cell_id,
 	})
-	vim.fn.chansend(State.job_id, msg .. "\n")
+	vim.api.nvim_chan_send(State.job_id, msg .. "\n")
 end
 
 -- Add: Copy
 function M.copy_variable(args)
 	if not State.job_id then
-		return vim.notify("Kernel not started", vim.log.levels.WARN)
+        M.start_kernel(function()
+            M.copy_variable(args)
+        end)
+		return
 	end
 	local var_name = args.args
 	if var_name == "" then
 		var_name = vim.fn.expand("<cword>")
 	end
-	local msg = vim.fn.json_encode({ command = "copy_to_clipboard", name = var_name })
-	vim.fn.chansend(State.job_id, msg .. "\n")
+	local msg = vim.json.encode({ command = "copy_to_clipboard", name = var_name })
+	vim.api.nvim_chan_send(State.job_id, msg .. "\n")
 end
 
 function M.print_backend()
@@ -240,8 +280,8 @@ function M.print_backend()
         file_dir = vim.fn.expand("%:p:h"),
         cwd = vim.fn.expand("%:p:h"),
     }
-    local msg = vim.fn.json_encode(payload)
-    vim.fn.chansend(State.job_id, msg .. "\n")
+    local msg = vim.json.encode(payload)
+    vim.api.nvim_chan_send(State.job_id, msg .. "\n")
 end
 
 function M.send_cell()
@@ -250,6 +290,9 @@ function M.send_cell()
 	end
 	local src_win = vim.api.nvim_get_current_win()
 	vim.api.nvim_set_current_win(src_win)
+	if not State.job_id then
+		M.start_kernel()
+	end
 	local s, e = Cell.get_cell_range()
 	UI.flash_range(s, e)
 	local lines = vim.api.nvim_buf_get_lines(0, s - 1, e, false)
@@ -288,6 +331,9 @@ function M.send_selection()
 	end
 	local src_win = vim.api.nvim_get_current_win()
 	vim.api.nvim_set_current_win(src_win)
+	if not State.job_id then
+		M.start_kernel()
+	end
 	local _, csrow, _, _ = unpack(vim.fn.getpos("'<"))
 	local _, cerow, _, _ = unpack(vim.fn.getpos("'>"))
 	local lines = vim.api.nvim_buf_get_lines(0, csrow - 1, cerow, false)
@@ -320,6 +366,9 @@ function M.run_line()
 	end
 	local src_win = vim.api.nvim_get_current_win()
 	vim.api.nvim_set_current_win(src_win)
+	if not State.job_id then
+		M.start_kernel()
+	end
 
 	local line = vim.api.nvim_get_current_line()
 	if line == "" then
@@ -414,28 +463,34 @@ end
 
 function M.view_dataframe(args)
 	if not State.job_id then
-		return vim.notify("Kernel not started", vim.log.levels.WARN)
+        M.start_kernel(function()
+            M.view_dataframe(args)
+        end)
+		return
 	end
 	local var_name = args.args
 	if var_name == "" then
 		var_name = vim.fn.expand("<cword>")
 	end
-	local msg = vim.fn.json_encode({ command = "view_dataframe", name = var_name })
-	vim.fn.chansend(State.job_id, msg .. "\n")
+	local msg = vim.json.encode({ command = "view_dataframe", name = var_name })
+	vim.api.nvim_chan_send(State.job_id, msg .. "\n")
 end
 
 function M.show_variables(opts)
 	if not State.job_id then
-		return vim.notify("Kernel not started", vim.log.levels.WARN)
+        M.start_kernel(function()
+            M.show_variables(opts)
+        end)
+		return
 	end
     
     if opts and opts.force_float then
         State.vars_request_force_float = true
     end
 
-	local msg = vim.fn.json_encode({ command = "get_variables" })
+	local msg = vim.json.encode({ command = "get_variables" })
     -- UI.append_to_repl("[Jovian] Requesting variables...", "Comment")
-	vim.fn.chansend(State.job_id, msg .. "\n")
+	vim.api.nvim_chan_send(State.job_id, msg .. "\n")
 end
 
 
@@ -468,41 +523,48 @@ end
 -- Add command functions
 function M.inspect_object(args)
 	if not State.job_id then
-		return vim.notify("Kernel not started", vim.log.levels.WARN)
+        M.start_kernel(function()
+            M.inspect_object(args)
+        end)
+		return
 	end
 	local var_name = args.args
 	if var_name == "" then
 		var_name = vim.fn.expand("<cword>")
 	end
 
-	local msg = vim.fn.json_encode({ command = "inspect", name = var_name })
-	vim.fn.chansend(State.job_id, msg .. "\n")
+	local msg = vim.json.encode({ command = "inspect", name = var_name })
+	vim.api.nvim_chan_send(State.job_id, msg .. "\n")
 end
 
 function M.peek_symbol(args)
 	if not State.job_id then
-		return vim.notify("Kernel not started", vim.log.levels.WARN)
+        M.start_kernel(function()
+            M.peek_symbol(args)
+        end)
+		return
 	end
 	local var_name = args.args
 	if var_name == "" then
 		var_name = vim.fn.expand("<cword>")
 	end
 
-	local msg = vim.fn.json_encode({ command = "peek", name = var_name })
-	vim.fn.chansend(State.job_id, msg .. "\n")
+	local msg = vim.json.encode({ command = "peek", name = var_name })
+	vim.api.nvim_chan_send(State.job_id, msg .. "\n")
 end
 
 
 
 -- Initialize
 vim.schedule(function()
-    local data = Hosts.load_hosts()
-    if data.current and data.configs[data.current] then
+    local ok, data = pcall(Hosts.load_hosts)
+    if ok and data.current and data.configs[data.current] then
         local config = data.configs[data.current]
         if config.type == "ssh" then
             Config.options.ssh_host = config.host
             Config.options.ssh_python = config.python
             Config.options.connection_file = nil
+            Config.options.python_interpreter = config.python
         elseif config.type == "connection" then
             Config.options.ssh_host = nil
             Config.options.ssh_python = nil
@@ -519,15 +581,18 @@ end)
 
 function M.toggle_plot_view()
     if not State.job_id then
-        return vim.notify("Kernel not started", vim.log.levels.WARN)
+        M.start_kernel(function()
+            M.toggle_plot_view()
+        end)
+        return
     end
     
     local current = Config.options.plot_view_mode
     local new_mode = current == "inline" and "window" or "inline"
     Config.options.plot_view_mode = new_mode
     
-    local msg = vim.fn.json_encode({ command = "set_plot_mode", mode = new_mode })
-    vim.fn.chansend(State.job_id, msg .. "\n")
+    local msg = vim.json.encode({ command = "set_plot_mode", mode = new_mode })
+    vim.api.nvim_chan_send(State.job_id, msg .. "\n")
     
     vim.notify("Plot View Mode: " .. new_mode, vim.log.levels.INFO)
 end

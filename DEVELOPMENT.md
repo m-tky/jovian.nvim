@@ -2,6 +2,16 @@
 
 This document provides an overview of the project structure and guidelines for contributing to `jovian.nvim`.
 
+## 🛠️ Development Environment
+
+To start a Neovim instance with the plugin loaded and all dependencies (Python, etc.) pre-configured using Nix:
+
+```bash
+nix develop --command nvim-jovian -l file
+```
+
+This ensures you have the correct Python environment and dependencies available.
+
 ## 📂 Project Structure
 
 The core logic is located in `lua/jovian/`:

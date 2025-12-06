@@ -4,7 +4,7 @@
 -- 1. Setup package path to find jovian modules
 local sep = package.config:sub(1,1)
 local script_path = debug.getinfo(1).source:sub(2)
-local project_root = vim.fn.fnamemodify(script_path, ":p:h")
+local project_root = vim.fn.fnamemodify(script_path, ":p:h:h")
 package.path = package.path .. ";" .. project_root .. "/lua/?.lua" .. ";" .. project_root .. "/lua/?/init.lua"
 
 -- 2. Mock Vim API

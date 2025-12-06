@@ -120,7 +120,7 @@
 
               if [ ! -f demo_jovian.py ]; then
                 echo "Copying demo_jovian.py to current directory..."
-                cp ${self}/demo_jovian.py .
+                cp ${self}/examples/demo_jovian.py .
                 chmod +w demo_jovian.py
               fi
 

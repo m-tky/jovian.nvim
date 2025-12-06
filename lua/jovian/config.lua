@@ -14,6 +14,7 @@ M.defaults = {
 	-- Behavior
 	notify_threshold = 10,
     notify_mode = "all", -- "all", "error", "none"
+    show_execution_time = true,
     plot_view_mode = "inline", -- "inline", "window"
     
     options = {

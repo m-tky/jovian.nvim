@@ -33,13 +33,13 @@ function M.clean_stale_cache(bufnr)
     local file_dir = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(bufnr), ":p:h")
     local cache_dir = file_dir .. "/.jovian_cache/" .. filename
     
-	local msg = vim.fn.json_encode({
+	local msg = vim.json.encode({
 		command = "purge_cache",
 		filename = filename,
 		file_dir = cache_dir,
 		ids = valid_ids,
 	})
-    pcall(vim.fn.chansend, State.job_id, msg .. "\n")
+    pcall(vim.api.nvim_chan_send, State.job_id, msg .. "\n")
     vim.notify("Cleaned stale cache for " .. filename, vim.log.levels.INFO)
 end
 
@@ -50,13 +50,13 @@ function M.clear_cache(ids)
     local file_dir = vim.fn.expand("%:p:h")
     local cache_dir = file_dir .. "/.jovian_cache/" .. filename
     
-    local msg = vim.fn.json_encode({
+    local msg = vim.json.encode({
         command = "remove_cache",
         filename = filename,
         file_dir = cache_dir,
         ids = ids
     })
-    vim.fn.chansend(State.job_id, msg .. "\n")
+    vim.api.nvim_chan_send(State.job_id, msg .. "\n")
 end
 
 function M.clear_current_cell_cache()

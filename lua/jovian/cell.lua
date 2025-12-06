@@ -69,7 +69,7 @@ function M.fix_duplicate_ids(bufnr)
 end
 
 function M.get_cell_range(lnum)
-	local cursor = lnum or vim.fn.line(".")
+	local cursor = lnum or vim.api.nvim_win_get_cursor(0)[1]
 	local total = vim.api.nvim_buf_line_count(0)
 	local s, e = cursor, cursor
 	while s > 1 do
@@ -212,7 +212,7 @@ function M.move_cell_down()
 end
 
 function M.split_cell()
-	local cursor_row = vim.fn.line(".")
+	local cursor_row = vim.api.nvim_win_get_cursor(0)[1]
 
 	local id = M.generate_id(M.get_all_ids(0))
 	local header = '# %% id="' .. id .. '"'

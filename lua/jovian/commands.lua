@@ -9,7 +9,7 @@ local Config = require("jovian.config")
 
 -- Navigation helpers
 local function goto_next_cell()
-	local cursor = vim.fn.line(".")
+	local cursor = vim.api.nvim_win_get_cursor(0)[1]
 	local total = vim.api.nvim_buf_line_count(0)
 	for i = cursor + 1, total do
 		local line = vim.api.nvim_buf_get_lines(0, i - 1, i, false)[1]
@@ -25,7 +25,7 @@ local function goto_next_cell()
 end
 
 local function goto_prev_cell()
-	local cursor = vim.fn.line(".")
+	local cursor = vim.api.nvim_win_get_cursor(0)[1]
     -- Get start of current cell to ensure we jump to the *previous* cell,
     -- not the start of the current one.
     local s, _ = Cell.get_cell_range(cursor)
@@ -106,12 +106,12 @@ function M.setup()
             end
             vim.cmd("redraw")
             local config = { type = "ssh", host = host, python = python }
-            local ok, err = Hosts.validate_connection(config)
-            if not ok then
+            
+            Hosts.validate_connection(config, function()
+                Hosts.add_host(name, config)
+            end, function(err)
                 vim.notify("Validation Failed: " .. err, vim.log.levels.ERROR)
-                return
-            end
-            Hosts.add_host(name, config)
+            end)
         end
 
         if opts.args == "" or #args < 3 then
@@ -145,12 +145,12 @@ function M.setup()
             end
             vim.cmd("redraw")
             local config = { type = "local", python = python }
-            local ok, err = Hosts.validate_connection(config)
-            if not ok then
+            
+            Hosts.validate_connection(config, function()
+                Hosts.add_host(name, config)
+            end, function(err)
                 vim.notify("Validation Failed: " .. err, vim.log.levels.ERROR)
-                return
-            end
-            Hosts.add_host(name, config)
+            end)
         end
 
         if opts.args == "" or #args < 2 then

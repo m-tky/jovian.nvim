@@ -46,9 +46,14 @@ function M.handle_result_ready(msg)
         end
         vim.api.nvim_buf_clear_namespace(target_buf, State.diag_ns, 0, -1)
 
+        local timestamp = ""
+        if Config.options.show_execution_time then
+            timestamp = " (" .. os.date("%H:%M:%S") .. ")"
+        end
+
         if msg.error or msg.status == "error" then
             UI.send_notification("Error in cell " .. msg.cell_id, "error")
-            UI.set_cell_status(target_buf, msg.cell_id, "error", Config.options.ui_symbols.error)
+            UI.set_cell_status(target_buf, msg.cell_id, "error", Config.options.ui_symbols.error .. timestamp)
 
             -- Show diagnostics if error info exists
             if msg.error then
@@ -66,7 +71,7 @@ function M.handle_result_ready(msg)
                 })
             end
         else
-            UI.set_cell_status(target_buf, msg.cell_id, "done", Config.options.ui_symbols.done)
+            UI.set_cell_status(target_buf, msg.cell_id, "done", Config.options.ui_symbols.done .. timestamp)
         end
     end
     State.cell_buf_map[msg.cell_id] = nil
@@ -107,7 +112,7 @@ function M.handle_input_request(msg)
         local value = input or ""
         UI.append_to_repl(value)
         if State.job_id then
-            local reply = vim.fn.json_encode({ command = "input_reply", value = value })
+            local reply = vim.json.encode({ command = "input_reply", value = value })
             vim.fn.chansend(State.job_id, reply .. "\n")
         end
     end)

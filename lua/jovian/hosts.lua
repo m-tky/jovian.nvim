@@ -19,7 +19,7 @@ function M.load_hosts()
         }
     else
         local content = table.concat(vim.fn.readfile(M.hosts_file), "\n")
-        local ok, decoded = pcall(vim.fn.json_decode, content)
+        local ok, decoded = pcall(vim.json.decode, content)
         data = ok and decoded or { configs = {}, current = "local_default" }
     end
 
@@ -32,7 +32,7 @@ end
 
 function M.save_hosts(data)
     M.ensure_hosts_dir()
-    local content = vim.fn.json_encode(data)
+    local content = vim.json.encode(data)
     vim.fn.writefile({content}, M.hosts_file)
 end
 
@@ -106,7 +106,7 @@ function M.use_host(name)
     end
 end
 
-function M.validate_connection(config)
+function M.validate_connection(config, on_success, on_error)
     -- Default to current config if not provided
     local host = config and config.host or Config.options.ssh_host
     local python = config and config.python or Config.options.python_interpreter
@@ -126,34 +126,55 @@ function M.validate_connection(config)
     if connection_file then
         -- Validate connection file existence
         if vim.fn.filereadable(connection_file) == 0 then
-             return false, "Connection file not found: " .. connection_file
+             if on_error then on_error("Connection file not found: " .. connection_file) end
+             return
         end
-        -- We could also try to validate the python interpreter if provided, but it's local
-        local py_check = vim.fn.system({python, "--version"})
-        if vim.v.shell_error ~= 0 then
-            return false, "Local Python interpreter '" .. python .. "' not found."
-        end
+        
+        -- Local python check for connection file mode
+        vim.fn.jobstart({python, "--version"}, {
+            on_exit = function(_, code)
+                if code ~= 0 then
+                    if on_error then on_error("Local Python interpreter '" .. python .. "' not found.") end
+                else
+                    if on_success then on_success() end
+                end
+            end
+        })
     elseif host then
         -- Check SSH connectivity
         vim.notify("[Jovian] Validating connection to " .. host .. "...", vim.log.levels.INFO)
         
-        local ssh_check = vim.fn.system({"ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, "exit"})
-        if vim.v.shell_error ~= 0 then
-            return false, "Could not connect to " .. host .. ". Check SSH config/keys."
-        end
-        
-        local py_check = vim.fn.system({"ssh", host, python, "--version"})
-        if vim.v.shell_error ~= 0 then
-            return false, "Python interpreter '" .. python .. "' not found or not executable on " .. host .. "."
-        end
+        vim.fn.jobstart({"ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, "exit"}, {
+            on_exit = function(_, code)
+                if code ~= 0 then
+                    if on_error then on_error("Could not connect to " .. host .. ". Check SSH config/keys.") end
+                    return
+                end
+                
+                -- Check remote python
+                vim.fn.jobstart({"ssh", host, python, "--version"}, {
+                    on_exit = function(_, py_code)
+                        if py_code ~= 0 then
+                            if on_error then on_error("Python interpreter '" .. python .. "' not found or not executable on " .. host .. ".") end
+                        else
+                            if on_success then on_success() end
+                        end
+                    end
+                })
+            end
+        })
     else
         -- Check local python
-        local py_check = vim.fn.system({python, "--version"})
-        if vim.v.shell_error ~= 0 then
-            return false, "Local Python interpreter '" .. python .. "' not found."
-        end
+        vim.fn.jobstart({python, "--version"}, {
+            on_exit = function(_, code)
+                if code ~= 0 then
+                    if on_error then on_error("Local Python interpreter '" .. python .. "' not found.") end
+                else
+                    if on_success then on_success() end
+                end
+            end
+        })
     end
-    return true, nil
 end
 
 return M
