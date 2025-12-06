@@ -601,4 +601,110 @@ function M.toggle_pin_window()
     M.open_pin_window()
 end
 
+function M.resize_windows()
+    -- Iterate through configured layouts and resize if active
+    local layouts = Config.options.ui.layouts
+    if not layouts then return end
+    
+    for _, layout in ipairs(layouts) do
+        local elements = layout.elements
+        local active_wins = {}
+        
+        -- Check which windows from this layout are open
+        for _, el in ipairs(elements) do
+            local handler = {
+                preview = State.win.preview,
+                output = State.win.output,
+                variables = State.win.variables,
+                pin = State.win.pin
+            }
+            local win = handler[el.id]
+            if win and vim.api.nvim_win_is_valid(win) then
+                table.insert(active_wins, { win = win, size = el.size or 1, id = el.id })
+            end
+        end
+        
+        if #active_wins > 0 then
+            -- Calculate container size
+            local pos = layout.position or "right"
+            local size = layout.size or 40
+            local is_vertical_stack = (pos == "left" or pos == "right")
+            
+            -- Recalculate container size (width or height)
+            local container_size = size
+            if type(size) == "number" and size > 0 and size < 1 then
+                if is_vertical_stack then
+                    container_size = math.floor(vim.o.columns * size)
+                else
+                    container_size = math.floor(vim.o.lines * size)
+                end
+            end
+            
+            -- Apply container size to ALL active windows in this layout
+            -- This ensures the "column" or "row" is resized
+            for _, item in ipairs(active_wins) do
+                if is_vertical_stack then
+                    vim.api.nvim_win_set_width(item.win, container_size)
+                    vim.wo[item.win].winfixwidth = true
+                else
+                    vim.api.nvim_win_set_height(item.win, container_size)
+                    vim.wo[item.win].winfixheight = true
+                end
+            end
+            
+            -- Now resize internal elements (heights in a vertical stack, widths in horizontal)
+            -- We need to know the total available pixels for the stack
+            -- Instead of assuming full screen size, we sum the CURRENT dimensions of the active windows.
+            -- This accounts for other windows (like sidebars) taking up space.
+            
+            local total_pixels = 0
+            for _, item in ipairs(active_wins) do
+                if is_vertical_stack then
+                    -- Vertical stack: windows are stacked vertically.
+                    -- We split the HEIGHT.
+                    total_pixels = total_pixels + vim.api.nvim_win_get_height(item.win)
+                else
+                    -- Horizontal stack: windows are stacked horizontally.
+                    -- We split the WIDTH.
+                    total_pixels = total_pixels + vim.api.nvim_win_get_width(item.win)
+                end
+            end
+            
+            -- If total_pixels is 0 (shouldn't happen if windows are valid), fallback
+            if total_pixels == 0 then
+                 if is_vertical_stack then
+                    total_pixels = vim.o.lines - vim.o.cmdheight - 1
+                 else
+                    total_pixels = vim.o.columns
+                 end
+            end
+            
+            -- Calculate total units of ACTIVE windows
+            
+            -- Calculate total units of ACTIVE windows
+            local total_units = 0
+            for _, item in ipairs(active_wins) do
+                total_units = total_units + item.size
+            end
+            
+            -- Apply sizes
+            for _, item in ipairs(active_wins) do
+                local ratio = item.size / total_units
+                local target_size = math.floor(total_pixels * ratio)
+                target_size = math.max(1, target_size)
+                
+                if is_vertical_stack then
+                    -- Set HEIGHT
+                    vim.api.nvim_win_set_height(item.win, target_size)
+                    vim.wo[item.win].winfixheight = true
+                else
+                    -- Set WIDTH
+                    vim.api.nvim_win_set_width(item.win, target_size)
+                    vim.wo[item.win].winfixwidth = true
+                end
+            end
+        end
+    end
+end
+
 return M

@@ -175,6 +175,12 @@ except:
 
 # Try to patch immediately
 _jovian_patch_matplotlib()
+
+# Ensure we are using a GUI backend (not inline) to support window mode
+try:
+    get_ipython().run_line_magic('matplotlib', 'auto')
+except:
+    pass
 """
         self.kc.execute(script, silent=True)
 
@@ -633,37 +639,12 @@ except Exception:
         # Update variable FIRST
         cmd = f"_jovian_plot_mode = '{mode}'\n"
         
-        # Then switch backend
+        # Explicitly switch backend based on mode
         if mode == "window":
-            # Try to switch to a windowed backend with fallbacks
-            cmd += """
-try:
-    import matplotlib.pyplot as plt
-    backends = ['TkAgg', 'Qt5Agg', 'QtAgg', 'MacOSX']
-    switched = False
-    for backend in backends:
-        try:
-            plt.switch_backend(backend)
-            switched = True
-            break
-        except:
-            continue
-    
-    if not switched:
-        # Fallback to auto/magic if explicit switch fails
-        get_ipython().run_line_magic('matplotlib', 'auto')
-except:
-    pass
-
-try:
-    import matplotlib
-    print(f"[Jovian] Active Backend: {matplotlib.get_backend()}")
-except:
-    pass
-"""
+             cmd += "try: get_ipython().run_line_magic('matplotlib', 'tk'); print('[Jovian] Switched to tk backend')\nexcept: pass"
         else:
-            cmd += "%matplotlib inline"
-            
+             cmd += "try: get_ipython().run_line_magic('matplotlib', 'inline'); print('[Jovian] Switched to inline backend')\nexcept: pass"
+
         self.kc.execute(cmd, silent=False, store_history=True)
 
     def purge_cache(self, ids, file_dir):

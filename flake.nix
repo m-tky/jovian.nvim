@@ -5,30 +5,39 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
-  outputs = { self, nixpkgs }:
+  outputs =
+    { self, nixpkgs }:
     let
-      supportedSystems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
+      supportedSystems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
       forAllSystems = f: nixpkgs.lib.genAttrs supportedSystems (system: f system);
     in
     {
-      packages = forAllSystems (system:
+      packages = forAllSystems (
+        system:
         let
           pkgs = import nixpkgs { inherit system; };
-          
-          pythonEnv = pkgs.python3.withPackages (ps: with ps; [
-            ipython
-            ipykernel
-            jupyter-client
-            numpy
-            pandas
-            matplotlib
-            tqdm
-          ]);
+
+          pythonEnv = pkgs.python3.withPackages (
+            ps: with ps; [
+              ipython
+              ipykernel
+              jupyter-client
+              numpy
+              pandas
+              matplotlib
+              tqdm
+            ]
+          );
 
           initLua = pkgs.writeText "init.lua" ''
             -- Add the plugin source from the Nix store to the runtime path
             vim.opt.rtp:prepend("${self}")
-            
+
             -- Also add current directory (for local development)
             vim.opt.rtp:prepend(".")
 
@@ -48,7 +57,7 @@
             require("jovian").setup({
               python_interpreter = "${pythonEnv}/bin/python3",
             })
-            
+
             vim.opt.number = true
             vim.opt.termguicolors = true
             vim.cmd("colorscheme habamax")
@@ -81,26 +90,40 @@
         }
       );
 
-      devShells = forAllSystems (system:
+      devShells = forAllSystems (
+        system:
         let
           pkgs = import nixpkgs { inherit system; };
+          pythonEnv = pkgs.python3.withPackages (
+            ps: with ps; [
+              ipython
+              ipykernel
+              jupyter-client
+              numpy
+              pandas
+              matplotlib
+              tqdm
+              tkinter
+            ]
+          );
         in
         {
           default = pkgs.mkShell {
             packages = [
               self.packages.${system}.nvim-jovian
               pkgs.imagemagick
+              pythonEnv
             ];
 
             shellHook = ''
               echo "🪐 Jovian.nvim development environment loaded!"
-              
+
               if [ ! -f demo_jovian.py ]; then
                 echo "Copying demo_jovian.py to current directory..."
                 cp ${self}/demo_jovian.py .
                 chmod +w demo_jovian.py
               fi
-              
+
               echo "Run 'nvim-jovian demo_jovian.py' to try the plugin."
             '';
           };

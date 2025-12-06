@@ -115,6 +115,14 @@ function M.setup(opts)
             end
         end,
     })
+
+    -- Add: Resize handling
+    vim.api.nvim_create_autocmd("VimResized", {
+        pattern = "*",
+        callback = function()
+            require("jovian.ui.windows").resize_windows()
+        end,
+    })
 end
 
 return M
