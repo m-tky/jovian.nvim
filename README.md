@@ -224,6 +224,33 @@ This keeps Neovim responsive while heavy computations run in the background.
 
 ---
 
+## ☁️ Remote Data Handling
+
+When using `jovian.nvim` with a remote host (SSH), the **Python Kernel runs on the remote machine**.
+
+This means:
+1.  **Code Execution**: Your code is sent from Neovim to the remote kernel as text.
+2.  **File Access**: If your code reads a file (e.g., `pd.read_csv("./data.csv")`), the kernel looks for it **on the remote file system**.
+
+### Best Practice: Mirror Directories
+
+`jovian.nvim` attempts to set the remote working directory to match your local path.
+
+1.  **If the path exists remotely**: The kernel switches to it. Relative paths (`./data.csv`) work perfectly.
+2.  **If the path does NOT exist**: The kernel stays in its default directory (usually `$HOME`). Relative paths will likely fail.
+
+**Recommendation:**
+*   **Create the same directory structure** on the remote server as your local machine.
+*   **Transfer your data** to the remote server at that location.
+
+**Example:**
+*   Local: `/home/user/project/data.csv`
+*   Remote: `/home/user/project/data.csv`
+
+You can use `rsync`, `scp`, or mount the local directory to the remote server (reverse sshfs) to keep them in sync.
+
+---
+
 ## 📚 Command Reference
 
 <details>
