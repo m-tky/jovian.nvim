@@ -9,13 +9,21 @@ function M.setup(opts)
 	require("jovian.highlights").setup()
 
 	-- TreeSitter Queries
-	local plugin_root = debug.getinfo(1).source:sub(2):match("(.*/)") .. "../.."
-	local queries_path = plugin_root .. "/jovian_queries"
-
-	if Config.options.treesitter.markdown_injection or Config.options.treesitter.magic_command_highlight then
-		if vim.treesitter.query.set then
-			vim.treesitter.query.set("python", "injections", queries_path .. "/queries/python/injections.scm")
-		end
+    local Queries = require("jovian.treesitter_queries")
+    
+	if vim.treesitter.query.set then
+        local md_opt = Config.options.treesitter.markdown_injection
+        if md_opt then
+            local query = (type(md_opt) == "string") and md_opt or Queries.python_injections
+            vim.treesitter.query.set("python", "injections", query)
+        end
+        
+        local magic_opt = Config.options.treesitter.magic_command_highlight
+        if magic_opt then
+            local query = (type(magic_opt) == "string") and magic_opt or Queries.python_highlights
+            vim.treesitter.query.set("python", "highlights", query)
+        end
+	end
 		-- vim.opt.rtp:prepend(queries_path)
 
 		-- Register custom predicate for magic command highlighting
@@ -39,7 +47,6 @@ function M.setup(opts)
 				return r1 == r2
 			end, true) -- force=true to overwrite if exists
 		end)
-	end
 
 	-- Register Commands
 	require("jovian.commands").setup()

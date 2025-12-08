@@ -199,10 +199,13 @@ require("jovian").setup({
 	suppress_magic_command_errors = true,
 
 	-- TreeSitter
-	treesitter = {
-		markdown_injection = true,
-		magic_command_highlight = true,
-	},
+	    treesitter = {
+        -- Set to false to disable
+        -- Set to true (default) to use built-in queries
+        -- Set to a string to use a custom query
+        markdown_injection = true,
+        magic_command_highlight = true,
+    },
 })
 ```
 </details>

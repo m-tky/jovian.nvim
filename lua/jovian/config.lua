@@ -19,10 +19,10 @@ M.defaults = {
 
 	ui = {
 		-- cell_separator_highlight:
-        -- "line"  : Highlight the entire line (default).
-        -- "text"  : Highlight only the text.
-        -- "none"  : No highlight.
-        cell_separator_highlight = "text",
+		-- "line"  : Highlight the entire line (default).
+		-- "text"  : Highlight only the text.
+		-- "none"  : No highlight.
+		cell_separator_highlight = "text",
 		-- winblend = 0,
 		layouts = {
 			{
@@ -58,6 +58,7 @@ M.defaults = {
 
 	-- TreeSitter
 	treesitter = {
+		-- Can be true (default), false (disable), or a string (custom query)
 		markdown_injection = true,
 		magic_command_highlight = true,
 	},

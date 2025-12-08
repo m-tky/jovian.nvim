@@ -60,6 +60,17 @@
               python_interpreter = "${pythonEnv}/bin/python3",
             })
 
+            -- Setup nvim-treesitter
+            local ts_ok, ts_configs = pcall(require, "nvim-treesitter.configs")
+            if ts_ok then
+                ts_configs.setup({
+                    highlight = {
+                        enable = true,
+                        additional_vim_regex_highlighting = false,
+                    },
+                })
+            end
+
             vim.opt.number = true
             vim.opt.termguicolors = true
             vim.cmd("colorscheme habamax")
@@ -84,6 +95,7 @@
                   pkgs.vimPlugins.image-nvim
                   pkgs.vimPlugins.jupytext-nvim
                   pkgs.vimPlugins.nvim-lspconfig
+                  (pkgs.vimPlugins.nvim-treesitter.withPlugins (p: [ p.python p.markdown p.markdown_inline ]))
                 ];
               };
             };
