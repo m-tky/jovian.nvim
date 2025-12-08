@@ -11,17 +11,42 @@ function M.setup(opts)
 	-- TreeSitter Queries
     local Queries = require("jovian.treesitter_queries")
     
-	if vim.treesitter.query.set then
+	-- Helper to extend queries rather than override
+	local function extend_query(lang, name, extension)
+		if not extension then return end
+		
+        -- If user provided a string, we want to append it to existing queries.
+        -- vim.treesitter.query.set() OVERRIDES everything.
+        -- So we must fetch standard files, read them, concat, and then set.
+        
+        local files = vim.treesitter.query.get_files(lang, name)
+        local query_content = ""
+        for _, file in ipairs(files) do
+            local f = io.open(file, "r")
+            if f then
+                query_content = query_content .. f:read("*a") .. "\n"
+                f:close()
+            end
+        end
+        
+        -- Append our extension
+        query_content = query_content .. extension
+        
+        vim.treesitter.query.set(lang, name, query_content)
+        print("DEBUG: Query set for " .. lang .. "/" .. name .. ". Total length: " .. #query_content) -- 3. 最終長さを確認
+	end
+    
+	if vim.treesitter.query.set and vim.treesitter.query.get_files then
         local md_opt = Config.options.treesitter.markdown_injection
         if md_opt then
             local query = (type(md_opt) == "string") and md_opt or Queries.python_injections
-            vim.treesitter.query.set("python", "injections", query)
+            extend_query("python", "injections", query)
         end
         
         local magic_opt = Config.options.treesitter.magic_command_highlight
         if magic_opt then
             local query = (type(magic_opt) == "string") and magic_opt or Queries.python_highlights
-            vim.treesitter.query.set("python", "highlights", query)
+            extend_query("python", "highlights", query)
         end
 	end
 		-- vim.opt.rtp:prepend(queries_path)

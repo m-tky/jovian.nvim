@@ -57,7 +57,7 @@
 
             -- Setup jovian.nvim
             require("jovian").setup({
-              python_interpreter = "${pythonEnv}/bin/python3",
+              -- python_interpreter = "${pythonEnv}/bin/python3",
             })
 
             -- Setup nvim-treesitter
@@ -95,7 +95,11 @@
                   pkgs.vimPlugins.image-nvim
                   pkgs.vimPlugins.jupytext-nvim
                   pkgs.vimPlugins.nvim-lspconfig
-                  (pkgs.vimPlugins.nvim-treesitter.withPlugins (p: [ p.python p.markdown p.markdown_inline ]))
+                  (pkgs.vimPlugins.nvim-treesitter.withPlugins (p: [
+                    p.python
+                    p.markdown
+                    p.markdown_inline
+                  ]))
                 ];
               };
             };
