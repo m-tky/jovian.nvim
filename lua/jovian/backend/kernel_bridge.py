@@ -405,7 +405,7 @@ except:
                             f.write(decoded_data)
                         
                         images[img_filename] = img_data_b64
-                        output_md_lines.append(f"![Result]({img_filename})")
+                        output_md_lines.append(f"![Result]({img_filename}?t={int(time.time())})")
                         output_md_lines.append("")
                         self.output_counter += 1
                         

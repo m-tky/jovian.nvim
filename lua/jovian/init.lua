@@ -82,7 +82,7 @@ function M.setup(opts)
 	})
 
     -- Add: Clean stale cache on save, close, and exit
-    vim.api.nvim_create_autocmd({ "BufWritePost", "VimLeavePre", "BufUnload" }, {
+    vim.api.nvim_create_autocmd({ "BufWritePost", "VimLeavePre", "BufUnload", "BufWinEnter" }, {
         pattern = "*.py",
         callback = function(ev)
             Session.clean_stale_cache(ev.buf)
