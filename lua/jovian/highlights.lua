@@ -11,7 +11,7 @@ function M.setup()
 
         -- UI Elements
         JovianHeader = { link = "Title", default = true },
-        JovianCellMarker = { link = "Folded", default = true },
+        JovianCellMarker = { link = "Visual", default = true },
         JovianSeparator = { link = "Comment", default = true },
         JovianComment = { link = "Comment", default = true },
         
