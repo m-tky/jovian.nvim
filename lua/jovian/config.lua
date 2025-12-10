@@ -27,7 +27,7 @@ M.defaults = {
 		layouts = {
 			{
 				elements = {
-					{ id = "preview", size = 0.75 },
+					{ id = "preview", size = 0.70 },
 					{ id = "pin", size = 0.30 },
 				},
 				-- position: "left", "right", "top", "bottom"
@@ -36,8 +36,8 @@ M.defaults = {
 			},
 			{
 				elements = {
-					{ id = "output", size = 0.60 },
-					{ id = "variables", size = 0.40 },
+					{ id = "output", size = 0.55 },
+					{ id = "variables", size = 0.45 },
 				},
 				position = "bottom",
 				size = 0.25,
