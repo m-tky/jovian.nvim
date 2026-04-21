@@ -257,6 +257,11 @@ function M.setup()
     vim.api.nvim_create_user_command("JovianTogglePlot", function()
         require("jovian.core").toggle_plot_view()
     end, {})
+
+	-- User triggered inline image rendering
+	vim.api.nvim_create_user_command("JovianRenderImages", function()
+		require("jovian.inline_images").render_for_buffer(vim.api.nvim_get_current_buf())
+	end, { desc = "Jovian: Force Render Inline Notebook Images" })
     
     -- Pinning
     vim.api.nvim_create_user_command("JovianPin", function()

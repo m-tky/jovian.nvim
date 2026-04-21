@@ -16,6 +16,7 @@ M.defaults = {
 	notify_mode = "all", -- "all", "error", "none"
 	show_execution_time = true,
 	plot_view_mode = "inline", -- "inline", "window"
+	inline_image_debounce = 500, -- mmilliseconds to wait before rendering images after write
 
 	ui = {
 		-- cell_separator_highlight:

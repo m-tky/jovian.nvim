@@ -186,6 +186,48 @@ function M.setup(opts)
 			end
 		end,
 	})
+
+	-- Add: Inline Notebook Images handling
+	local inline_render_timer = nil
+    
+    vim.api.nvim_create_autocmd({ "BufWritePre" }, {
+        pattern = { "*.ipynb", "*.py" },
+        callback = function(ev)
+            if vim.bo[ev.buf].filetype == "python" then
+                require("jovian.inline_images").restore_buffer_for_save(ev.buf)
+            end
+        end,
+    })
+
+	vim.api.nvim_create_autocmd({ "BufWinEnter", "BufWritePost" }, {
+		pattern = { "*.ipynb", "*.py" },
+		callback = function(ev)
+			if vim.bo[ev.buf].filetype == "python" then
+				if inline_render_timer then
+					inline_render_timer:close()
+				end
+				inline_render_timer = vim.loop.new_timer()
+				inline_render_timer:start(
+					Config.options.inline_image_debounce or 500,
+					0,
+					vim.schedule_wrap(function()
+						require("jovian.inline_images").render_for_buffer(ev.buf)
+						if inline_render_timer then
+							pcall(function() inline_render_timer:close() end)
+							inline_render_timer = nil
+						end
+					end)
+				)
+			end
+		end,
+	})
+
+	vim.api.nvim_create_autocmd("BufUnload", {
+		pattern = { "*.ipynb", "*.py" },
+		callback = function(ev)
+			require("jovian.inline_images").clear_for_buffer(ev.buf)
+		end,
+	})
 end
 
 return M
