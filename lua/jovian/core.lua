@@ -2,9 +2,7 @@ local M = {}
 local State = require("jovian.state")
 local Config = require("jovian.config")
 local UI = require("jovian.ui")
-local Utils = require("jovian.utils")
 local Cell = require("jovian.cell")
-local Session = require("jovian.session")
 
 local function is_window_open()
     return State.win.output and vim.api.nvim_win_is_valid(State.win.output)
@@ -15,7 +13,7 @@ local Hosts = require("jovian.hosts")
 
 local Handlers = require("jovian.handlers")
 
-local function on_stdout(chan_id, data, name)
+local function on_stdout(_chan_id, data, _name)
     if not data then
         return
     end
@@ -43,8 +41,6 @@ local function on_stdout(chan_id, data, name)
                     local handler_name = "handle_" .. msg.type
                     if Handlers[handler_name] then
                         Handlers[handler_name](msg)
-                    else
-                        -- Fallback or ignore
                     end
                 end)
             else
@@ -58,7 +54,7 @@ local function on_stdout(chan_id, data, name)
 end
 
 function M._prepare_kernel_command(script_path)
-    local cmd = {}
+    local cmd
     if Config.options.connection_file then
         -- Connect to existing kernel via connection file
         cmd = vim.split(Config.options.python_interpreter, " ")
@@ -259,7 +255,7 @@ function M.send_payload(code, cell_id, filename)
 
     UI.set_cell_status(current_buf, cell_id, "running", Config.options.ui_symbols.running)
 
-    local filename = vim.fn.expand("%:t")
+    filename = vim.fn.expand("%:t")
     if filename == "" then
         filename = "scratchpad"
     end
@@ -335,8 +331,6 @@ function M.send_cell()
     if not is_window_open() then
         return vim.notify("Jovian windows are closed. Use :JovianOpen or :JovianToggle first.", vim.log.levels.WARN)
     end
-    local src_win = vim.api.nvim_get_current_win()
-    vim.api.nvim_set_current_win(src_win)
     if not State.job_id then
         M.start_kernel()
     end
@@ -362,7 +356,6 @@ function M.run_profile_cell()
     if not is_window_open() then
         return vim.notify("Jovian windows are closed.", vim.log.levels.WARN)
     end
-    local src_win = vim.api.nvim_get_current_win()
     local s, e = Cell.get_cell_range()
     local lines = vim.api.nvim_buf_get_lines(0, s - 1, e, false)
     if #lines > 0 and lines[1]:match("^# %%%%") then
@@ -376,8 +369,6 @@ function M.send_selection()
     if not is_window_open() then
         return vim.notify("Jovian windows are closed.", vim.log.levels.WARN)
     end
-    local src_win = vim.api.nvim_get_current_win()
-    vim.api.nvim_set_current_win(src_win)
     if not State.job_id then
         M.start_kernel()
     end
@@ -411,8 +402,6 @@ function M.run_line()
     if not is_window_open() then
         return vim.notify("Jovian windows are closed.", vim.log.levels.WARN)
     end
-    local src_win = vim.api.nvim_get_current_win()
-    vim.api.nvim_set_current_win(src_win)
     if not State.job_id then
         M.start_kernel()
     end
@@ -426,7 +415,8 @@ function M.run_line()
 
     -- For single line execution, we can use a generic ID or try to attribute it to the current cell?
     -- Attributing to current cell is better for context, but we don't want to mark the whole cell as "Running".
-    -- Let's use "scratchpad" or a temp ID to avoid UI status conflict, OR just use send_payload but suppress status update?
+    -- Let's use "scratchpad" or a temp ID to avoid UI status conflict,
+    -- OR just use send_payload but suppress status update?
     -- send_payload updates status.
     -- Let's use a special ID suffix or just "line_exec".
     local id = "line_" .. os.time()
@@ -442,8 +432,6 @@ function M.run_all_cells()
     if not is_window_open() then
         return vim.notify("Jovian windows are closed.", vim.log.levels.WARN)
     end
-    local src_win = vim.api.nvim_get_current_win()
-    vim.api.nvim_set_current_win(src_win)
     if not State.job_id then
         M.start_kernel()
     end
@@ -485,8 +473,6 @@ function M.run_cells_above()
     if not is_window_open() then
         return vim.notify("Jovian windows are closed.", vim.log.levels.WARN)
     end
-    local src_win = vim.api.nvim_get_current_win()
-    vim.api.nvim_set_current_win(src_win)
     if not State.job_id then
         M.start_kernel()
     end

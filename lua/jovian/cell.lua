@@ -11,7 +11,7 @@ function M.generate_id(existing_ids)
 
     for _ = 1, max_attempts do
         id = ""
-        for i = 1, 12 do
+        for _ = 1, 12 do
             local rand = math.random(#chars)
             id = id .. string.sub(chars, rand, rand)
         end
@@ -235,7 +235,7 @@ end
 
 function M.get_cell_hash(text)
     -- Normalize text: remove empty lines and whitespace-only lines
-    local normalized = text:gsub("\n%s*\n", "\n"):gsub("^%s*\n", ""):gsub("\n%s*$", "")
+    -- local normalized = text:gsub("\n%s*\n", "\n"):gsub("^%s*\n", ""):gsub("\n%s*$", "")
     -- Also remove leading/trailing whitespace from each line?
     -- User said "empty lines", implying lines that are just newline or whitespace.
     -- Let's iterate lines and filter.

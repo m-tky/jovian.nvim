@@ -1,9 +1,7 @@
 local M = {}
 local Core = require("jovian.core")
 local UI = require("jovian.ui")
-local Utils = require("jovian.utils")
 local Cell = require("jovian.cell")
-local Session = require("jovian.session")
 local Hosts = require("jovian.hosts")
 local Config = require("jovian.config")
 
@@ -16,8 +14,8 @@ local function goto_next_cell()
         if line:match("^# %%%%") then
             vim.api.nvim_win_set_cursor(0, { i, 0 })
             vim.cmd("normal! zz")
-            local s, e = Cell.get_cell_range(i)
-            UI.flash_range(s, e)
+            local start_line, end_line = Cell.get_cell_range(i)
+            UI.flash_range(start_line, end_line)
             return
         end
     end
@@ -35,8 +33,8 @@ local function goto_prev_cell()
         if line:match("^# %%%%") then
             vim.api.nvim_win_set_cursor(0, { i, 0 })
             vim.cmd("normal! zz")
-            local s, e = Cell.get_cell_range(i)
-            UI.flash_range(s, e)
+            local start_line, end_line = Cell.get_cell_range(i)
+            UI.flash_range(start_line, end_line)
             return
         end
     end
@@ -207,9 +205,9 @@ function M.setup()
             -- Interactive selection
             local data = Hosts.load_hosts()
             local names = {}
-            for name, _ in pairs(data.configs) do
-                if name ~= "local_default" then
-                    table.insert(names, name)
+            for host_name, _ in pairs(data.configs) do
+                if host_name ~= "local_default" then
+                    table.insert(names, host_name)
                 end
             end
             table.sort(names)

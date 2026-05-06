@@ -21,7 +21,7 @@ function M.handle_kernel_log(msg)
     UI.append_to_repl("[Kernel " .. msg.stream .. "]: " .. msg.msg, hl)
 end
 
-function M.handle_ready(msg)
+function M.handle_ready(_msg)
     State.is_starting_kernel = false
     -- Execute all registered callbacks
     for _, callback in ipairs(State.on_ready_callbacks) do

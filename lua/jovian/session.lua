@@ -1,5 +1,6 @@
 local M = {}
 local State = require("jovian.state")
+local Config = require("jovian.config")
 local UI = require("jovian.ui")
 local Cell = require("jovian.cell")
 
@@ -58,10 +59,6 @@ function M.clean_stale_cache(bufnr)
             vim.fn.delete(full_path)
             deleted_count = deleted_count + 1
         end
-    end
-
-    if deleted_count > 0 then
-        -- vim.notify("Cleaned " .. deleted_count .. " stale cache files for " .. filename, vim.log.levels.INFO)
     end
 end
 
