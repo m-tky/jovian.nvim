@@ -14,6 +14,9 @@ jobs:
       - uses: cachix/install-nix-action@v25
         with:
           nix_path: nixpkgs=channel:nixos-unstable
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
       - name: StyLua Check
         run: nix develop --command stylua --check .
       - name: Lua Linting (Luacheck)
@@ -29,6 +32,9 @@ jobs:
       - uses: cachix/install-nix-action@v25
         with:
           nix_path: nixpkgs=channel:nixos-unstable
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
       - name: Run Tests
         run: |
           echo ">>> Running Integration Tests (Real Kernel)..."
