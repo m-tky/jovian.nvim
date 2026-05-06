@@ -24,6 +24,15 @@ function M.set_cell_status(bufnr, cell_id, status, msg)
 	local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 	for i, line in ipairs(lines) do
 		if line:find('id="' .. cell_id .. '"', 1, true) then
+			-- Defensive: Clear any existing status on this line first
+			vim.api.nvim_buf_clear_namespace(bufnr, State.status_ns, i - 1, i)
+
+            -- If idle or empty message, just stop after clearing
+            if status == "idle" or msg == "" then
+                State.cell_status_extmarks[cell_id] = nil
+                return
+            end
+
 			local hl_group = "Comment"
 			if status == "running" then
 				hl_group = "WarningMsg"
@@ -35,8 +44,6 @@ function M.set_cell_status(bufnr, cell_id, status, msg)
 				hl_group = "ErrorMsg"
 			end
 
-			-- Defensive: Clear any existing status on this line first
-			vim.api.nvim_buf_clear_namespace(bufnr, State.status_ns, i - 1, i)
 			local extmark_id = vim.api.nvim_buf_set_extmark(bufnr, State.status_ns, i - 1, 0, {
 				virt_text = { { "  " .. msg, hl_group } },
 				virt_text_pos = "eol",

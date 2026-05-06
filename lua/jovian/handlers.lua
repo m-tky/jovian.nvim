@@ -101,19 +101,13 @@ function M.handle_result_ready(msg)
 				require("jovian.core").show_error_diagnostics(target_buf, msg.cell_id, msg.error)
 			end
 
-            -- If in a batch and this is an error, clear the batch state
+            -- If in a batch and this is an error, clear the batch state and ALL spinners in this buffer
             if State.batch_execution then
                 State.batch_execution = nil
-                -- Clear status of any other cells that were waiting
-                local bufnr = target_buf
-                local ids = require("jovian.cell").get_all_ids(bufnr)
-                for _, id in ipairs(ids) do
-                    -- If it's still showing 'running' but it's not this cell, clear it
-                    local status = UI.get_cell_status and UI.get_cell_status(bufnr, id) or "running"
-                    if id ~= msg.cell_id then
-                        UI.set_cell_status(bufnr, id, "idle", "")
-                    end
-                end
+                -- Clear ALL status extmarks in this buffer immediately
+                UI.clear_status_extmarks(target_buf)
+                -- But re-set the error status for the current cell specifically
+                UI.set_cell_status(target_buf, msg.cell_id, "error", Config.options.ui_symbols.error .. timestamp)
             end
 		else
 			UI.set_cell_status(target_buf, msg.cell_id, "done", Config.options.ui_symbols.done .. timestamp)
