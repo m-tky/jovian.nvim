@@ -131,16 +131,26 @@ class KernelBridge:
             self.kc.start_channels()
 
             # Start threads to capture kernel output
-            threading.Thread(
-                target=self._read_kernel_stream,
-                args=(self.km.kernel.stdout, "stdout"),
-                daemon=True,
-            ).start()
-            threading.Thread(
-                target=self._read_kernel_stream,
-                args=(self.km.kernel.stderr, "stderr"),
-                daemon=True,
-            ).start()
+            # Newer jupyter_client uses provisioner.process, older uses .kernel
+            kernel_proc = None
+            if hasattr(self.km, "provisioner") and self.km.provisioner and hasattr(self.km.provisioner, "process"):
+                kernel_proc = self.km.provisioner.process
+            elif hasattr(self.km, "kernel"):
+                kernel_proc = self.km.kernel
+
+            if kernel_proc:
+                threading.Thread(
+                    target=self._read_kernel_stream,
+                    args=(kernel_proc.stdout, "stdout"),
+                    daemon=True,
+                ).start()
+                threading.Thread(
+                    target=self._read_kernel_stream,
+                    args=(kernel_proc.stderr, "stderr"),
+                    daemon=True,
+                ).start()
+            else:
+                self.send_json({"type": "kernel_log", "stream": "stderr", "msg": "[Jovian] Warning: Could not capture kernel output streams."})
 
         try:
             self.kc.wait_for_ready(timeout=10)
