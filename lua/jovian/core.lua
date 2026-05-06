@@ -18,19 +18,20 @@ local function process_output_data(data, buffer_key)
         return
     end
 
-    -- The first element completes the previous buffer
-    local first = table.remove(data, 1)
+    -- Neovim's on_stdout data is a list of lines.
+    -- The first element completes the previous buffer.
+    local first = data[1] or ""
     State[buffer_key] = (State[buffer_key] or "") .. first
 
-    -- If there are more elements, it means the current State[buffer_key] is a complete line
-    if #data > 0 then
-        -- Process the now complete line in the buffer
+    -- If there's more than one element, we have at least one complete line.
+    if #data > 1 then
+        -- Process the completed line in the buffer
         local line = State[buffer_key]
         if line ~= "" then
-            local ok, msg = pcall(vim.json.decode, line)
+            local ok, msg = pcall(vim.json and vim.json.decode or vim.fn.json_decode, line)
             if ok and msg then
                 vim.schedule(function()
-                    local handler_name = "handle_" .. msg.type
+                    local handler_name = "handle_" .. (msg.type or "")
                     if Handlers[handler_name] then
                         Handlers[handler_name](msg)
                     end
@@ -42,14 +43,14 @@ local function process_output_data(data, buffer_key)
             end
         end
 
-        -- Process all complete lines except the last one (which is the new buffer)
-        for i = 1, #data - 1 do
+        -- Process intermediate full lines
+        for i = 2, #data - 1 do
             local l = data[i]
             if l ~= "" then
-                local ok, msg = pcall(vim.json.decode, l)
+                local ok, msg = pcall(vim.json and vim.json.decode or vim.fn.json_decode, l)
                 if ok and msg then
                     vim.schedule(function()
-                        local handler_name = "handle_" .. msg.type
+                        local handler_name = "handle_" .. (msg.type or "")
                         if Handlers[handler_name] then
                             Handlers[handler_name](msg)
                         end

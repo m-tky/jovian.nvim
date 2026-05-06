@@ -284,9 +284,9 @@ except Exception:
 # Try to patch immediately
 _jovian_patch_matplotlib()
 
-# Ensure we are using a GUI backend (not inline) to support window mode
+# Ensure we use the inline-like capture logic and avoid GUI hangs
 try:
-    get_ipython().run_line_magic('matplotlib', 'auto')
+    get_ipython().run_line_magic("matplotlib", "inline")
 except Exception:
     pass
 """
