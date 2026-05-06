@@ -39,4 +39,16 @@ M.running_cells = {} -- { [cell_id] = true }
 M.stdout_buffer = ""
 M.stderr_buffer = ""
 
+-- Feature 2: Virtual Text Toggle (Buffer-local)
+M.virt_text_hidden_bufs = {} -- { [bufnr] = true }
+M.cell_status_cache = {} -- { [cell_id] = { status, msg, bufnr } }
+
+-- Feature 1: DataFrame Lazy Pagination
+M.dataframe_sessions = {} -- { [var_name] = { total, offset, limit, columns } }
+
+-- Feature 3: SSH Auto-tunneling & Lifecycle Management
+M.tunnel_job_id = nil
+M.tunnel_host = nil
+M.remote_kernel_pid = nil
+
 return M

@@ -34,6 +34,7 @@ M.clear_status_extmarks = VirtualText.clear_status_extmarks
 M.get_cell_status_extmark = VirtualText.get_cell_status_extmark
 M.delete_status_extmark = VirtualText.delete_status_extmark
 M.clear_diagnostics = VirtualText.clear_diagnostics
+M.toggle_status_visibility = VirtualText.toggle_status_visibility
 
 M.send_notification = Shared.send_notification
 M.append_to_repl = Shared.append_to_repl

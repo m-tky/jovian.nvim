@@ -21,6 +21,19 @@ function M.set_cell_status(bufnr, cell_id, status, msg)
     if not (bufnr and vim.api.nvim_buf_is_valid(bufnr)) then
         return
     end
+
+    -- Always update cache
+    State.cell_status_cache[cell_id] = { status = status, msg = msg, bufnr = bufnr }
+
+    -- If buffer is hidden, skip drawing
+    if State.virt_text_hidden_bufs[bufnr] then
+        -- We still want to clear the namespace if status is idle, 
+        -- but toggle_status_visibility already cleared it.
+        -- Just to be safe, if it's idle we clear it anyway if not hidden?
+        -- Actually, if it's hidden, we don't draw.
+        return
+    end
+
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     for i, line in ipairs(lines) do
         if line:match("^# %%%%") and line:find('id="' .. cell_id .. '"', 1, true) then
@@ -140,6 +153,29 @@ end
 
 function M.clear_diagnostics()
     vim.diagnostic.reset(State.diag_ns)
+end
+
+function M.toggle_status_visibility(bufnr)
+    bufnr = bufnr or vim.api.nvim_get_current_buf()
+    if not (bufnr and vim.api.nvim_buf_is_valid(bufnr)) then
+        return
+    end
+
+    if State.virt_text_hidden_bufs[bufnr] then
+        -- Show: restore from cache
+        State.virt_text_hidden_bufs[bufnr] = nil
+        for cell_id, cached in pairs(State.cell_status_cache) do
+            if cached.bufnr == bufnr then
+                M.set_cell_status(bufnr, cell_id, cached.status, cached.msg)
+            end
+        end
+        vim.notify("Jovian: status shown", vim.log.levels.INFO)
+    else
+        -- Hide: clear namespace
+        State.virt_text_hidden_bufs[bufnr] = true
+        vim.api.nvim_buf_clear_namespace(bufnr, State.status_ns, 0, -1)
+        vim.notify("Jovian: status hidden", vim.log.levels.INFO)
+    end
 end
 
 return M
