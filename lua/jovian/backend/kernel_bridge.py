@@ -721,7 +721,7 @@ def _jovian_get_variables():
             
             type_name = type(value).__name__
             info = str(value)
-            info = info.replace("\\n", " ")
+            info = info.replace("\n", " ")
             if len(info) > 200: info = info[:197] + "..."
 
             if hasattr(value, 'shape'):
@@ -734,7 +734,14 @@ def _jovian_get_variables():
                 info = f"len: {len(value)}"
             var_list.append({"name": name, "type": type_name, "info": info})
             
-        var_list.sort(key=lambda x: x['name'])
+        # Category-based sorting: (Priority, Name)
+        priority = {
+            'DataFrame': 0, 'Series': 0, 'ndarray': 1, 
+            'list': 2, 'dict': 2, 'set': 2, 'tuple': 2,
+            'int': 3, 'float': 3, 'str': 3, 'bool': 3
+        }
+        var_list.sort(key=lambda x: (priority.get(x['type'], 99), x['name'].lower()))
+        
         display({"application/vnd.jovian.variables+json": {"variables": var_list}}, raw=True)
     except Exception as e:
         error_var = {"name": "Error", "type": "Exception", "info": str(e)}
