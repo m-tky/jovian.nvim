@@ -147,6 +147,15 @@ function M.start_kernel(on_ready)
 		return
 	end
 
+    if State.is_starting_kernel then
+        if on_ready then
+            table.insert(State.on_ready_callbacks, on_ready)
+        end
+        return
+    end
+
+    State.is_starting_kernel = true
+
 	-- Ensure IDs are unique before starting
 	Cell.fix_duplicate_ids(0)
 
@@ -164,6 +173,7 @@ function M.start_kernel(on_ready)
                 stdout_buffered = false,
                 on_exit = function()
                     State.job_id = nil
+                    State.is_starting_kernel = false
                 end,
             })
             -- UI.append_to_repl("[Jovian Kernel Started]")

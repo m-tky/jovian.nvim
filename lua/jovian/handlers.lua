@@ -22,6 +22,7 @@ function M.handle_kernel_log(msg)
 end
 
 function M.handle_ready(msg)
+    State.is_starting_kernel = false
 	-- Execute all registered callbacks
 	for _, callback in ipairs(State.on_ready_callbacks) do
 		callback()

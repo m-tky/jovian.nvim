@@ -34,5 +34,6 @@ M.on_ready_callbacks = {} -- List of functions to call when kernel is ready
 M.batch_execution = nil -- { total = int, current = int, start_time = timestamp }
 
 M.inline_images = {} -- { [bufnr] = { images = {}, mtime = 0 } }
+M.is_starting_kernel = false
 
 return M
