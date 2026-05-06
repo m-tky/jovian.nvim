@@ -89,7 +89,8 @@ function M._prepare_kernel_command(script_path)
         local host = Config.options.ssh_host
         local remote_python = Config.options.ssh_python
         local remote_cwd = Config.options.remote_cwd or "."
-        local remote_cmd = string.format("cd %s && %s -u /tmp/jovian_backend/kernel_bridge.py", remote_cwd, remote_python)
+        local remote_cmd =
+            string.format("cd %s && %s -u /tmp/jovian_backend/kernel_bridge.py", remote_cwd, remote_python)
         cmd = { "ssh", host, remote_cmd }
         UI.append_to_repl("[Jovian] Connecting to remote: " .. host, "Special")
     else
@@ -223,15 +224,17 @@ function M.start_kernel(on_ready)
             local function start_lua_messenger()
                 local Messenger = require("jovian.backend.messenger")
                 local conn_file = Config.options.connection_file
-                if not conn_file then return end
-                
+                if not conn_file then
+                    return
+                end
+
                 local ok, content = pcall(function()
                     local f = io.open(conn_file, "r")
                     local res = f:read("*a")
                     f:close()
                     return vim.json.decode(res)
                 end)
-                
+
                 if ok then
                     State.lua_messenger_stop = Messenger.listen_iopub(content, function(msg)
                         vim.schedule(function()
@@ -245,7 +248,12 @@ function M.start_kernel(on_ready)
                                         local bufnr = State.cell_buf_map[cell_id]
                                         if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
                                             if exec_state == "busy" then
-                                                UI.set_cell_status(bufnr, cell_id, "running", Config.options.ui_symbols.running)
+                                                UI.set_cell_status(
+                                                    bufnr,
+                                                    cell_id,
+                                                    "running",
+                                                    Config.options.ui_symbols.running
+                                                )
                                             end
                                         end
                                     end

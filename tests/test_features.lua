@@ -39,15 +39,22 @@ local function run_tests()
 
     log(">>> Starting Kernel...")
     core.start_kernel()
-    vim.wait(15000, function() return ready end)
-    if not ready then log("[FAIL] Kernel timeout"); os.exit(1) end
+    vim.wait(15000, function()
+        return ready
+    end)
+    if not ready then
+        log("[FAIL] Kernel timeout")
+        os.exit(1)
+    end
     log("[OK] Kernel Ready")
 
     -- Test Feature 1: DataFrame Pagination
     log("\n>>> Testing Feature 1: DataFrame Pagination")
     local df_code = "import pandas as pd; df = pd.DataFrame({'a': range(200)})"
     core.send_payload(df_code, "df_setup", "test.py")
-    vim.wait(5000, function() return state.running_cells["df_setup"] == nil end)
+    vim.wait(5000, function()
+        return state.running_cells["df_setup"] == nil
+    end)
 
     vim.cmd("JovianView df")
     local ok, df_buf, df_win
@@ -105,20 +112,24 @@ local function run_tests()
     log("\n>>> Testing Feature 2: Virtual Text Toggle")
     local bufnr = vim.api.nvim_get_current_buf()
     local cell_id = "test_toggle"
-    
+
     -- MUST have a header line with the ID for set_cell_status to work
     vim.bo[bufnr].modifiable = true
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { '# %% id="' .. cell_id .. '"', "print('hi')" })
-    
+
     core.send_payload("print('hi')", cell_id, "test.py")
-    vim.wait(5000, function() return state.running_cells[cell_id] == nil end)
+    vim.wait(5000, function()
+        return state.running_cells[cell_id] == nil
+    end)
 
     local function has_status()
         -- clean_invalid_extmarks might be needed if lines changed, but here we just check
         local extmarks = vim.api.nvim_buf_get_extmarks(bufnr, state.status_ns, 0, -1, { details = true })
         for _, m in ipairs(extmarks) do
             local vt = m[4].virt_text
-            if vt and vt[1] and vt[1][1]:match("Done") then return true end
+            if vt and vt[1] and vt[1][1]:match("Done") then
+                return true
+            end
         end
         return false
     end
@@ -156,13 +167,13 @@ local function run_tests()
         "  HostName 1.2.3.4",
         "  User myuser",
         "Host another-host",
-        "  Port 2222"
+        "  Port 2222",
     }
     vim.fn.writefile(ssh_content, ssh_config_path)
-    
+
     local ssh_config = require("jovian.ssh_config")
     local hosts = ssh_config.parse(ssh_config_path)
-    
+
     if #hosts == 2 and hosts[1].name == "test-host" and hosts[1].hostname == "1.2.3.4" and hosts[2].port == 2222 then
         log("[OK] SSH Config Parser verified")
     else

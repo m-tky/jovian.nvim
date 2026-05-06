@@ -231,26 +231,30 @@ function M.setup()
         end
 
         local names = {}
-        local host_map = {}
         for _, h in ipairs(hosts) do
             table.insert(names, h.name)
-            host_map[h.name] = h
         end
         table.sort(names)
 
         vim.ui.select(names, { prompt = "Select Host from ssh_config:" }, function(selected_name)
-            if not selected_name then return end
-            local host_data = host_map[selected_name]
+            if not selected_name then
+                return
+            end
 
             vim.ui.select({ "SSH Direct", "Auto-Tunnel (Jupyter)" }, { prompt = "Connection Mode:" }, function(mode)
-                if not mode then return end
+                if not mode then
+                    return
+                end
 
                 vim.ui.input({ prompt = "Python Path: ", default = "python3" }, function(python)
-                    if not python or python == "" then return end
+                    if not python or python == "" then
+                        return
+                    end
 
                     if mode == "SSH Direct" then
                         vim.ui.input({ prompt = "Remote Directory (Optional): ", default = "." }, function(remote_cwd)
-                            local config = { type = "ssh", host = selected_name, python = python, remote_cwd = remote_cwd }
+                            local config =
+                                { type = "ssh", host = selected_name, python = python, remote_cwd = remote_cwd }
                             Hosts.add_host(selected_name, config)
                             Hosts.use_host(selected_name)
                         end)
@@ -272,7 +276,11 @@ function M.setup()
 
     vim.api.nvim_create_user_command("JovianTunnelStatus", function()
         if State.tunnel_host then
-            local msg = string.format("Tunneled to %s (Remote PID: %s)", State.tunnel_host, State.remote_kernel_pid or "unknown")
+            local msg = string.format(
+                "Tunneled to %s (Remote PID: %s)",
+                State.tunnel_host,
+                State.remote_kernel_pid or "unknown"
+            )
             vim.notify(msg, vim.log.levels.INFO)
         else
             vim.notify("No active tunnel", vim.log.levels.INFO)
@@ -287,24 +295,24 @@ function M.setup()
 
         local remote_dir = Config.options.remote_cwd or "."
         local target = opts.args ~= "" and opts.args or "."
-        
+
         -- Build rsync command
         -- -a: archive, -v: verbose, -z: compress
         local cmd = { "rsync", "-avz" }
-        
+
         -- Exclusions
         table.insert(cmd, "--exclude=.jovian_cache")
         table.insert(cmd, "--exclude=.git")
         table.insert(cmd, "--exclude=__pycache__")
         table.insert(cmd, "--exclude=.ipynb_checkpoints")
-        
+
         -- Source (trailing slash matters for directories)
         local source = target
         if vim.fn.isdirectory(source) == 1 and not source:match("/$") then
             source = source .. "/"
         end
         table.insert(cmd, source)
-        
+
         -- Destination
         local dest_dir = remote_dir
         if not dest_dir:match("/$") then
@@ -313,13 +321,16 @@ function M.setup()
         table.insert(cmd, string.format("%s:%s", host, dest_dir))
 
         vim.notify(string.format("[Jovian] Syncing %s to %s:%s...", source, host, dest_dir), vim.log.levels.INFO)
-        
+
         vim.fn.jobstart(cmd, {
             stdout_buffered = true,
             on_stdout = function(_, data)
                 if data and #data > 1 then
                     -- Show summary of synced files
-                    vim.notify("Jovian Sync: " .. #data .. " lines of output. Last: " .. data[#data-1], vim.log.levels.INFO)
+                    vim.notify(
+                        "Jovian Sync: " .. #data .. " lines of output. Last: " .. data[#data - 1],
+                        vim.log.levels.INFO
+                    )
                 end
             end,
             on_stderr = function(_, data)
@@ -333,7 +344,7 @@ function M.setup()
                 else
                     vim.notify("Jovian: Sync failed with code " .. code, vim.log.levels.ERROR)
                 end
-            end
+            end,
         })
     end, { nargs = "?", complete = "file" })
 

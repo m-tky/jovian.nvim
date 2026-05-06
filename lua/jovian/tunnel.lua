@@ -2,28 +2,38 @@ local M = {}
 local State = require("jovian.state")
 local Config = require("jovian.config")
 
+local function get_handle_data()
+    return function(_, data)
+        if not data then
+            return
+        end
+        local output = table.concat(data, "\n")
+        local url = output:match("(https://login.tailscale.com/[^%s]+)")
+        if url then
+            vim.notify("[Jovian] Tailscale Auth Required:\n" .. url, vim.log.levels.WARN, { timeout = 30000 })
+            if vim.ui.open then
+                vim.ui.open(url)
+            end
+        end
+    end
+end
+
 function M.start(host, python, remote_cwd, on_success, on_error)
     python = python or "python3"
     remote_cwd = (remote_cwd and remote_cwd ~= "") and remote_cwd or "."
-    vim.notify("[Jovian] Starting remote kernel on " .. host .. " in " .. remote_cwd .. "...", vim.log.levels.INFO)
+    local msg = string.format("[Jovian] Starting remote kernel on %s in %s...", host, remote_cwd)
+    vim.notify(msg, vim.log.levels.INFO)
 
     -- Step 1: Start remote kernel and get PID
     local kernel_cmd = string.format(
-        "ssh %s \"cd %s && nohup %s -m ipykernel_launcher --ip=127.0.0.1 -f /tmp/jovian_kernel.json > /dev/null 2>&1 & echo $!\"",
+        'ssh %s "cd %s && nohup %s -m ipykernel_launcher '
+            .. '--ip=127.0.0.1 -f /tmp/jovian_kernel.json > /dev/null 2>&1 & echo $!"',
         host,
         remote_cwd,
         python
     )
 
-    local function handle_data(_, data)
-        if not data then return end
-        local output = table.concat(data, "\n")
-        local url = output:match("(https://login.tailscale.com/[^%s]+)")
-        if url then
-            vim.notify("[Jovian] Tailscale Auth Required:\n" .. url, vim.log.levels.WARN, { timeout = 30000 })
-            if vim.ui.open then vim.ui.open(url) end
-        end
-    end
+    local handle_data = get_handle_data()
 
     vim.fn.jobstart(kernel_cmd, {
         stdout_buffered = true,
@@ -45,7 +55,9 @@ function M.start(host, python, remote_cwd, on_success, on_error)
                 -- Only error if it's not the Tailscale URL message
                 local output = table.concat(data, "\n")
                 if not output:find("https://login.tailscale.com") then
-                    if on_error then on_error("Remote kernel start error: " .. output) end
+                    if on_error then
+                        on_error("Remote kernel start error: " .. output)
+                    end
                 end
             end
         end,
@@ -54,7 +66,8 @@ end
 
 function M._setup_tunnel(host, on_success, on_error)
     local retries = 0
-    local max_retries = 5
+    local max_retries = 10
+    local handle_data = get_handle_data()
 
     local function try_cat()
         vim.fn.jobstart("ssh " .. host .. " cat /tmp/jovian_kernel.json", {
@@ -64,40 +77,46 @@ function M._setup_tunnel(host, on_success, on_error)
                 if data and data[1] and data[1] ~= "" then
                     local ok, content = pcall(vim.json.decode, table.concat(data, "\n"))
                     if ok then
-                        M._establish_ssh_tunnel(host, content, on_success, on_error)
+                        M._establish_ssh_tunnel(host, content, on_success)
                     else
                         -- This might be an auth prompt, wait for it
                         if not table.concat(data, "\n"):find("https://login.tailscale.com") then
-                            if on_error then on_error("Failed to parse remote connection file") end
+                            if on_error then
+                                on_error("Failed to parse remote connection file")
+                            end
                         end
                     end
                 elseif retries < max_retries then
                     retries = retries + 1
                     vim.defer_fn(try_cat, 1000)
                 else
-                    if on_error then on_error("Connection file not found after retries") end
+                    if on_error then
+                        on_error("Connection file not found after retries")
+                    end
                 end
             end,
             on_stderr = handle_data,
             on_exit = function(_, code)
                 if code ~= 0 and retries >= max_retries then
-                    if on_error then on_error("Failed to cat connection file") end
+                    if on_error then
+                        on_error("Failed to cat connection file")
+                    end
                 end
-            end
+            end,
         })
     end
 
     try_cat()
 end
 
-function M._establish_ssh_tunnel(host, config, on_success, on_error)
+function M._establish_ssh_tunnel(host, config, on_success)
     -- Ports to forward
     local ports = {
         config.shell_port,
         config.iopub_port,
         config.stdin_port,
         config.control_port,
-        config.hb_port
+        config.hb_port,
     }
 
     local forward_args = ""
@@ -106,16 +125,7 @@ function M._establish_ssh_tunnel(host, config, on_success, on_error)
     end
 
     local tunnel_cmd = "ssh -N " .. forward_args .. host
-    
-    local function handle_data(_, data)
-        if not data then return end
-        local output = table.concat(data, "\n")
-        local url = output:match("(https://login.tailscale.com/[^%s]+)")
-        if url then
-            vim.notify("[Jovian] Tailscale Auth Required:\n" .. url, vim.log.levels.WARN, { timeout = 30000 })
-            if vim.ui.open then vim.ui.open(url) end
-        end
-    end
+    local handle_data = get_handle_data()
 
     State.tunnel_job_id = vim.fn.jobstart(tunnel_cmd, {
         on_stdout = handle_data,
@@ -125,7 +135,7 @@ function M._establish_ssh_tunnel(host, config, on_success, on_error)
                 vim.notify("Jovian: SSH Tunnel died with code " .. code, vim.log.levels.ERROR)
                 State.tunnel_job_id = nil
             end
-        end
+        end,
     })
 
     -- Rewrite local connection file
@@ -138,7 +148,9 @@ function M._establish_ssh_tunnel(host, config, on_success, on_error)
     Config.options.python_interpreter = "python3" -- Use local python to connect to forwarded ports
 
     vim.notify("[Jovian] Tunnel established (5 ports forwarded)", vim.log.levels.INFO)
-    if on_success then on_success() end
+    if on_success then
+        on_success()
+    end
 end
 
 function M.stop(on_done)
@@ -148,17 +160,22 @@ function M.stop(on_done)
     end
 
     if State.remote_kernel_pid and State.tunnel_host then
-        local kill_cmd = string.format("ssh %s \"kill %s && rm /tmp/jovian_kernel.json\"", State.tunnel_host, State.remote_kernel_pid)
+        local kill_cmd =
+            string.format('ssh %s "kill %s && rm /tmp/jovian_kernel.json"', State.tunnel_host, State.remote_kernel_pid)
         vim.fn.jobstart(kill_cmd, {
             on_exit = function()
                 State.remote_kernel_pid = nil
                 State.tunnel_host = nil
                 vim.notify("[Jovian] Tunnel closed and remote kernel killed", vim.log.levels.INFO)
-                if on_done then on_done() end
-            end
+                if on_done then
+                    on_done()
+                end
+            end,
         })
     else
-        if on_done then on_done() end
+        if on_done then
+            on_done()
+        end
     end
 end
 

@@ -63,7 +63,9 @@ function M.get_tailscale_hosts()
     end
 
     local handle = io.popen("tailscale status --json")
-    if not handle then return {} end
+    if not handle then
+        return {}
+    end
     local result = handle:read("*a")
     handle:close()
 
@@ -81,7 +83,7 @@ function M.get_tailscale_hosts()
                 name = name,
                 hostname = name,
                 user = peer.User or "",
-                is_tailscale = true
+                is_tailscale = true,
             })
         end
     end

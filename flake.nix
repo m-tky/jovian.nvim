@@ -146,17 +146,38 @@
         in
         {
           integration-test = pkgs.stdenv.mkDerivation {
-          name = "jovian-integration-test";
-          src = self;
-          buildInputs = [ self.packages.${system}.run-tests ];
-          buildPhase = ''
-            export HOME=$TMPDIR
-            # Run the tests. We use a real HOME because Neovim/Jupyter might need it.
-            ${self.packages.${system}.run-tests}/bin/run-tests
-          '';
-          installPhase = "touch $out";
-        };
-      });
+            name = "jovian-integration-test";
+            src = self;
+            buildInputs = [ self.packages.${system}.run-tests ];
+            buildPhase = ''
+              export HOME=$TMPDIR
+              ${self.packages.${system}.run-tests}/bin/run-tests
+            '';
+            installPhase = "touch $out";
+          };
+
+          lua-lint = pkgs.stdenv.mkDerivation {
+            name = "jovian-lua-lint";
+            src = self;
+            nativeBuildInputs = [ pkgs.stylua pkgs.lua51Packages.luacheck ];
+            buildPhase = ''
+              stylua --check .
+              luacheck .
+            '';
+            installPhase = "touch $out";
+          };
+
+          python-lint = pkgs.stdenv.mkDerivation {
+            name = "jovian-python-lint";
+            src = self;
+            nativeBuildInputs = [ pkgs.python3Packages.ruff ];
+            buildPhase = ''
+              ruff check .
+            '';
+            installPhase = "touch $out";
+          };
+        }
+      );
 
       devShells = forAllSystems (
         system:

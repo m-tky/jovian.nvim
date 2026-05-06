@@ -1,6 +1,6 @@
 local ffi = require("ffi")
 
-ffi.cdef[[
+ffi.cdef([[
     void *zmq_ctx_new();
     void *zmq_socket(void *context, int type);
     int zmq_connect(void *socket, const char *endpoint);
@@ -13,7 +13,7 @@ ffi.cdef[[
     int zmq_msg_close(void *msg);
     int zmq_getsockopt(void *socket, int option, void *optval, size_t *optvallen);
     int zmq_setsockopt(void *socket, int option, const void *optval, size_t optvallen);
-]]
+]])
 
 local zmq = ffi.load("zmq")
 

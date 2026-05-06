@@ -27,7 +27,7 @@ function M.set_cell_status(bufnr, cell_id, status, msg)
 
     -- If buffer is hidden, skip drawing
     if State.virt_text_hidden_bufs[bufnr] then
-        -- We still want to clear the namespace if status is idle, 
+        -- We still want to clear the namespace if status is idle,
         -- but toggle_status_visibility already cleared it.
         -- Just to be safe, if it's idle we clear it anyway if not hidden?
         -- Actually, if it's hidden, we don't draw.

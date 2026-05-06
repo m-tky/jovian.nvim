@@ -91,9 +91,9 @@ if "{name}" in ns:
     if hasattr(df, "columns"):
         total_rows = len(df)
         data = {{
-            "name": "{name}", 
-            "columns": list(df.columns), 
-            "index": [str(i) for i in df.index[{offset}:{offset} + {limit}]], 
+            "name": "{name}",
+            "columns": list(df.columns),
+            "index": [str(i) for i in df.index[{offset}:{offset} + {limit}]],
             "data": df.iloc[{offset}:{offset} + {limit}].values.tolist(),
             "total_rows": total_rows,
             "offset": {offset},
