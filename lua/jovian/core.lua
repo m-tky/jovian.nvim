@@ -13,21 +13,12 @@ local Hosts = require("jovian.hosts")
 
 local Handlers = require("jovian.handlers")
 
-local function debug_log(msg)
-    local f = io.open("/tmp/jovian_debug.log", "a")
-    if f then
-        f:write(os.date("%Y-%m-%d %H:%M:%S ") .. msg .. "\n")
-        f:close()
-    end
-end
-
 local function process_output_data(data, buffer_key)
     if not data or #data == 0 then
         return
     end
 
     local first = data[1] or ""
-    debug_log("CHUNK_RECEIVED [" .. buffer_key .. "]: size=" .. #data .. " first_len=" .. #first)
     State[buffer_key] = (State[buffer_key] or "") .. first
 
     if #data > 1 then
@@ -35,25 +26,16 @@ local function process_output_data(data, buffer_key)
         if line ~= "" then
             local ok, msg = pcall(vim.json and vim.json.decode or vim.fn.json_decode, line)
             if ok and msg then
-                debug_log("MSG_DECODED: type=" .. (msg.type or "nil"))
                 vim.schedule(function()
                     local handler_name = "handle_" .. (msg.type or "")
                     if Handlers[handler_name] then
-                        local start_time = vim.loop.hrtime()
                         local h_ok, h_err = pcall(Handlers[handler_name], msg)
-                        local end_time = vim.loop.hrtime()
-                        local duration = (end_time - start_time) / 1000000 -- ms
-                        debug_log("HANDLER_DONE: " .. handler_name .. " duration=" .. duration .. "ms")
                         if not h_ok then
-                            debug_log("HANDLER_ERROR: " .. tostring(h_err))
                             UI.append_to_repl("[Handler Error: " .. tostring(h_err) .. "]", "ErrorMsg")
                         end
-                    else
-                        debug_log("HANDLER_MISSING: " .. handler_name)
                     end
                 end)
             else
-                debug_log("DECODE_FAIL (not JSON or error): " .. tostring(msg))
                 vim.schedule(function()
                     UI.append_to_repl(line, "Comment")
                 end)
@@ -65,23 +47,16 @@ local function process_output_data(data, buffer_key)
             if l ~= "" then
                 local ok, msg = pcall(vim.json and vim.json.decode or vim.fn.json_decode, l)
                 if ok and msg then
-                    debug_log("MSG_DECODED_LOOP: type=" .. (msg.type or "nil"))
                     vim.schedule(function()
                         local handler_name = "handle_" .. (msg.type or "")
                         if Handlers[handler_name] then
-                            local start_time = vim.loop.hrtime()
                             local h_ok, h_err = pcall(Handlers[handler_name], msg)
-                            local end_time = vim.loop.hrtime()
-                            local duration = (end_time - start_time) / 1000000 -- ms
-                            debug_log("HANDLER_DONE_LOOP: " .. handler_name .. " duration=" .. duration .. "ms")
                             if not h_ok then
-                                debug_log("HANDLER_ERROR_LOOP: " .. tostring(h_err))
                                 UI.append_to_repl("[Handler Error: " .. tostring(h_err) .. "]", "ErrorMsg")
                             end
                         end
                     end)
                 else
-                    debug_log("DECODE_FAIL_LOOP: " .. tostring(msg))
                     vim.schedule(function()
                         UI.append_to_repl(l, "Comment")
                     end)
@@ -90,7 +65,6 @@ local function process_output_data(data, buffer_key)
         end
 
         State[buffer_key] = data[#data]
-        debug_log("REMAINING_BUFFER: size=" .. #State[buffer_key])
     end
 end
 
