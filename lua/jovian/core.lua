@@ -88,7 +88,9 @@ function M._prepare_kernel_command(script_path)
     elseif Config.options.ssh_host then
         local host = Config.options.ssh_host
         local remote_python = Config.options.ssh_python
-        cmd = { "ssh", host, remote_python, "-u", "/tmp/jovian_backend/kernel_bridge.py" }
+        local remote_cwd = Config.options.remote_cwd or "."
+        local remote_cmd = string.format("cd %s && %s -u /tmp/jovian_backend/kernel_bridge.py", remote_cwd, remote_python)
+        cmd = { "ssh", host, remote_cmd }
         UI.append_to_repl("[Jovian] Connecting to remote: " .. host, "Special")
     else
         -- Local execution
@@ -242,6 +244,8 @@ function M.stop_kernel()
         State.job_id = nil
         vim.fn.jobstop(id)
     end
+    -- Feature 3: Cleanup tunnel
+    require("jovian.tunnel").stop()
 end
 
 function M.restart_kernel()
@@ -297,7 +301,7 @@ function M.send_payload(code, cell_id, filename)
         code = code,
         cell_id = cell_id,
         file_dir = cache_dir,
-        cwd = file_dir,
+        cwd = not Config.options.ssh_host and file_dir or nil,
     }
 
     -- Store hash for stale detection
@@ -521,12 +525,26 @@ function M.view_dataframe(args)
         end)
         return
     end
-    local var_name = args.args
-    if var_name == "" then
+
+    local var_name = type(args) == "table" and args.args or args
+    if var_name == "" or var_name == nil then
         var_name = vim.fn.expand("<cword>")
     end
-    local msg = vim.json.encode({ command = "view_dataframe", name = var_name })
+
+    local offset = (args and type(args) == "table") and args.offset or 0
+    local limit = (args and type(args) == "table") and args.limit or Config.options.dataframe_page_size
+
+    local msg = vim.json.encode({
+        command = "view_dataframe",
+        name = var_name,
+        offset = offset,
+        limit = limit,
+    })
     vim.api.nvim_chan_send(State.job_id, msg .. "\n")
+end
+
+function M.view_dataframe_page(var_name, offset, limit)
+    M.view_dataframe({ args = var_name, offset = offset, limit = limit })
 end
 
 function M.show_variables(opts)

@@ -4,6 +4,9 @@ local UI = require("jovian.ui")
 local Cell = require("jovian.cell")
 local Hosts = require("jovian.hosts")
 local Config = require("jovian.config")
+local SSHConfig = require("jovian.ssh_config")
+local Tunnel = require("jovian.tunnel")
+local State = require("jovian.state")
 
 -- Navigation helpers
 local function goto_next_cell()
@@ -221,6 +224,119 @@ function M.setup()
         end
     end, { nargs = "?" })
 
+    vim.api.nvim_create_user_command("JovianConnect", function()
+        local hosts = SSHConfig.get_all_hosts()
+        if #hosts == 0 then
+            return vim.notify("No hosts found in ~/.ssh/config or tailscale", vim.log.levels.WARN)
+        end
+
+        local names = {}
+        local host_map = {}
+        for _, h in ipairs(hosts) do
+            table.insert(names, h.name)
+            host_map[h.name] = h
+        end
+        table.sort(names)
+
+        vim.ui.select(names, { prompt = "Select Host from ssh_config:" }, function(selected_name)
+            if not selected_name then return end
+            local host_data = host_map[selected_name]
+
+            vim.ui.select({ "SSH Direct", "Auto-Tunnel (Jupyter)" }, { prompt = "Connection Mode:" }, function(mode)
+                if not mode then return end
+
+                vim.ui.input({ prompt = "Python Path: ", default = "python3" }, function(python)
+                    if not python or python == "" then return end
+
+                    if mode == "SSH Direct" then
+                        vim.ui.input({ prompt = "Remote Directory (Optional): ", default = "." }, function(remote_cwd)
+                            local config = { type = "ssh", host = selected_name, python = python, remote_cwd = remote_cwd }
+                            Hosts.add_host(selected_name, config)
+                            Hosts.use_host(selected_name)
+                        end)
+                    else
+                        -- Tunnel Mode
+                        vim.ui.input({ prompt = "Remote Directory (Optional): ", default = "." }, function(remote_cwd)
+                            Tunnel.start(selected_name, python, remote_cwd, function()
+                                -- On success, start kernel
+                                Core.start_kernel()
+                            end, function(err)
+                                vim.notify("Tunnel Error: " .. err, vim.log.levels.ERROR)
+                            end)
+                        end)
+                    end
+                end)
+            end)
+        end)
+    end, {})
+
+    vim.api.nvim_create_user_command("JovianTunnelStatus", function()
+        if State.tunnel_host then
+            local msg = string.format("Tunneled to %s (Remote PID: %s)", State.tunnel_host, State.remote_kernel_pid or "unknown")
+            vim.notify(msg, vim.log.levels.INFO)
+        else
+            vim.notify("No active tunnel", vim.log.levels.INFO)
+        end
+    end, {})
+
+    vim.api.nvim_create_user_command("JovianSync", function(opts)
+        local host = Config.options.ssh_host or State.tunnel_host
+        if not host then
+            return vim.notify("Jovian: No remote host active. Use :JovianConnect first.", vim.log.levels.ERROR)
+        end
+
+        local remote_dir = Config.options.remote_cwd or "."
+        local target = opts.args ~= "" and opts.args or "."
+        
+        -- Build rsync command
+        -- -a: archive, -v: verbose, -z: compress
+        local cmd = { "rsync", "-avz" }
+        
+        -- Exclusions
+        table.insert(cmd, "--exclude=.jovian_cache")
+        table.insert(cmd, "--exclude=.git")
+        table.insert(cmd, "--exclude=__pycache__")
+        table.insert(cmd, "--exclude=.ipynb_checkpoints")
+        
+        -- Source (trailing slash matters for directories)
+        local source = target
+        if vim.fn.isdirectory(source) == 1 and not source:match("/$") then
+            source = source .. "/"
+        end
+        table.insert(cmd, source)
+        
+        -- Destination
+        local dest_dir = remote_dir
+        if not dest_dir:match("/$") then
+            dest_dir = dest_dir .. "/"
+        end
+        table.insert(cmd, string.format("%s:%s", host, dest_dir))
+
+        vim.notify(string.format("[Jovian] Syncing %s to %s:%s...", source, host, dest_dir), vim.log.levels.INFO)
+        
+        vim.fn.jobstart(cmd, {
+            stdout_buffered = true,
+            on_stdout = function(_, data)
+                if data and #data > 1 then
+                    -- Show summary of synced files
+                    vim.notify("Jovian Sync: " .. #data .. " lines of output. Last: " .. data[#data-1], vim.log.levels.INFO)
+                end
+            end,
+            on_stderr = function(_, data)
+                if data and #data > 0 and data[1] ~= "" then
+                    vim.notify("Jovian Sync Error: " .. table.concat(data, "\n"), vim.log.levels.ERROR)
+                end
+            end,
+            on_exit = function(_, code)
+                if code == 0 then
+                    vim.notify("Jovian: Sync completed successfully.", vim.log.levels.INFO)
+                else
+                    vim.notify("Jovian: Sync failed with code " .. code, vim.log.levels.ERROR)
+                end
+            end
+        })
+    end, { nargs = "?", complete = "file" })
+
     -- UI
     vim.api.nvim_create_user_command("JovianOpen", function()
         UI.open_windows()
@@ -237,6 +353,9 @@ function M.setup()
     end, { bang = true })
     vim.api.nvim_create_user_command("JovianClearDiag", UI.clear_diagnostics, {})
     vim.api.nvim_create_user_command("JovianToggleVars", UI.toggle_variables_pane, {})
+    vim.api.nvim_create_user_command("JovianToggleStatus", function()
+        UI.toggle_status_visibility(vim.api.nvim_get_current_buf())
+    end, { desc = "Jovian: Toggle cell status virtual text for current buffer" })
 
     -- Data & Tools
     vim.api.nvim_create_user_command("JovianVars", function()

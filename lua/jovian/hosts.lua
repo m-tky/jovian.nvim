@@ -79,6 +79,7 @@ function M.use_host(name)
     if config.type == "ssh" then
         Config.options.ssh_host = config.host
         Config.options.ssh_python = config.python
+        Config.options.remote_cwd = config.remote_cwd or "."
         Config.options.connection_file = nil
         Config.options.python_interpreter = config.python -- Sync for reference
     elseif config.type == "connection" then
