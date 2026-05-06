@@ -443,7 +443,7 @@ except:
                 )
 
             elif msg_type == "status":
-                if content["execution_state"] == "idle":
+                if parent_id == self.current_msg_id and content.get("execution_state") == "idle":
                     self._finalize_execution()
 
         elif self.var_msg_id and parent_id == self.var_msg_id:
@@ -643,11 +643,10 @@ except:
         self.current_msg_id = None
         self.output_counter = 0
 
-        # Check for pending executions
-        self._process_next_in_queue()
-
-    def _process_next_in_queue(self):
+        # Process next item in execution queue
         if not self.execution_queue.empty():
+            q_size = self.execution_queue.qsize()
+            # send_json({"type": "kernel_log", "stream": "stdout", "msg": f"[Jovian] Processing next cell (queued: {q_size})..."})
             next_cmd = self.execution_queue.get()
             self._do_execute(
                 next_cmd["code"],
@@ -655,6 +654,7 @@ except:
                 next_cmd.get("file_dir"),
                 next_cmd.get("cwd"),
             )
+
 
     def _do_execute(self, code, cell_id, file_dir=None, cwd=None):
         self.current_cell_id = cell_id
