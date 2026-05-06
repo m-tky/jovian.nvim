@@ -69,30 +69,45 @@ nvim-jovian demo_jovian.py
 
 ## 📦 Installation
 
-Using [lazy.nvim](https://github.com/folke/lazy.nvim):
-
+#### Using [Lazy.nvim](https://github.com/folke/lazy.nvim)
 ```lua
 {
-    "jovian-org/jovian.nvim",
+    "m-tky/jovian.nvim",
     dependencies = {
         "3rd/image.nvim",
-        "GCBallesteros/jupytext.nvim",
+        "neovim/nvim-lspconfig",
     },
     config = function()
-        -- Setup image.nvim (adjust backend to your terminal)
-        require("image").setup({
-            backend = "kitty",
-            processor = "magick_cli",
-            max_width_window_percentage = 100,
-            max_height_window_percentage = 100,
-            window_overlap_clear_enabled = true,
-        })
-
-        -- Setup jovian.nvim
         require("jovian").setup({
             python_interpreter = "python3",
         })
     end
+}
+```
+
+#### Using Nix (Flake)
+If you are using Nix, Jovian provides a standard Neovim plugin package and a pre-configured Python environment with all necessary dependencies (`ipykernel`, `pandas`, `zeromq`, etc.).
+
+```nix
+# Example usage in another flake
+{
+  inputs.jovian.url = "github:m-tky/jovian.nvim";
+  
+  outputs = { self, nixpkgs, jovian }: {
+    neovim = pkgs.neovim.override {
+      configure.packages.myVimPackage.start = [
+        jovian.packages.${system}.jovian-nvim
+      ];
+      # Point to the pre-bundled Python environment
+      customRC = ''
+        lua << EOF
+          require("jovian").setup({
+            python_interpreter = "${jovian.packages.${system}.pythonEnv}/bin/python3",
+          })
+        EOF
+      '';
+    };
+  };
 }
 ```
 
