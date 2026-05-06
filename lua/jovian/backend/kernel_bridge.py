@@ -443,8 +443,14 @@ except:
                 )
 
             elif msg_type == "status":
-                if parent_id == self.current_msg_id and content.get("execution_state") == "idle":
+                exec_state = content.get("execution_state")
+                if parent_id == self.current_msg_id and exec_state == "idle":
+                    # self.send_json({"type": "kernel_log", "stream": "stdout", "msg": f"[Jovian] Cell {self.current_cell_id} finished."})
                     self._finalize_execution()
+                elif parent_id is None and exec_state == "idle":
+                    # Sometimes parent_id is missing in some environments, but if we are waiting, we check it
+                    if self.current_msg_id:
+                        self._finalize_execution()
 
         elif self.var_msg_id and parent_id == self.var_msg_id:
             if msg_type == "display_data":
