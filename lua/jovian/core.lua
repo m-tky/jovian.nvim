@@ -14,16 +14,20 @@ local Hosts = require("jovian.hosts")
 local Handlers = require("jovian.handlers")
 
 local function process_output_data(data, buffer_key)
-    if not data then
+    if not data or #data == 0 then
         return
     end
-    State[buffer_key] = (State[buffer_key] or "") .. table.concat(data, "\n")
-    local lines = vim.split(State[buffer_key], "\n")
-    State[buffer_key] = table.remove(lines)
 
-    for _, line in ipairs(lines) do
+    -- The first element completes the previous buffer
+    local first = table.remove(data, 1)
+    State[buffer_key] = (State[buffer_key] or "") .. first
+
+    -- If there are more elements, it means the current State[buffer_key] is a complete line
+    if #data > 0 then
+        -- Process the now complete line in the buffer
+        local line = State[buffer_key]
         if line ~= "" then
-            local ok, msg = pcall(vim.fn.json_decode, line)
+            local ok, msg = pcall(vim.json.decode, line)
             if ok and msg then
                 vim.schedule(function()
                     local handler_name = "handle_" .. msg.type
@@ -32,12 +36,34 @@ local function process_output_data(data, buffer_key)
                     end
                 end)
             else
-                -- Not JSON: print as raw output/warning
                 vim.schedule(function()
                     UI.append_to_repl(line, "Comment")
                 end)
             end
         end
+
+        -- Process all complete lines except the last one (which is the new buffer)
+        for i = 1, #data - 1 do
+            local l = data[i]
+            if l ~= "" then
+                local ok, msg = pcall(vim.json.decode, l)
+                if ok and msg then
+                    vim.schedule(function()
+                        local handler_name = "handle_" .. msg.type
+                        if Handlers[handler_name] then
+                            Handlers[handler_name](msg)
+                        end
+                    end)
+                else
+                    vim.schedule(function()
+                        UI.append_to_repl(l, "Comment")
+                    end)
+                end
+            end
+        end
+
+        -- The last element is the new partial buffer
+        State[buffer_key] = data[#data]
     end
 end
 

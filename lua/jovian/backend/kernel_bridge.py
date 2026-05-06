@@ -198,11 +198,10 @@ class KernelBridge:
         """Read lines from kernel process stream and forward as JSON"""
         try:
             for line in iter(stream.readline, b""):
-                text = line.decode("utf-8", errors="replace").strip()
-                if text:
-                    # Filter out the common but noisy Python 3.13 / ipykernel error if possible
-                    # but it's better to show it in a controlled way.
-                    send_json({"type": "kernel_log", "stream": name, "msg": text})
+                text = line.decode("utf-8", errors="replace")
+                if text.endswith("\n"):
+                    text = text[:-1]
+                send_json({"type": "kernel_log", "stream": name, "msg": text})
         except Exception:
             pass
 
@@ -351,8 +350,8 @@ except Exception:
                 self._handle_iopub_msg(msg)
             except queue.Empty:
                 continue
-            except Exception:
-                pass
+            except Exception as e:
+                send_json({"type": "error", "msg": f"IOPub Thread Error: {e}"})
 
     def _handle_iopub_msg(self, msg):
         msg_type = msg["header"]["msg_type"]
@@ -627,9 +626,10 @@ except Exception:
                 msg["error"] = error_info
 
             send_json(msg)
-
-        except Exception:
-            pass
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            send_json({"type": "error", "msg": f"Finalize Error: {e}", "traceback": tb.split("\n")})
 
         # Reset state
         self.current_cell_id = None
