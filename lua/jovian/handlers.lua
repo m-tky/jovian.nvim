@@ -35,7 +35,7 @@ function M.handle_ready(msg)
 		require("jovian.core").show_variables()
 	end
 
-	if Config.options.plot_view_mode then
+	if Config.options.plot_view_mode and type(State.job_id) == "number" then
 		local init_msg = vim.json.encode({ command = "set_plot_mode", mode = Config.options.plot_view_mode })
 		vim.api.nvim_chan_send(State.job_id, init_msg .. "\n")
 	end
