@@ -228,6 +228,14 @@ function M.setup(opts)
 			require("jovian.inline_images").clear_for_buffer(ev.buf)
 		end,
 	})
+
+	-- Add: Explicitly stop kernel on exit
+	vim.api.nvim_create_autocmd("VimLeavePre", {
+		pattern = "*",
+		callback = function()
+			require("jovian.core").stop_kernel()
+		end,
+	})
 end
 
 return M

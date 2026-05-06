@@ -931,9 +931,19 @@ def main():
     args = parser.parse_args()
 
     bridge = KernelBridge(connection_file=args.connection_file)
-    bridge.start()
+    
+    # Register cleanup for normal exit
+    atexit.register(bridge.stop)
 
-    # send_json({"type": "debug", "msg": "Kernel Bridge Started"})
+    # Handle termination signals
+    def signal_handler(signum, frame):
+        bridge.stop()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, signal_handler)
+    # SIGINT is handled by KeyboardInterrupt in the loop below
+
+    bridge.start()
 
     while True:
         try:
