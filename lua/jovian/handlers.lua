@@ -16,6 +16,11 @@ function M.handle_debug(msg)
 	UI.append_to_repl("[Debug]: " .. msg.msg, "Comment")
 end
 
+function M.handle_kernel_log(msg)
+	local hl = msg.stream == "stderr" and "ErrorMsg" or "Comment"
+	UI.append_to_repl("[Kernel " .. msg.stream .. "]: " .. msg.msg, hl)
+end
+
 function M.handle_ready(msg)
 	-- Execute all registered callbacks
 	for _, callback in ipairs(State.on_ready_callbacks) do

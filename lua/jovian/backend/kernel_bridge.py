@@ -10,6 +10,7 @@ import time
 
 import signal
 import atexit
+import subprocess
 
 try:
     from jupyter_client.blocking.client import BlockingKernelClient
@@ -25,9 +26,13 @@ except ImportError as e:
 
 
 # --- Protocol Utils ---
+_send_lock = threading.Lock()
+
+
 def send_json(msg):
-    sys.stdout.write(json.dumps(msg) + "\n")
-    sys.stdout.flush()
+    with _send_lock:
+        sys.stdout.write(json.dumps(msg) + "\n")
+        sys.stdout.flush()
 
 
 # ANSI escape code pattern (compiled once)
@@ -112,9 +117,21 @@ class KernelBridge:
                     "{connection_file}",
                 ]
             )
-            self.km.start_kernel()
+            self.km.start_kernel(stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             self.kc = self.km.client()
             self.kc.start_channels()
+
+            # Start threads to capture kernel output
+            threading.Thread(
+                target=self._read_kernel_stream,
+                args=(self.km.kernel.stdout, "stdout"),
+                daemon=True,
+            ).start()
+            threading.Thread(
+                target=self._read_kernel_stream,
+                args=(self.km.kernel.stderr, "stderr"),
+                daemon=True,
+            ).start()
 
         try:
             self.kc.wait_for_ready(timeout=10)
@@ -146,6 +163,18 @@ class KernelBridge:
             self.km.shutdown_kernel(now=True)
         elif self.kc:
             self.kc.stop_channels()
+
+    def _read_kernel_stream(self, stream, name):
+        """Read lines from kernel process stream and forward as JSON"""
+        try:
+            for line in iter(stream.readline, b""):
+                text = line.decode("utf-8", errors="replace").strip()
+                if text:
+                    # Filter out the common but noisy Python 3.13 / ipykernel error if possible
+                    # but it's better to show it in a controlled way.
+                    send_json({"type": "kernel_log", "stream": name, "msg": text})
+        except Exception:
+            pass
 
     def _inject_runtime(self):
         script = """
