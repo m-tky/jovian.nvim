@@ -143,6 +143,7 @@
           default = pkgs.mkShell {
             packages = [
               self.packages.${system}.nvim-jovian
+              pkgs.neovim
               pkgs.imagemagick
               pkgs.pyright
               pkgs.ruff
