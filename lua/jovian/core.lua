@@ -14,7 +14,7 @@ local Hosts = require("jovian.hosts")
 local Handlers = require("jovian.handlers")
 
 local function debug_log(msg)
-    local f = io.open("jovian_debug.log", "a")
+    local f = io.open("/tmp/jovian_debug.log", "a")
     if f then
         f:write(os.date("%Y-%m-%d %H:%M:%S ") .. msg .. "\n")
         f:close()
