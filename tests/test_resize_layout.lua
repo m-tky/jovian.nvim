@@ -2,7 +2,7 @@
 -- Run with: nvim -l test_resize_layout.lua
 
 -- 1. Setup package path to find jovian modules
-local sep = package.config:sub(1, 1)
+-- local sep = package.config:sub(1, 1)
 local script_path = debug.getinfo(1).source:sub(2)
 local project_root = vim.fn.fnamemodify(script_path, ":p:h:h")
 package.path = package.path .. ";" .. project_root .. "/lua/?.lua" .. ";" .. project_root .. "/lua/?/init.lua"
@@ -12,7 +12,7 @@ package.path = package.path .. ";" .. project_root .. "/lua/?.lua" .. ";" .. pro
 -- But nvim -l already has a 'vim' table. We should extend/mock parts of it.
 
 local mock_wins = {}
-local mock_bufs = {}
+-- local mock_bufs = {}
 local current_win = 1000
 local win_options = {}
 
@@ -44,13 +44,13 @@ end
 
 -- Mock vim.wo
 vim.wo = setmetatable({}, {
-    __index = function(t, win)
+    __index = function(_t, win)
         if not win_options[win] then
             win_options[win] = {}
         end
         return win_options[win]
     end,
-    __newindex = function(t, win, val)
+    __newindex = function(_t, _win, _val)
         -- This path is not usually taken for vim.wo[win].opt = val
         -- It's usually vim.wo[win][opt] = val, handled by __index returning a table?
         -- No, vim.wo[win] returns a userdata/table proxy.

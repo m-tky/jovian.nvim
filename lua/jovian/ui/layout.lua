@@ -164,7 +164,7 @@ function M.open_layout(layout, parent_win)
 
     -- Get container size BEFORE splitting
     local is_vertical_stack = (pos == "left" or pos == "right")
-    local total_pixels = 0
+    local total_pixels
     if is_vertical_stack then
         total_pixels = get_effective_height()
     else

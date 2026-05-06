@@ -326,11 +326,9 @@ function M.render_for_buffer(bufnr)
                                     if cell.attachments then
                                         for name, att_data in pairs(cell.attachments) do
                                             local safe_name = name:gsub("%.%.", ""):gsub("/", "_")
-                                            for _, b64 in pairs(att_data) do
-                                                if #b64 < 7000000 then
-                                                    attachments[safe_name] = b64
-                                                end
-                                                break
+                                            local _, b64 = next(att_data)
+                                            if b64 and #b64 < 7000000 then
+                                                attachments[safe_name] = b64
                                             end
                                         end
                                     end

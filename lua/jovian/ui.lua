@@ -1,5 +1,4 @@
 local M = {}
-local Config = require("jovian.config")
 local State = require("jovian.state")
 
 -- Submodules

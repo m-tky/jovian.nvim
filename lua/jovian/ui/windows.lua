@@ -1,8 +1,5 @@
 local M = {}
-local Config = require("jovian.config")
 local State = require("jovian.state")
-local Shared = require("jovian.ui.shared")
-local Renderers = require("jovian.ui.renderers")
 
 function M.get_or_create_buf(name)
     local existing = vim.fn.bufnr(name)

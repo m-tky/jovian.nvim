@@ -248,7 +248,6 @@ function M.show_profile_stats(text)
         border = Config.options.float_border,
         title = " cProfile Stats ",
         title_pos = "center",
-        title_pos = "center",
     })
     if Config.options.ui.winblend then
         vim.wo[win].winblend = Config.options.ui.winblend

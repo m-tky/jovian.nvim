@@ -2,7 +2,7 @@
 -- Verifies that Hosts and Core modules handle async callbacks correctly.
 
 -- 1. Setup package path
-local sep = package.config:sub(1, 1)
+-- local sep = package.config:sub(1, 1)
 local script_path = debug.getinfo(1).source:sub(2)
 local project_root = vim.fn.fnamemodify(script_path, ":p:h:h")
 package.path = package.path .. ";" .. project_root .. "/lua/?.lua" .. ";" .. project_root .. "/lua/?/init.lua"
@@ -70,7 +70,7 @@ vim.json = {
     end,
 }
 vim.api = vim.api or {}
-vim.api.nvim_chan_send = function(id, data)
+vim.api.nvim_chan_send = function(_id, data)
     print("CHAN_SEND: " .. data)
 end
 

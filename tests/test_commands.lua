@@ -2,7 +2,7 @@
 -- Functional verification of Jovian commands using real modules and mocked Vim API.
 
 -- 1. Setup package path
-local sep = package.config:sub(1, 1)
+-- local sep = package.config:sub(1, 1)
 local script_path = debug.getinfo(1).source:sub(2)
 local project_root = vim.fn.fnamemodify(script_path, ":p:h:h")
 package.path = package.path .. ";" .. project_root .. "/lua/?.lua" .. ";" .. project_root .. "/lua/?/init.lua"
@@ -25,7 +25,7 @@ end
 vim.schedule = function(cb)
     cb()
 end -- Run immediately
-vim.defer_fn = function(cb, ms)
+vim.defer_fn = function(cb, _ms)
     cb()
 end -- Run immediately
 vim.loop = {
@@ -48,7 +48,7 @@ local mock_lines = { '# %% id="cell1"', "print('hello')", '# %% id="cell2"', "x 
 vim.api.nvim_buf_line_count = function()
     return #mock_lines
 end
-vim.api.nvim_buf_get_lines = function(buf, start, end_, strict)
+vim.api.nvim_buf_get_lines = function(_buf, start, end_, _strict)
     local res = {}
     for i = start + 1, math.min(end_, #mock_lines) do
         table.insert(res, mock_lines[i])
@@ -135,30 +135,30 @@ vim.json = {
         end
         return str .. "}"
     end,
-    decode = function(s)
+    decode = function(_s)
         return {}
     end,
 }
 
 -- Mock Job Control
 local sent_payloads = {}
-vim.fn.jobstart = function(cmd, opts)
+vim.fn.jobstart = function(_cmd, opts)
     if opts and opts.on_exit then
         opts.on_exit(0, 0)
     end
     return 123 -- job_id
 end
-vim.fn.jobpid = function(id)
+vim.fn.jobpid = function(_id)
     return 9999
 end -- Mock PID
-vim.api.nvim_chan_send = function(id, data)
+vim.api.nvim_chan_send = function(_id, data)
     table.insert(sent_payloads, data)
     print("CHAN_SEND: " .. data)
 end
 
 -- Mock User Commands
 _G.commands = {}
-vim.api.nvim_create_user_command = function(name, callback, opts)
+vim.api.nvim_create_user_command = function(name, callback, _opts)
     _G.commands[name] = callback
 end
 
@@ -243,7 +243,9 @@ assert_test(#sent_payloads > 0 and sent_payloads[1]:match("command=profile"), "J
 -- Test 9: JovianCopy (Should send copy_to_clipboard command)
 run_command("JovianCopy", "my_var")
 assert_test(
-    #sent_payloads > 0 and sent_payloads[1]:match("command=copy_to_clipboard") and sent_payloads[1]:match("name=my_var"),
+    #sent_payloads > 0
+        and sent_payloads[1]:match("command=copy_to_clipboard")
+        and sent_payloads[1]:match("name=my_var"),
     "JovianCopy sent copy_to_clipboard payload"
 )
 
