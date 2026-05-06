@@ -645,5 +645,25 @@ function M.toggle_plot_view()
     
     vim.notify("Plot View Mode: " .. new_mode, vim.log.levels.INFO)
 end
+function M.show_error_diagnostics(bufnr, cell_id, error_info)
+    local start_line = State.cell_start_line[cell_id] or 1
+    local err_line = error_info.line or 1
+    local target_line = (start_line - 1) + (err_line - 1) -- 0-indexed for vim.diagnostic
+    
+    -- Ensure target_line is within buffer bounds
+    local line_count = vim.api.nvim_buf_line_count(bufnr)
+    if target_line >= line_count then target_line = line_count - 1 end
+    if target_line < 0 then target_line = 0 end
+
+    vim.diagnostic.set(State.diag_ns, bufnr, {
+        {
+            lnum = target_line,
+            col = 0,
+            message = error_info.msg,
+            severity = vim.diagnostic.severity.ERROR,
+            source = "Jovian",
+        },
+    })
+end
 
 return M
