@@ -138,7 +138,7 @@
 
       checks = forAllSystems (system:
         let
-          pkgs = nixpkgsFor.${system};
+          pkgs = import nixpkgs { inherit system; config.allowUnfree = true; };
         in
         {
           integration-test = pkgs.stdenv.mkDerivation {
