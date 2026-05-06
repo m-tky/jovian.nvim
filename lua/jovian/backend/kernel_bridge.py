@@ -139,16 +139,18 @@ class KernelBridge:
                 kernel_proc = self.km.kernel
 
             if kernel_proc:
-                threading.Thread(
+                self.stdout_thread = threading.Thread(
                     target=self._read_kernel_stream,
                     args=(kernel_proc.stdout, "stdout"),
                     daemon=True,
-                ).start()
-                threading.Thread(
+                )
+                self.stderr_thread = threading.Thread(
                     target=self._read_kernel_stream,
                     args=(kernel_proc.stderr, "stderr"),
                     daemon=True,
-                ).start()
+                )
+                self.stdout_thread.start()
+                self.stderr_thread.start()
             else:
                 self.send_json({"type": "kernel_log", "stream": "stderr", "msg": "[Jovian] Warning: Could not capture kernel output streams."})
 
@@ -285,9 +287,32 @@ except:
     def stop(self):
         self.running = False
         if self.kc:
-            self.kc.stop_channels()
+            try:
+                self.kc.stop_channels()
+            except:
+                pass
+            self.kc = None
+
         if self.km:
-            self.km.shutdown_kernel()
+            try:
+                if self.km.is_alive():
+                    self.km.shutdown_kernel(now=True)
+                self.km.cleanup_resources()
+            except:
+                # Force kill if shutdown fails
+                try:
+                    self.km.interrupt_kernel()
+                    time.sleep(0.1)
+                    if hasattr(self.km, "provisioner") and self.km.provisioner.process:
+                        self.km.provisioner.process.kill()
+                    elif hasattr(self.km, "kernel"):
+                        self.km.kernel.kill()
+                except:
+                    pass
+            self.km = None
+            
+    def __del__(self):
+        self.stop()
 
     def interrupt(self):
         try:
