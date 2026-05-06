@@ -38,13 +38,13 @@ jobs:
       - name: Run Tests
         run: |
           echo ">>> Running Integration Tests (Real Kernel)..."
-          nix develop --command nvim --headless -l tests/edge_cases.lua
+          nix develop --command nvim-jovian --headless -l tests/edge_cases.lua
           
           echo ">>> Running Command Tests (Mocked)..."
-          nix develop --command nvim --headless -l tests/test_commands.lua
+          nix develop --command nvim-jovian --headless -l tests/test_commands.lua
           
           echo ">>> Running Async Flow Tests..."
-          nix develop --command nvim --headless -l tests/test_async_flow.lua
+          nix develop --command nvim-jovian --headless -l tests/test_async_flow.lua
           
           echo ">>> Running UI/Layout Tests..."
-          nix develop --command nvim --headless -l tests/test_resize_layout.lua
+          nix develop --command nvim-jovian --headless -l tests/test_resize_layout.lua
