@@ -13,25 +13,13 @@ local Hosts = require("jovian.hosts")
 
 local Handlers = require("jovian.handlers")
 
-local function on_stdout(_chan_id, data, _name)
+local function process_output_data(data, buffer_key)
     if not data then
         return
     end
-
-    -- Buffering processing
-    if not State.stdout_buffer then
-        State.stdout_buffer = ""
-    end
-
-    -- Concatenate data
-    local chunk = table.concat(data, "\n")
-    State.stdout_buffer = State.stdout_buffer .. chunk
-
-    -- Split by newline and process
-    local lines = vim.split(State.stdout_buffer, "\n")
-
-    -- The last element is likely an incomplete line, so put it back in buffer
-    State.stdout_buffer = table.remove(lines)
+    State[buffer_key] = (State[buffer_key] or "") .. table.concat(data, "\n")
+    local lines = vim.split(State[buffer_key], "\n")
+    State[buffer_key] = table.remove(lines)
 
     for _, line in ipairs(lines) do
         if line ~= "" then
@@ -44,13 +32,21 @@ local function on_stdout(_chan_id, data, _name)
                     end
                 end)
             else
-                -- Failed to decode JSON, likely an error message or debug output
+                -- Not JSON: print as raw output/warning
                 vim.schedule(function()
-                    vim.notify("Jovian Backend: " .. line, vim.log.levels.WARN)
+                    UI.append_to_repl(line, "Comment")
                 end)
             end
         end
     end
+end
+
+local function on_stdout(_chan_id, data, _name)
+    process_output_data(data, "stdout_buffer")
+end
+
+local function on_stderr(_chan_id, data, _name)
+    process_output_data(data, "stderr_buffer")
 end
 
 function M._prepare_kernel_command(script_path)
@@ -176,11 +172,17 @@ function M.start_kernel(on_ready)
             local cmd = M._prepare_kernel_command(script_path)
             State.job_id = vim.fn.jobstart(cmd, {
                 on_stdout = on_stdout,
-                on_stderr = on_stdout,
+                on_stderr = on_stderr,
                 stdout_buffered = false,
-                on_exit = function()
+                on_exit = function(_, code)
                     State.job_id = nil
                     State.is_starting_kernel = false
+                    if code ~= 0 and code ~= 143 then -- 143 is SIGTERM
+                        vim.schedule(function()
+                            vim.notify("Jovian Kernel died with code " .. code, vim.log.levels.ERROR)
+                            UI.append_to_repl("[Kernel Process Died with code " .. code .. "]", "ErrorMsg")
+                        end)
+                    end
                 end,
             })
             -- UI.append_to_repl("[Jovian Kernel Started]")
