@@ -1,0 +1,15 @@
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+exclude = [
+    "demo_jovian.py",
+    "examples/*.py",
+]
+
+[tool.ruff.lint]
+# Enable Pyflakes (E) and pycodestyle (W) codes by default.
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["jovian"]

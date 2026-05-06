@@ -144,6 +144,7 @@
               pkgs.imagemagick
               pkgs.pyright
               pkgs.ruff
+              pkgs.stylua
               pkgs.libnotify
               pythonEnv
             ];

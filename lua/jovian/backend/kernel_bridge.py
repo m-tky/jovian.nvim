@@ -1,16 +1,15 @@
 import argparse
+import atexit
 import base64
 import json
 import os
 import queue
 import re
+import signal
+import subprocess
 import sys
 import threading
 import time
-
-import signal
-import atexit
-import subprocess
 
 try:
     from jupyter_client.blocking.client import BlockingKernelClient
@@ -121,19 +120,23 @@ class KernelBridge:
             # Explicitly set signature scheme to ensure compatibility
             if not hasattr(self.km, "session") or not self.km.session:
                 self.km.session = Session(key=os.urandom(16), signature_scheme="hmac-sha256")
-            
+
             self.km.start_kernel(stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            
+
             # Give the kernel a moment to initialize its sockets
             time.sleep(0.5)
-            
+
             self.kc = self.km.client()
             self.kc.start_channels()
 
             # Start threads to capture kernel output
             # Newer jupyter_client uses provisioner.process, older uses .kernel
             kernel_proc = None
-            if hasattr(self.km, "provisioner") and self.km.provisioner and hasattr(self.km.provisioner, "process"):
+            if (
+                hasattr(self.km, "provisioner")
+                and self.km.provisioner
+                and hasattr(self.km.provisioner, "process")
+            ):
                 kernel_proc = self.km.provisioner.process
             elif hasattr(self.km, "kernel"):
                 kernel_proc = self.km.kernel
@@ -152,7 +155,13 @@ class KernelBridge:
                 self.stdout_thread.start()
                 self.stderr_thread.start()
             else:
-                self.send_json({"type": "kernel_log", "stream": "stderr", "msg": "[Jovian] Warning: Could not capture kernel output streams."})
+                self.send_json(
+                    {
+                        "type": "kernel_log",
+                        "stream": "stderr",
+                        "msg": "[Jovian] Warning: Could not capture kernel output streams.",
+                    }
+                )
 
         try:
             self.kc.wait_for_ready(timeout=10)
@@ -210,7 +219,7 @@ _jovian_original_show = None
 def _jovian_show(*args, **kwargs):
     global _jovian_plot_mode
     global _jovian_original_show
-    
+
     # Always capture and display the image for the preview pane
     try:
         import matplotlib.pyplot as plt
@@ -237,16 +246,16 @@ def _jovian_show(*args, **kwargs):
                     # Avoid recursion if plt.show is self
                     if plt.show != _jovian_show:
                          return plt.show(*args, **kwargs)
-                except: pass
+                except Exception: pass
         else:
             # If no original show, try default matplotlib show
             try:
                 import matplotlib.pyplot as plt
                 if plt.show != _jovian_show:
                     return plt.show(*args, **kwargs)
-            except: pass
+            except Exception: pass
         return
-    
+
     # Inline mode cleanup
     try:
         import matplotlib.pyplot as plt
@@ -270,7 +279,7 @@ try:
     ip = get_ipython()
     ip.events.register('post_run_cell', _jovian_patch_matplotlib)
     del ip
-except:
+except Exception:
     pass
 
 # Try to patch immediately
@@ -279,7 +288,7 @@ _jovian_patch_matplotlib()
 # Ensure we are using a GUI backend (not inline) to support window mode
 try:
     get_ipython().run_line_magic('matplotlib', 'auto')
-except:
+except Exception:
     pass
 """
         self.kc.execute(script, silent=True)
@@ -289,7 +298,7 @@ except:
         if self.kc:
             try:
                 self.kc.stop_channels()
-            except:
+            except Exception:
                 pass
             self.kc = None
 
@@ -298,7 +307,7 @@ except:
                 if self.km.is_alive():
                     self.km.shutdown_kernel(now=True)
                 self.km.cleanup_resources()
-            except:
+            except Exception:
                 # Force kill if shutdown fails
                 try:
                     self.km.interrupt_kernel()
@@ -307,10 +316,10 @@ except:
                         self.km.provisioner.process.kill()
                     elif hasattr(self.km, "kernel"):
                         self.km.kernel.kill()
-                except:
+                except Exception:
                     pass
             self.km = None
-            
+
     def __del__(self):
         self.stop()
 
@@ -383,18 +392,14 @@ except:
             elif msg_type == "execute_result":
                 data = content["data"]
                 if "text/plain" in data:
-                    self.msg_queue.put(
-                        {"type": "text", "content": data["text/plain"] + "\n"}
-                    )
+                    self.msg_queue.put({"type": "text", "content": data["text/plain"] + "\n"})
 
             elif msg_type == "display_data":
                 data = content["data"]
                 if "application/vnd.jovian.variables+json" in data:
                     # Handle variables list
                     var_data = data["application/vnd.jovian.variables+json"]
-                    send_json(
-                        {"type": "variable_list", "variables": var_data["variables"]}
-                    )
+                    send_json({"type": "variable_list", "variables": var_data["variables"]})
                 elif "application/vnd.jovian.dataframe+json" in data:
                     # Handle dataframe data
                     df_data = data["application/vnd.jovian.dataframe+json"]
@@ -414,24 +419,18 @@ except:
                 elif "application/vnd.jovian.clipboard+json" in data:
                     # Handle clipboard data
                     clip_data = data["application/vnd.jovian.clipboard+json"]
-                    send_json(
-                        {"type": "clipboard_data", "content": clip_data["content"]}
-                    )
+                    send_json({"type": "clipboard_data", "content": clip_data["content"]})
                 elif "image/png" in data:
                     img_data = data["image/png"]
                     # send_json({"type": "debug", "msg": f"Received image data, length: {len(img_data)}"})
                     self.msg_queue.put({"type": "image", "data": img_data})
                 elif "text/plain" in data:
-                    self.msg_queue.put(
-                        {"type": "text", "content": data["text/plain"] + "\n"}
-                    )
+                    self.msg_queue.put({"type": "text", "content": data["text/plain"] + "\n"})
 
             elif msg_type == "error":
                 # Forward error to REPL
                 error_text = "\n".join(content["traceback"])
-                send_json(
-                    {"type": "stream", "text": error_text + "\n", "stream": "stderr"}
-                )
+                send_json({"type": "stream", "text": error_text + "\n", "stream": "stderr"})
 
                 self.msg_queue.put(
                     {
@@ -457,9 +456,7 @@ except:
                 data = content["data"]
                 if "application/vnd.jovian.variables+json" in data:
                     var_data = data["application/vnd.jovian.variables+json"]
-                    send_json(
-                        {"type": "variable_list", "variables": var_data["variables"]}
-                    )
+                    send_json({"type": "variable_list", "variables": var_data["variables"]})
                 elif "application/vnd.jovian.dataframe+json" in data:
                     df_data = data["application/vnd.jovian.dataframe+json"]
                     send_json(
@@ -476,9 +473,7 @@ except:
                     send_json({"type": "peek_data", "data": peek_data})
                 elif "application/vnd.jovian.clipboard+json" in data:
                     clip_data = data["application/vnd.jovian.clipboard+json"]
-                    send_json(
-                        {"type": "clipboard_data", "content": clip_data["content"]}
-                    )
+                    send_json({"type": "clipboard_data", "content": clip_data["content"]})
 
             elif msg_type == "stream":
                 # For variables, we might not want to forward stdout/stderr to REPL to avoid noise,
@@ -537,18 +532,18 @@ except:
                         try:
                             import glob
 
-                            pattern = os.path.join(
-                                save_dir, f"{self.current_cell_id}_*.png"
-                            )
+                            pattern = os.path.join(save_dir, f"{self.current_cell_id}_*.png")
                             for old_file in glob.glob(pattern):
                                 try:
                                     os.remove(old_file)
-                                except:
+                                except Exception:
                                     pass
-                        except:
+                        except Exception:
                             pass
 
-                    img_filename = f"{self.current_cell_id}_{int(time.time())}_{self.output_counter:02d}.png"
+                    img_filename = (
+                        f"{self.current_cell_id}_{int(time.time())}_{self.output_counter:02d}.png"
+                    )
                     img_path = os.path.join(save_dir, img_filename)
 
                     try:
@@ -573,9 +568,7 @@ except:
                             }
                         )
                     except Exception as e:
-                        send_json(
-                            {"type": "error", "msg": f"Failed to save image: {e}"}
-                        )
+                        send_json({"type": "error", "msg": f"Failed to save image: {e}"})
 
                 elif item["type"] == "error":
                     error_info = {
@@ -588,12 +581,8 @@ except:
                     line_num = 1
                     for line in item["traceback"]:
                         # Remove ANSI codes for regex matching
-                        clean_line = re.sub(
-                            r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])", "", line
-                        )
-                        match = re.search(
-                            r'File "<ipython-input-[^>]+>", line (\d+)', clean_line
-                        )
+                        clean_line = re.sub(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])", "", line)
+                        match = re.search(r'File "<ipython-input-[^>]+>", line (\d+)', clean_line)
                         if match:
                             line_num = int(match.group(1))
                             # send_json({"type": "debug", "msg": f"Matched line {line_num} in: {clean_line.strip()}"})
@@ -601,9 +590,7 @@ except:
                     # send_json({"type": "debug", "msg": f"Final extracted line: {line_num}"})
                     error_info["line"] = line_num
                     ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
-                    clean_traceback = [
-                        ansi_escape.sub("", line) for line in item["traceback"]
-                    ]
+                    clean_traceback = [ansi_escape.sub("", line) for line in item["traceback"]]
 
                     output_md_lines.append("### Error")
                     output_md_lines.append("```")
@@ -652,7 +639,9 @@ except:
         # If there was an error, clear the execution queue (abort run-all)
         if error_info and not self.execution_queue.empty():
             q_size = self.execution_queue.qsize()
-            send_json({"type": "batch_aborted", "msg": f"Aborting {q_size} queued cells due to error."})
+            send_json(
+                {"type": "batch_aborted", "msg": f"Aborting {q_size} queued cells due to error."}
+            )
             with self.execution_queue.mutex:
                 self.execution_queue.queue.clear()
 
@@ -665,7 +654,6 @@ except:
                 next_cmd.get("file_dir"),
                 next_cmd.get("cwd"),
             )
-
 
     def _do_execute(self, code, cell_id, file_dir=None, cwd=None):
         self.current_cell_id = cell_id
@@ -718,7 +706,7 @@ def _jovian_get_variables():
         for name, value in list(ns.items()):
             if name.startswith("_") or isinstance(value, (types.ModuleType, types.FunctionType, type)): continue
             if name in ['In', 'Out', 'exit', 'quit', 'get_ipython', '_jovian_get_variables']: continue
-            
+
             type_name = type(value).__name__
             if type_name == 'DataFrame':
                 info = f"({value.shape[0]}, {value.shape[1]}) | DataFrame"
@@ -738,15 +726,15 @@ def _jovian_get_variables():
             elif isinstance(value, (list, dict, set, tuple)):
                 info = f"len: {len(value)}"
             var_list.append({"name": name, "type": type_name, "info": info})
-            
+
         # Category-based sorting: (Priority, Name)
         priority = {
-            'DataFrame': 0, 'Series': 0, 'ndarray': 1, 
+            'DataFrame': 0, 'Series': 0, 'ndarray': 1,
             'list': 2, 'dict': 2, 'set': 2, 'tuple': 2,
             'int': 3, 'float': 3, 'str': 3, 'bool': 3
         }
         var_list.sort(key=lambda x: (priority.get(x['type'], 99), x['name'].lower()))
-        
+
         display({"application/vnd.jovian.variables+json": {"variables": var_list}}, raw=True)
     except Exception as e:
         error_var = {"name": "Error", "type": "Exception", "info": str(e)}
@@ -772,7 +760,7 @@ def _jovian_view_df(name):
         elif isinstance(val, pd.Series): df = val.to_frame()
         elif isinstance(val, np.ndarray):
             if val.ndim <= 2: df = pd.DataFrame(val)
-        
+
         if df is not None:
             df_view = df.head(100)
             data_json = df_view.to_json(orient='split', date_format='iso')
@@ -801,22 +789,22 @@ def _jovian_peek(name):
         if name not in globals(): return
         val = globals()[name]
         type_name = type(val).__name__
-        
+
         size_str = "unknown"
         try:
             size = sys.getsizeof(val)
             if size < 1024: size_str = f"{{size}} B"
             elif size < 1024**2: size_str = f"{{size/1024:.1f}} KB"
             else: size_str = f"{{size/1024**2:.1f}} MB"
-        except: pass
-        
+        except Exception: pass
+
         val_repr = repr(val)
         if len(val_repr) > 500: val_repr = val_repr[:497] + "..."
-        
+
         shape = ""
         if hasattr(val, 'shape'):
             shape = str(val.shape)
-            
+
         result = {{
             "name": name,
             "type": type_name,
@@ -825,7 +813,7 @@ def _jovian_peek(name):
             "shape": shape
         }}
         display({{"application/vnd.jovian.peek+json": result}}, raw=True)
-    except: pass
+    except Exception: pass
 
 _jovian_peek("{name}")
 """
@@ -844,9 +832,7 @@ _jovian_peek("{name}")
                         docstring = data.get("text/plain", "No info")
 
                         # Strip ANSI codes
-                        ansi_escape = re.compile(
-                            r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])"
-                        )
+                        ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
                         docstring = ansi_escape.sub("", docstring)
 
                         result = {
@@ -883,9 +869,9 @@ except Exception:
 
         # Explicitly switch backend based on mode
         if mode == "window":
-            cmd += "try: get_ipython().run_line_magic('matplotlib', 'tk'); print('[Jovian] Switched to tk backend')\nexcept: pass"
+            cmd += "try: get_ipython().run_line_magic('matplotlib', 'tk'); print('[Jovian] Switched to tk backend')\nexcept Exception: pass"
         else:
-            cmd += "try: get_ipython().run_line_magic('matplotlib', 'inline'); print('[Jovian] Switched to inline backend')\nexcept: pass"
+            cmd += "try: get_ipython().run_line_magic('matplotlib', 'inline'); print('[Jovian] Switched to inline backend')\nexcept Exception: pass"
 
         self.kc.execute(cmd, silent=False, store_history=True)
 
@@ -916,10 +902,10 @@ except Exception:
                     try:
                         os.remove(os.path.join(file_dir, f))
                         # send_json({"type": "debug", "msg": f"Deleted stale cache: {f}"})
-                    except Exception as e:
+                    except Exception:
                         pass
                         # send_json({"type": "debug", "msg": f"Failed to delete {f}: {e}"})
-        except Exception as e:
+        except Exception:
             pass
             # send_json({"type": "debug", "msg": f"Purge error: {e}"})
 
@@ -942,9 +928,9 @@ except Exception:
                     try:
                         os.remove(os.path.join(file_dir, f))
                         # send_json({"type": "debug", "msg": f"Removed cache: {f}"})
-                    except:
+                    except Exception:
                         pass
-        except:
+        except Exception:
             pass
 
 
@@ -954,7 +940,7 @@ def main():
     args = parser.parse_args()
 
     bridge = KernelBridge(connection_file=args.connection_file)
-    
+
     # Register cleanup for normal exit
     atexit.register(bridge.stop)
 

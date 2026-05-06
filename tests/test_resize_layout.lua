@@ -2,7 +2,7 @@
 -- Run with: nvim -l test_resize_layout.lua
 
 -- 1. Setup package path to find jovian modules
-local sep = package.config:sub(1,1)
+local sep = package.config:sub(1, 1)
 local script_path = debug.getinfo(1).source:sub(2)
 local project_root = vim.fn.fnamemodify(script_path, ":p:h:h")
 package.path = package.path .. ";" .. project_root .. "/lua/?.lua" .. ";" .. project_root .. "/lua/?/init.lua"
@@ -45,7 +45,9 @@ end
 -- Mock vim.wo
 vim.wo = setmetatable({}, {
     __index = function(t, win)
-        if not win_options[win] then win_options[win] = {} end
+        if not win_options[win] then
+            win_options[win] = {}
+        end
         return win_options[win]
     end,
     __newindex = function(t, win, val)
@@ -53,7 +55,7 @@ vim.wo = setmetatable({}, {
         -- It's usually vim.wo[win][opt] = val, handled by __index returning a table?
         -- No, vim.wo[win] returns a userdata/table proxy.
         -- Let's just return a table that we can set fields on.
-    end
+    end,
 })
 
 -- Mock vim.o
@@ -80,10 +82,10 @@ Config.options = {
                     { id = "preview", size = 0.4 },
                     { id = "output", size = 0.3 },
                     { id = "variables", size = 0.3 },
-                }
-            }
-        }
-    }
+                },
+            },
+        },
+    },
 }
 
 -- Create mock windows
@@ -100,40 +102,41 @@ State.win.output = win_output
 State.win.variables = win_vars
 
 -- 5. Run Resize
+local fail_count = 0
+local function assert_test(cond, msg)
+    if cond then
+        print("PASS: " .. msg)
+    else
+        print("FAIL: " .. msg)
+        fail_count = fail_count + 1
+    end
+end
+
 print("Running resize_windows...")
 Layout.resize_windows()
-
--- 6. Verify
--- Total height available = 50 - 1 (cmdheight) = 49
--- Preview: 0.4 * 49 = 19.6 -> 19
--- Output: 0.3 * 49 = 14.7 -> 14
--- Variables: 0.3 * 49 = 14.7 -> 14
--- Total: 47 (due to floor). Remaining 2 pixels.
--- Wait, the logic sums current heights.
--- Initial heights were 10+10+10 = 30.
--- If we rely on current heights, it will resize based on 30.
--- But wait, the logic says:
--- "Instead of assuming full screen size, we sum the CURRENT dimensions of the active windows."
--- So if current sum is 30, it will redistribute 30.
--- This is correct for resizing *within* the container.
--- But if the container itself resized (e.g. terminal grew), the windows might have grown?
--- Neovim automatically resizes windows when terminal resizes.
--- So the sum of heights should be roughly the new total height.
--- Let's simulate that Neovim resized them proportionally or somehow.
--- Say total became 60.
--- Preview=20, Output=20, Vars=20.
--- Target: 0.4*60=24, 0.3*60=18, 0.3*60=18.
 
 -- Let's set initial sizes to sum to 60
 mock_wins[win_preview] = { width = 40, height = 20 }
 mock_wins[win_output] = { width = 40, height = 20 }
 mock_wins[win_vars] = { width = 40, height = 20 }
+vim.o.lines = 61 -- Total effective height = 61 - 1 = 60
 
 print("Running resize_windows with total 60...")
 Layout.resize_windows()
 
 -- Expected output:
--- SET_WIDTH ... 40 (for all)
--- SET_HEIGHT win=1001 height=24
--- SET_HEIGHT win=1002 height=18
--- SET_HEIGHT win=1003 height=18
+-- SET_HEIGHT win=1001 height=24 (0.4 * 60)
+-- SET_HEIGHT win=1002 height=18 (0.3 * 60)
+-- SET_HEIGHT win=1003 height=18 (0.3 * 60)
+
+assert_test(mock_wins[win_preview].height == 24, "Preview height is 24")
+assert_test(mock_wins[win_output].height == 18, "Output height is 18")
+assert_test(mock_wins[win_vars].height == 18, "Variables height is 18")
+
+if fail_count > 0 then
+    print("\nTotal Failures: " .. fail_count)
+    os.exit(1)
+else
+    print("\nAll tests passed!")
+    os.exit(0)
+end

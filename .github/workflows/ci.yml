@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  lint-lua:
+    name: Lua Linting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: StyLua Check
+        uses: JohnnyMorganz/stylua-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --check .
+      - name: Luacheck
+        uses: lunarmodules/luacheck-action@v1
+        with:
+          args: .
+
+  lint-python:
+    name: Python Linting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ruff
+        uses: astral-sh/ruff-action@v1
+
+  test-lua:
+    name: Lua Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+      - name: Run Tests
+        run: |
+          echo "Running test_commands.lua..."
+          nvim -l tests/test_commands.lua
+          echo "Running test_async_flow.lua..."
+          nvim -l tests/test_async_flow.lua
+          echo "Running test_resize_layout.lua..."
+          nvim -l tests/test_resize_layout.lua

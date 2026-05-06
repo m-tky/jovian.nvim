@@ -73,15 +73,38 @@ If you want to add a new cell operation (e.g., `JovianSplitCell`), follow these 
     - Add a new user command that calls your utility function.
     - **Trigger Structure Check**: Call `require("jovian.core").check_structure_change()` after the operation to ensure the plugin's internal state (cache) remains consistent.
 
-### Testing
+### Testing & Linting
 
-Tests are located in the `tests/` directory. They are simple Lua scripts that mock the Neovim API or run within a Neovim instance to verify functionality.
+We use the following tools to maintain code quality:
 
-To run verification scripts:
+- **Lua Formatting**: [StyLua](https://github.com/JohnnyMorganz/StyLua)
+- **Lua Linting**: [Luacheck](https://github.com/lunarmodules/luacheck)
+- **Python Linting**: [Ruff](https://github.com/astral-sh/ruff)
+
+#### Running Lints Locally
+
 ```bash
-nvim -l test_commands.lua
-nvim -l test_resize_layout.lua
+# Check Lua formatting
+stylua --check .
+
+# Run Lua linting
+luacheck .
+
+# Run Python linting
+ruff check .
 ```
+
+#### Running Functional Tests
+
+Tests are located in the `tests/` directory. They use a mocked Neovim environment and are designed to run headlessly.
+
+```bash
+nvim -l tests/test_commands.lua
+nvim -l tests/test_async_flow.lua
+nvim -l tests/test_resize_layout.lua
+```
+
+These tests will exit with a non-zero status code if any assertions fail, making them suitable for CI.
 
 ## ⚠️ Known Issues & Development Notes
 

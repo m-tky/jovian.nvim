@@ -4,15 +4,15 @@ M.job_id = nil
 M.term_chan = nil
 
 M.win = {
-	output = nil,
-	preview = nil,
-	variables = nil, -- Add: Variables pane window
+    output = nil,
+    preview = nil,
+    variables = nil, -- Add: Variables pane window
 }
 
 M.buf = {
-	output = nil,
-	variables = nil, -- Add: Variables pane buffer
-	preview = nil,
+    output = nil,
+    variables = nil, -- Add: Variables pane buffer
+    preview = nil,
 }
 
 -- Highlight Namespaces
