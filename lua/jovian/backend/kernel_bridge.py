@@ -720,9 +720,14 @@ def _jovian_get_variables():
             if name in ['In', 'Out', 'exit', 'quit', 'get_ipython', '_jovian_get_variables']: continue
             
             type_name = type(value).__name__
-            info = str(value)
-            info = info.replace("\\n", " ")
-            if len(info) > 200: info = info[:197] + "..."
+            if type_name == 'DataFrame':
+                info = f"({value.shape[0]}, {value.shape[1]}) | DataFrame"
+            elif type_name == 'Series':
+                info = f"len: {len(value)} | Series"
+            else:
+                info = str(value)
+                info = info.replace("\\n", " ")
+                if len(info) > 200: info = info[:197] + "..."
 
             if hasattr(value, 'shape'):
                 shape_str = str(value.shape).replace(" ", "")
@@ -749,7 +754,7 @@ def _jovian_get_variables():
 
 _jovian_get_variables()
 """
-        self.var_msg_id = self.kc.execute(script, silent=False, store_history=True)
+        self.var_msg_id = self.kc.execute(script, silent=True, store_history=False)
 
     def view_dataframe(self, name):
         script = f"""
@@ -784,7 +789,7 @@ def _jovian_view_df(name):
 
 _jovian_view_df("{name}")
 """
-        self.var_msg_id = self.kc.execute(script, silent=False, store_history=True)
+        self.var_msg_id = self.kc.execute(script, silent=True, store_history=False)
 
     def peek(self, name):
         script = f"""
@@ -824,7 +829,7 @@ def _jovian_peek(name):
 
 _jovian_peek("{name}")
 """
-        self.var_msg_id = self.kc.execute(script, silent=False, store_history=True)
+        self.var_msg_id = self.kc.execute(script, silent=True, store_history=False)
 
     def inspect(self, name):
         msg_id = self.kc.inspect(name, cursor_pos=len(name))
@@ -868,7 +873,7 @@ try:
 except Exception:
     pass
 """
-        self.var_msg_id = self.kc.execute(script, silent=False, store_history=True)
+        self.var_msg_id = self.kc.execute(script, silent=True, store_history=False)
 
     def set_plot_mode(self, mode):
         # send_json({"type": "debug", "msg": f"Setting plot mode to: {mode}"})
