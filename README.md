@@ -33,8 +33,9 @@
 | **👀 Live Preview**          | See results (text & plots) in a side-by-side preview window.            |
 | **📊 Variables Pane**        | Monitor active variables, their types, and values in real-time.         |
 | **🖼️ Plot Support**          | View Matplotlib/Plotly plots directly in Neovim (via `image.nvim`).     |
-| **☁️ Remote & Local**        | Seamlessly connect to local kernels or **remote SSH hosts**.            |
-| **🎨 Smart UI**              | Auto-resizing windows, virtual text status, and transparent UI options. |
+| **☁️ Remote & Tailscale**    | One-button SSH/Tailscale tunneling with automatic lifecycle management. |
+| **🔄 Easy Sync**             | Build-in `rsync` command to keep local/remote files in sync.           |
+| **🎨 Smart UI**              | Auto-resizing windows, virtual text status, and DataFrame pagination.   |
 | **⚡ Magic Commands**        | Full support for `%timeit`, `!ls`, and other IPython magics.            |
 
 ---
@@ -107,15 +108,19 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim):
 
 ### Working with Data
 
-- `:JovianVars` — View active variables
-- `:JovianView` — Inspect DataFrames in a floating window
-- `:JovianDoc <obj>` / `:JovianPeek <obj>` — View docstrings or quick values
+- `:JovianVars` — View active variables.
+- `:JovianView` — Inspect DataFrames in a floating window (**Paging supported: 50 rows/page**).
+  - Use `<PageDown>` / `<PageUp>` to navigate pages.
+- `:JovianSync` — Sync your current local project to the remote server via `rsync`.
 
-### Remote Development (SSH)
+### Remote Development (SSH & Tailscale)
 
-1. `:JovianAddHost my-server user@1.2.3.4 /usr/bin/python3`
-2. `:JovianUse my-server`
-3. Code runs remotely, results display locally!
+1.  Run **`:JovianConnect`**.
+2.  Select a host from your `~/.ssh/config` or **Tailscale** nodes.
+3.  Choose **"Auto-Tunnel"** mode.
+4.  Specify **"Remote Directory"** (e.g., `~/projects/my-analysis`).
+5.  Jovian will automatically start a remote kernel, setup SSH tunnels, and connect!
+6.  Use **`:JovianSync`** to push your local data/code to the remote server.
 
 ---
 
@@ -240,31 +245,26 @@ This keeps Neovim responsive while heavy computations run in the background.
 
 ## ☁️ Remote Data Handling
 
-When using `jovian.nvim` with a remote host (SSH), the **Python Kernel runs on the remote machine**.
+When using `jovian.nvim` with a remote host, the **Python Kernel runs on the remote machine**.
 
-This means:
+### 1. Unified Connection via `:JovianConnect`
 
-1.  **Code Execution**: Your code is sent from Neovim to the remote kernel as text.
-2.  **File Access**: If your code reads a file (e.g., `pd.read_csv("./data.csv")`), the kernel looks for it **on the remote file system**.
+Instead of manually adding hosts, use `:JovianConnect` to interactively pick from:
+- `~/.ssh/config` entries.
+- **Tailscale** nodes (requires `tailscale` CLI).
 
-### Best Practice: Mirror Directories
+### 2. File Synchronization via `:JovianSync`
 
-`jovian.nvim` attempts to set the remote working directory to match your local path.
+To keep your remote data in sync with local changes:
+- Run `:JovianSync` to push the current directory to the `remote_cwd`.
+- Run `:JovianSync <path>` to push specific files.
+- Default excludes: `.git`, `__pycache__`, `.jovian_cache`.
 
-1.  **If the path exists remotely**: The kernel switches to it. Relative paths (`./data.csv`) work perfectly.
-2.  **If the path does NOT exist**: The kernel stays in its default directory (usually `$HOME`). Relative paths will likely fail.
+### 3. Path Mapping (`remote_cwd`)
 
-**Recommendation:**
-
-- **Create the same directory structure** on the remote server as your local machine.
-- **Transfer your data** to the remote server at that location.
-
-**Example:**
-
-- Local: `/home/user/project/data.csv`
-- Remote: `/home/user/project/data.csv`
-
-You can use `rsync`, `scp`, or mount the local directory to the remote server (reverse sshfs) to keep them in sync.
+When connecting, Jovian asks for a **Remote Directory**.
+- The remote kernel will `cd` into this directory before starting.
+- Your code's relative paths (e.g., `pd.read_csv("./data.csv")`) will correctly resolve to files in that remote directory.
 
 ---
 
@@ -290,14 +290,15 @@ You can use `rsync`, `scp`, or mount the local directory to the remote server (r
 <details>
 <summary>UI & Layout Commands</summary>
 
-| Command                       | Description      |
-| :---------------------------- | :--------------- |
-| `:JovianOpen`                 | Open full UI     |
-| `:JovianToggle`               | Toggle UI        |
-| `:JovianClearREPL`            | Clear REPL       |
-| `:JovianToggleVars`           | Toggle Variables |
-| `:JovianTogglePlot`           | Toggle plot mode |
-| `:JovianPin` / `:JovianUnpin` | Pin/unpin output |
+| Command                       | Description       |
+| :---------------------------- | :---------------- |
+| `:JovianOpen`                 | Open full UI      |
+| `:JovianToggle`               | Toggle UI         |
+| `:JovianClearREPL`            | Clear REPL        |
+| `:JovianToggleVars`           | Toggle Variables  |
+| `:JovianTogglePlot`           | Toggle plot mode  |
+| `:JovianToggleStatus`         | Toggle cell marks |
+| `:JovianPin` / `:JovianUnpin` | Pin/unpin output  |
 
 </details>
 
@@ -333,12 +334,15 @@ You can use `rsync`, `scp`, or mount the local directory to the remote server (r
 <details>
 <summary>Host Management Commands</summary>
 
-| Command             | Description      |
-| :------------------ | :--------------- |
-| `:JovianAddHost`    | Add SSH host     |
-| `:JovianAddLocal`   | Add local config |
-| `:JovianUse`        | Switch host      |
-| `:JovianRemoveHost` | Remove host      |
+| Command               | Description            |
+| :-------------------- | :--------------------- |
+| `:JovianConnect`      | SSH/Tailscale Connect  |
+| `:JovianSync`         | Sync data via rsync    |
+| `:JovianTunnelStatus` | Check tunnel health    |
+| `:JovianAddHost`      | Add SSH host (Manual)  |
+| `:JovianAddLocal`     | Add local (Manual)     |
+| `:JovianUse`          | Switch host            |
+| `:JovianRemoveHost`   | Remove host            |
 
 </details>
 

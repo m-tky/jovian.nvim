@@ -121,6 +121,9 @@
           pythonEnv = pythonEnv;
 
           run-tests = pkgs.writeShellScriptBin "run-tests" ''
+            echo ">>> Running New Feature Integration Tests (Real Kernel)..."
+            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_features.lua
+
             echo ">>> Running Integration Tests (Real Kernel)..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/edge_cases.lua
             
