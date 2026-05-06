@@ -135,6 +135,12 @@ function M.handle_variable_list(msg)
 end
 
 function M.handle_dataframe_data(msg)
+    State.dataframe_sessions[msg.name] = {
+        total = msg.total_rows,
+        offset = msg.offset,
+        limit = msg.limit,
+        columns = msg.columns,
+    }
     UI.show_dataframe(msg)
 end
 

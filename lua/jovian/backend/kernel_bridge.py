@@ -56,7 +56,9 @@ class KernelBridge:
         self.msg_id_map[msg_id] = {"type": "execute", "cell_id": cell_id, "outputs": []}
         send_json({"type": "execution_started", "cell_id": cell_id, "code": code})
 
-    def run_command(self, cmd_type, name):
+    def run_command(self, cmd):
+        cmd_type = cmd.get("command")
+        name = cmd.get("name")
         script = ""
         if cmd_type == "get_variables":
             script = """
@@ -79,13 +81,24 @@ def _jovian_vars():
 _jovian_vars()
 """
         elif cmd_type == "view_dataframe":
+            offset = cmd.get("offset", 0)
+            limit = cmd.get("limit", 50)
             script = f"""
 from IPython import get_ipython; from IPython.display import display
 shell = get_ipython(); ns = shell.user_ns if shell else globals()
 if "{name}" in ns:
     df = ns["{name}"]
     if hasattr(df, "columns"):
-        data = {{"name": "{name}", "columns": list(df.columns), "index": [str(i) for i in df.index[:100]], "data": df.head(100).values.tolist()}}
+        total_rows = len(df)
+        data = {{
+            "name": "{name}", 
+            "columns": list(df.columns), 
+            "index": [str(i) for i in df.index[{offset}:{offset} + {limit}]], 
+            "data": df.iloc[{offset}:{offset} + {limit}].values.tolist(),
+            "total_rows": total_rows,
+            "offset": {offset},
+            "limit": {limit}
+        }}
         display({{"application/vnd.jovian.dataframe+json": data}}, raw=True)
 """
         elif cmd_type == "peek":
@@ -209,7 +222,7 @@ def main():
             if c == "execute":
                 bridge.execute_code(cmd["code"], cmd["cell_id"], cmd.get("cwd"))
             elif c in ("get_variables", "view_dataframe", "peek", "inspect", "copy_to_clipboard"):
-                bridge.run_command(c, cmd.get("name"))
+                bridge.run_command(cmd)
         except (KeyboardInterrupt, Exception):
             continue
     bridge.stop()

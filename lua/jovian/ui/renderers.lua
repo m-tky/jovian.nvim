@@ -196,8 +196,6 @@ function M.show_profile_stats(text)
 end
 
 function M.show_dataframe(data)
-    local buf = vim.api.nvim_create_buf(false, true)
-    vim.bo[buf].bufhidden = "wipe"
     local SEPARATOR = " │ "
     local PADDING = 1
 
@@ -239,12 +237,47 @@ function M.show_dataframe(data)
         table.insert(fmt_lines, line_str)
     end
 
+    -- Add help footer
+    table.insert(fmt_lines, "")
+    local help = "PageUp/Down: Prev/Next | gg/G: First/Last | q: Close"
+    table.insert(fmt_lines, help)
+
+    local title = string.format(
+        "%s [%d-%d / %d]",
+        data.name,
+        data.offset + 1,
+        math.min(data.offset + data.limit, data.total_rows),
+        data.total_rows
+    )
+
+    -- In-place update check
+    local win, buf
+    for _, w in ipairs(vim.api.nvim_list_wins()) do
+        local b = vim.api.nvim_win_get_buf(w)
+        if vim.api.nvim_buf_get_name(b):match("JovianDF_" .. data.name .. "$") then
+            win = w
+            buf = b
+            break
+        end
+    end
+
+    if not buf then
+        buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_name(buf, "JovianDF_" .. data.name)
+        vim.bo[buf].bufhidden = "wipe"
+    end
+
+    vim.bo[buf].modifiable = true
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, fmt_lines)
+    vim.bo[buf].modifiable = false
+
+    vim.api.nvim_buf_clear_namespace(buf, -1, 0, -1)
     vim.api.nvim_buf_add_highlight(buf, -1, "JovianHeader", 0, 0, -1)
     vim.api.nvim_buf_add_highlight(buf, -1, "JovianSeparator", 1, 0, -1)
+    vim.api.nvim_buf_add_highlight(buf, -1, "Comment", #fmt_lines - 1, 0, -1)
 
     local index_col_width = col_widths[1] + (PADDING * 2)
-    for i = 2, #fmt_lines - 1 do
+    for i = 2, #fmt_lines - 3 do
         vim.api.nvim_buf_add_highlight(buf, -1, "JovianIndex", i, 0, index_col_width)
         local current_pos = index_col_width
         for j = 2, #col_widths do
@@ -253,17 +286,44 @@ function M.show_dataframe(data)
         end
     end
 
-    local content_width = 0
-    for _, line in ipairs(fmt_lines) do
-        content_width = math.max(content_width, vim.fn.strdisplaywidth(line))
+    if not win then
+        local content_width = 0
+        for _, line in ipairs(fmt_lines) do
+            content_width = math.max(content_width, vim.fn.strdisplaywidth(line))
+        end
+
+        win = Windows.create_float_window(buf, title, {
+            width = math.min(content_width, math.floor(vim.o.columns * 0.9)),
+            height = math.min(#fmt_lines, math.floor(vim.o.lines * 0.8)),
+        })
+        vim.wo[win].wrap = false
+        vim.wo[win].cursorline = true
+    else
+        -- Update existing window title (if possible via config, or just notify)
+        -- Neovim 0.9+ supports title in float options
+        vim.api.nvim_win_set_config(win, { title = title, title_pos = "center" })
     end
 
-    local win = Windows.create_float_window(buf, data.name, {
-        width = math.min(content_width, math.floor(vim.o.columns * 0.9)),
-        height = math.min(#fmt_lines, math.floor(vim.o.lines * 0.8)),
-    })
-    vim.wo[win].wrap = false
-    vim.wo[win].cursorline = true
+    -- Keymaps
+    local opts = { buffer = buf, nowait = true }
+    local function nav(offset)
+        local new_offset = math.max(0, math.min(offset, data.total_rows - 1))
+        require("jovian.core").view_dataframe_page(data.name, new_offset, data.limit)
+    end
+
+    vim.keymap.set("n", "<PageDown>", function()
+        nav(data.offset + data.limit)
+    end, opts)
+    vim.keymap.set("n", "<PageUp>", function()
+        nav(data.offset - data.limit)
+    end, opts)
+    vim.keymap.set("n", "G", function()
+        nav(data.total_rows - data.limit)
+    end, opts)
+    vim.keymap.set("n", "gg", function()
+        nav(0)
+    end, opts)
+    vim.keymap.set("n", "q", "<cmd>close<CR>", opts)
 end
 
 function M.show_inspection(data)
