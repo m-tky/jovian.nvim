@@ -54,6 +54,8 @@ function M.parse(filepath)
             end
         end
     end
+    return hosts
+end
 
 function M.get_tailscale_hosts()
     if vim.fn.executable("tailscale") == 0 then

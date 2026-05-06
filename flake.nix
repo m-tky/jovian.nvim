@@ -111,6 +111,7 @@
             export XDG_DATA_HOME=$(mktemp -d)
             export XDG_STATE_HOME=$(mktemp -d)
             export JOVIAN_PYTHON="${pythonEnv}/bin/python3"
+            export LD_LIBRARY_PATH="${pkgs.zeromq}/lib:${pkgs.openssl}/lib:$LD_LIBRARY_PATH"
             exec ${neovimWithPlugins}/bin/nvim -u ${initLua} "$@"
           '';
 
@@ -186,6 +187,8 @@
               pkgs.stylua
               pkgs.lua51Packages.luacheck
               pkgs.libnotify
+              pkgs.zeromq
+              pkgs.openssl
               pythonEnv
             ];
 

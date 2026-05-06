@@ -42,6 +42,9 @@ function M.handle_ready(_msg)
 end
 
 function M.handle_execution_started(msg)
+    if msg.msg_id then
+        State.msg_id_cell_map[msg.msg_id] = msg.cell_id
+    end
     UI.append_to_repl({ "In [" .. msg.cell_id .. "]:" }, "Type")
     local code_lines = vim.split(msg.code, "\n")
     local indented = {}

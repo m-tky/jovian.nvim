@@ -54,7 +54,7 @@ class KernelBridge:
                 pass
         msg_id = self.kc.execute(code)
         self.msg_id_map[msg_id] = {"type": "execute", "cell_id": cell_id, "outputs": []}
-        send_json({"type": "execution_started", "cell_id": cell_id, "code": code})
+        send_json({"type": "execution_started", "cell_id": cell_id, "code": code, "msg_id": msg_id})
 
     def run_command(self, cmd):
         cmd_type = cmd.get("command")

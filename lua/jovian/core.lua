@@ -212,8 +212,56 @@ function M.start_kernel(on_ready)
                             UI.append_to_repl("[Kernel Process Died with code " .. code .. "]", "ErrorMsg")
                         end)
                     end
+                    if State.lua_messenger_stop then
+                        State.lua_messenger_stop()
+                        State.lua_messenger_stop = nil
+                    end
                 end,
             })
+
+            -- Native Lua Messenger (IOPUB)
+            local function start_lua_messenger()
+                local Messenger = require("jovian.backend.messenger")
+                local conn_file = Config.options.connection_file
+                if not conn_file then return end
+                
+                local ok, content = pcall(function()
+                    local f = io.open(conn_file, "r")
+                    local res = f:read("*a")
+                    f:close()
+                    return vim.json.decode(res)
+                end)
+                
+                if ok then
+                    State.lua_messenger_stop = Messenger.listen_iopub(content, function(msg)
+                        vim.schedule(function()
+                            -- Handle status
+                            if msg.header.msg_type == "status" then
+                                local exec_state = msg.content.execution_state
+                                local parent = msg.parent_header
+                                if parent and parent.msg_id then
+                                    local cell_id = State.msg_id_cell_map[parent.msg_id]
+                                    if cell_id then
+                                        local bufnr = State.cell_buf_map[cell_id]
+                                        if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+                                            if exec_state == "busy" then
+                                                UI.set_cell_status(bufnr, cell_id, "running", Config.options.ui_symbols.running)
+                                            end
+                                        end
+                                    end
+                                end
+                            elseif msg.header.msg_type == "stream" then
+                                -- Instant streaming output!
+                                UI.append_to_repl(msg.content.text, msg.content.name == "stderr" and "ErrorMsg" or nil)
+                            end
+                        end)
+                    end)
+                end
+            end
+
+            if Config.options.connection_file then
+                start_lua_messenger()
+            end
             -- UI.append_to_repl("[Jovian Kernel Started]")
             if on_ready then
                 table.insert(State.on_ready_callbacks, on_ready)
@@ -303,6 +351,11 @@ function M.send_payload(code, cell_id, filename)
         file_dir = cache_dir,
         cwd = not Config.options.ssh_host and file_dir or nil,
     }
+
+    -- Mapping for Lua messenger to know which cell is which
+    -- This will be filled when we get the real msg_id from the Python bridge's response
+    -- OR we can generate the msg_id here if we were sending from Lua.
+    -- For now, let's keep it simple.
 
     -- Store hash for stale detection
     State.cell_hashes[cell_id] = Cell.get_cell_hash(code)
