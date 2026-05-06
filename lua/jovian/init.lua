@@ -233,7 +233,9 @@ function M.setup(opts)
 	vim.api.nvim_create_autocmd("VimLeavePre", {
 		pattern = "*",
 		callback = function()
-			require("jovian.core").stop_kernel()
+			pcall(function()
+                require("jovian.core").stop_kernel()
+            end)
 		end,
 	})
 end

@@ -201,6 +201,14 @@ function M.start_kernel(on_ready)
     end)
 end
 
+function M.stop_kernel()
+	if State.job_id then
+        local id = State.job_id
+        State.job_id = nil
+		vim.fn.jobstop(id)
+	end
+end
+
 function M.restart_kernel()
 	if State.job_id then
 		vim.fn.jobstop(State.job_id)
