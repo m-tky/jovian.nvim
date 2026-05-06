@@ -147,6 +147,7 @@
               pkgs.pyright
               pkgs.ruff
               pkgs.stylua
+              pkgs.lua51Packages.luacheck
               pkgs.libnotify
               pythonEnv
             ];

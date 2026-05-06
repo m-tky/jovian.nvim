@@ -457,9 +457,7 @@ function M.run_line()
     M.send_payload(line, id, fn)
 end
 
-function M.run_all_cells()
-    if not is_window_open() then return end
-    local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+function M._execute_lines(lines, batch_name)
     local blk, current_bid, is_code = {}, nil, false
     local fn = vim.fn.expand("%:t")
 
@@ -481,36 +479,39 @@ function M.run_all_cells()
     if #blk > 0 and is_code and current_bid then
         M.send_payload(table.concat(blk, "\n"), current_bid, fn)
     end
-    vim.notify("Jovian: RunAll finished", vim.log.levels.INFO)
+    if batch_name then
+        vim.notify("Jovian: " .. batch_name .. " finished", vim.log.levels.INFO)
+    end
+end
+
+function M.run_all_cells()
+    if not is_window_open() then
+        return
+    end
+    if not State.job_id then
+        M.start_kernel(function()
+            M.run_all_cells()
+        end)
+        return
+    end
+    local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+    M._execute_lines(lines, "RunAll")
 end
 
 function M.run_cells_above()
-    if not is_window_open() then return end
+    if not is_window_open() then
+        return
+    end
+    if not State.job_id then
+        M.start_kernel(function()
+            M.run_cells_above()
+        end)
+        return
+    end
     local cursor_line = vim.fn.line(".")
     local cur_s, _ = Cell.get_cell_range(cursor_line)
     local lines = vim.api.nvim_buf_get_lines(0, 0, cur_s - 1, false)
-    local blk, current_bid, is_code = {}, nil, false
-    local fn = vim.fn.expand("%:t")
-
-    for i, line in ipairs(lines) do
-        if line:match("^# %%%%") then
-            -- 1. Send previous cell
-            if #blk > 0 and is_code and current_bid then
-                M.send_payload(table.concat(blk, "\n"), current_bid, fn)
-            end
-            -- 2. New Cell
-            blk = {}
-            current_bid = Cell.ensure_cell_id(i, line)
-            is_code = not line:lower():find("# %% [markdown]", 1, true)
-        elseif is_code then
-            table.insert(blk, line)
-        end
-    end
-    -- 3. Final cell
-    if #blk > 0 and is_code and current_bid then
-        M.send_payload(table.concat(blk, "\n"), current_bid, fn)
-    end
-    vim.notify("Jovian: RunCellsAbove finished", vim.log.levels.INFO)
+    M._execute_lines(lines, "RunCellsAbove")
 end
 
 function M.view_dataframe(args)

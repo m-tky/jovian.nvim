@@ -1,5 +1,4 @@
 local M = {}
-local Config = require("jovian.config")
 local State = require("jovian.state")
 local Windows = require("jovian.ui.windows")
 
@@ -59,7 +58,7 @@ function M.render_variables_pane(vars)
                 .. pad_str(v.type, max_type_w, PADDING)
                 .. SEPARATOR
                 .. " "
-                .. v.info
+                .. (v.info or "")
             table.insert(fmt_lines, line)
         end
     end
@@ -130,7 +129,12 @@ function M.show_variables(vars, force_float)
 
     if #vars == 0 then
         local msg = State.job_id and "(No variables defined)" or "(Kernel not started)"
-        local line = pad_str("", max_name_w, PADDING) .. SEPARATOR .. pad_str("", max_type_w, PADDING) .. SEPARATOR .. " " .. msg
+        local line = pad_str("", max_name_w, PADDING)
+            .. SEPARATOR
+            .. pad_str("", max_type_w, PADDING)
+            .. SEPARATOR
+            .. " "
+            .. msg
         table.insert(fmt_lines, line)
     else
         for _, v in ipairs(vars) do
@@ -139,7 +143,7 @@ function M.show_variables(vars, force_float)
                 .. pad_str(v.type, max_type_w, PADDING)
                 .. SEPARATOR
                 .. " "
-                .. v.info
+                .. (v.info or "")
             table.insert(fmt_lines, line)
         end
     end
@@ -198,10 +202,14 @@ function M.show_dataframe(data)
     local PADDING = 1
 
     local headers = { "" }
-    for _, c in ipairs(data.columns) do table.insert(headers, tostring(c)) end
+    for _, c in ipairs(data.columns) do
+        table.insert(headers, tostring(c))
+    end
 
     local col_widths = {}
-    for i, h in ipairs(headers) do col_widths[i] = vim.fn.strdisplaywidth(h) end
+    for i, h in ipairs(headers) do
+        col_widths[i] = vim.fn.strdisplaywidth(h)
+    end
 
     for i, row in ipairs(data.data) do
         col_widths[1] = math.max(col_widths[1], vim.fn.strdisplaywidth(tostring(data.index[i])))
@@ -276,13 +284,17 @@ function M.show_inspection(data)
 
     if data.docstring and data.docstring ~= vim.NIL then
         table.insert(lines, "## Docstring:")
-        for _, l in ipairs(vim.split(data.docstring, "\n")) do table.insert(lines, l) end
+        for _, l in ipairs(vim.split(data.docstring, "\n")) do
+            table.insert(lines, l)
+        end
     end
 
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
     local content_width = 0
-    for _, l in ipairs(lines) do content_width = math.max(content_width, vim.fn.strdisplaywidth(l)) end
+    for _, l in ipairs(lines) do
+        content_width = math.max(content_width, vim.fn.strdisplaywidth(l))
+    end
 
     Windows.create_float_window(buf, "Jovian Doc", {
         width = math.max(40, math.min(content_width + 4, math.floor(vim.o.columns * 0.8))),
@@ -291,7 +303,9 @@ function M.show_inspection(data)
 end
 
 function M.show_peek(data)
-    if data.error then return vim.notify(data.error, vim.log.levels.WARN) end
+    if data.error then
+        return vim.notify(data.error, vim.log.levels.WARN)
+    end
 
     local buf = vim.api.nvim_create_buf(false, true)
     vim.bo[buf].bufhidden = "wipe"
@@ -301,15 +315,21 @@ function M.show_peek(data)
         "Type:  " .. data.type,
         "Size:  " .. data.size,
     }
-    if data.shape and data.shape ~= "" then table.insert(lines, "Shape: " .. data.shape) end
+    if data.shape and data.shape ~= "" then
+        table.insert(lines, "Shape: " .. data.shape)
+    end
     table.insert(lines, "")
     table.insert(lines, "Value:")
-    for _, l in ipairs(vim.split(data.repr, "\n")) do table.insert(lines, l) end
+    for _, l in ipairs(vim.split(data.repr, "\n")) do
+        table.insert(lines, l)
+    end
 
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
     local width = 0
-    for _, l in ipairs(lines) do width = math.max(width, #l) end
+    for _, l in ipairs(lines) do
+        width = math.max(width, #l)
+    end
 
     Windows.create_float_window(buf, "Jovian Peek", {
         width = math.min(width + 4, 80),
