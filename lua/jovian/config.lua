@@ -17,6 +17,8 @@ M.defaults = {
     show_execution_time = true,
     plot_view_mode = "inline", -- "inline", "window"
     inline_image_debounce = 500, -- mmilliseconds to wait before rendering images after write
+    dataframe_page_size = 50,
+    remote_cwd = ".",
 
     ui = {
         -- cell_separator_highlight:
