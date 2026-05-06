@@ -136,8 +136,12 @@
         }
       );
 
-      checks = forAllSystems (system: {
-        integration-test = pkgs.stdenv.mkDerivation {
+      checks = forAllSystems (system:
+        let
+          pkgs = nixpkgsFor.${system};
+        in
+        {
+          integration-test = pkgs.stdenv.mkDerivation {
           name = "jovian-integration-test";
           src = self;
           buildInputs = [ self.packages.${system}.run-tests ];
