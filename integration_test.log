@@ -1,0 +1,47 @@
+Starting Kernel...
+Kernel Ready!
+
+>>> Command: JovianRun
+[OK] Command JovianRun finished
+
+>>> Command: JovianNextCell
+[UI] Flashing range: 13-21
+[OK] Command JovianNextCell finished
+
+>>> Command: JovianPrevCell
+[UI] Flashing range: 1-12
+[OK] Command JovianPrevCell finished
+
+>>> Testing RunAll with Multiple Cells and Markdown
+
+>>> Command: JovianRunAll
+[TRACE] Sending Cell: cell1
+[STATUS] [cell1] running:  Running...
+[TRACE] Sending Cell: cell2
+[STATUS] [cell2] running:  Running...
+[OK] Command JovianRunAll finished
+[SUCCESS] All cells processed correctly.
+
+>>> Command: JovianVars
+[OK] Command JovianVars finished
+
+>>> Command: JovianDoc print
+[OK] Command JovianDoc finished
+
+>>> Command: JovianPeek x
+[OK] Command JovianPeek finished
+
+>>> Command: JovianInterrupt
+[REPL] [WarningMsg] [Kernel Interrupted!]
+[STATUS] [cell2] error:  Interrupted
+[STATUS] [cell1] error:  Interrupted
+[OK] Command JovianInterrupt finished
+
+>>> Command: JovianRestart
+[REPL] [WarningMsg] [Kernel Restarting...]
+[OK] Command JovianRestart finished
+[REPL] [Type] table: 0x7fb98064e668
+[REPL] [None] table: 0x7fb9803baf00
+[REPL] [None] table: 0x7fb98067fe08
+
+Integration Test Completed Successfully!

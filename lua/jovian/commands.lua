@@ -11,7 +11,7 @@ local function goto_next_cell()
     local total = vim.api.nvim_buf_line_count(0)
     for i = cursor + 1, total do
         local line = vim.api.nvim_buf_get_lines(0, i - 1, i, false)[1]
-        if line:match("^# %%%%") then
+        if line:match("^# %%%%")  then
             vim.api.nvim_win_set_cursor(0, { i, 0 })
             vim.cmd("normal! zz")
             local start_line, end_line = Cell.get_cell_range(i)
@@ -30,7 +30,7 @@ local function goto_prev_cell()
 
     for i = s - 1, 1, -1 do
         local line = vim.api.nvim_buf_get_lines(0, i - 1, i, false)[1]
-        if line:match("^# %%%%") then
+        if line:match("^# %%%%")  then
             vim.api.nvim_win_set_cursor(0, { i, 0 })
             vim.cmd("normal! zz")
             local start_line, end_line = Cell.get_cell_range(i)
@@ -75,7 +75,7 @@ local function merge_cell_below()
         return vim.notify("No cell below", vim.log.levels.WARN)
     end
     local line = vim.api.nvim_buf_get_lines(0, e, e + 1, false)[1]
-    if line:match("^# %%%%") then
+    if line:match("^# %%%%")  then
         -- Clear status on the header line being removed
         UI.clear_status_extmarks(0, e + 1, e + 2)
         vim.api.nvim_buf_set_lines(0, e, e + 1, false, {})

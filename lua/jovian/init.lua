@@ -1,6 +1,7 @@
 local M = {}
 local Config = require("jovian.config")
 local Session = require("jovian.session")
+local uv = vim.uv or vim.loop
 
 function M.setup(opts)
     Config.setup(opts)
@@ -35,10 +36,15 @@ function M.setup(opts)
     -- Register Commands
     require("jovian.commands").setup()
 
-    -- Fold
-    vim.opt.foldmethod = "expr"
-    vim.opt.foldexpr = "getline(v:lnum)=~'^#\\ %%'?'0':'1'"
-    vim.opt.foldlevel = 99
+    -- Fold (Buffer-local for Python)
+    vim.api.nvim_create_autocmd("FileType", {
+        pattern = "python",
+        callback = function()
+            vim.opt_local.foldmethod = "expr"
+            vim.opt_local.foldexpr = "getline(v:lnum)=~'^#\\ %%'?'0':'1'"
+            vim.opt_local.foldlevel = 99
+        end,
+    })
 
     -- Keymaps (Optional, user can define their own)
     -- Keymaps (Optional, user can define their own)
@@ -174,7 +180,7 @@ function M.setup(opts)
                 if inline_render_timer then
                     inline_render_timer:close()
                 end
-                inline_render_timer = vim.loop.new_timer()
+                inline_render_timer = uv.new_timer()
                 inline_render_timer:start(
                     Config.options.inline_image_debounce or 500,
                     0,

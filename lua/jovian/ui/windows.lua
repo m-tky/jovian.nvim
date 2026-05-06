@@ -9,8 +9,8 @@ function M.get_or_create_buf(name)
 
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_name(buf, name)
-    vim.api.nvim_buf_set_option(buf, "buftype", "nofile")
-    vim.api.nvim_buf_set_option(buf, "modifiable", false)
+    vim.bo[buf].buftype = "nofile"
+    vim.bo[buf].modifiable = false
 
     -- Open as terminal mode here and save channel ID
     State.term_chan = vim.api.nvim_open_term(buf, {})
@@ -33,7 +33,7 @@ local function cleanup_buffer(old_buf, current_buf)
 
         -- Check if it's a special buffer (like placeholder or terminal)
         -- We allow deleting nofile/terminal buffers as they are usually ephemeral
-        local buftype = vim.api.nvim_buf_get_option(old_buf, "buftype")
+        local buftype = vim.bo[old_buf].buftype
         local is_ephemeral = (buftype == "nofile" or buftype == "terminal")
 
         if not (is_jovian_cache or is_ephemeral) then
@@ -182,6 +182,39 @@ function M.unpin()
         -- Cleanup old buffer
         cleanup_buffer(old_buf, buf)
     end
+end
+
+function M.create_float_window(buf, title, opts)
+    local width = opts.width or math.floor(vim.o.columns * 0.8)
+    local height = opts.height or math.floor(vim.o.lines * 0.8)
+    local row = opts.row or math.floor((vim.o.lines - height) / 2)
+    local col = opts.col or math.floor((vim.o.columns - width) / 2)
+
+    local win_opts = {
+        relative = opts.relative or "editor",
+        width = width,
+        height = height,
+        row = row,
+        col = col,
+        style = "minimal",
+        border = require("jovian.config").options.float_border,
+        title = title and (" " .. title .. " ") or nil,
+        title_pos = "center",
+    }
+
+    local win = vim.api.nvim_open_win(buf, true, win_opts)
+
+    local Config = require("jovian.config")
+    if Config.options.ui.winblend then
+        vim.wo[win].winblend = Config.options.ui.winblend
+    end
+    vim.wo[win].winhighlight = "NormalFloat:JovianFloat,FloatBorder:JovianFloatBorder"
+
+    local key_opts = { noremap = true, silent = true }
+    vim.api.nvim_buf_set_keymap(buf, "n", "q", ":close<CR>", key_opts)
+    vim.api.nvim_buf_set_keymap(buf, "n", "<Esc>", ":close<CR>", key_opts)
+
+    return win
 end
 
 return M

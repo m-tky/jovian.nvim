@@ -4,6 +4,8 @@ local Config = require("jovian.config")
 local UI = require("jovian.ui")
 local Cell = require("jovian.cell")
 
+local uv = vim.uv or vim.loop
+
 function M.clean_stale_cache(bufnr)
     -- Handle command opts table or nil
     if type(bufnr) == "table" or not bufnr then
@@ -108,10 +110,10 @@ function M.clean_orphaned_caches(dir)
     end
 
     -- Iterate over directories in .jovian_cache
-    local scanner = vim.loop.fs_scandir(cache_root)
+    local scanner = uv.fs_scandir(cache_root)
     if scanner then
         while true do
-            local name, type = vim.loop.fs_scandir_next(scanner)
+            local name, type = uv.fs_scandir_next(scanner)
             if not name then
                 break
             end
@@ -198,7 +200,7 @@ function M.schedule_structure_check()
     if structure_timer then
         structure_timer:close()
     end
-    structure_timer = vim.loop.new_timer()
+    structure_timer = uv.new_timer()
     structure_timer:start(
         200,
         0,
@@ -233,8 +235,11 @@ function M.check_cursor_cell()
     end)
 end
 
-function M.sync_remote_file(remote_path)
+function M.sync_remote_file(remote_path, on_complete)
     if not Config.options.ssh_host then
+        if on_complete then
+            on_complete()
+        end
         return
     end
 
@@ -245,49 +250,99 @@ function M.sync_remote_file(remote_path)
     local dir = vim.fn.fnamemodify(local_path, ":h")
     vim.fn.mkdir(dir, "p")
 
-    local cmd = string.format("scp %s:%s %s", host, remote_path, local_path)
-    vim.fn.system(cmd)
+    local cmd = { "scp", string.format("%s:%s", host, remote_path), local_path }
+    vim.fn.jobstart(cmd, {
+        on_exit = function(_, code)
+            if code ~= 0 then
+                vim.notify("Failed to sync remote file: " .. remote_path, vim.log.levels.ERROR)
+            end
+            if on_complete then
+                on_complete()
+            end
+        end,
+    })
 end
 
-function M.save_execution_result(msg)
-    if Config.options.ssh_host then
-        M.sync_remote_file(msg.file)
-        -- Images are handled by base64 writing below or implicit sync if they were files
+function M.save_execution_result(msg, on_complete)
+    local function finish()
+        -- Write MD (This is usually small and fast, so we do it synchronously or via io.open)
+        if msg.content_md then
+            local cell_id = msg.cell_id
+            local filename = vim.fn.expand("%:t")
+            if filename == "" then
+                filename = "scratchpad"
+            end
+            local file_dir = vim.fn.expand("%:p:h")
+            local cache_dir = file_dir .. "/.jovian_cache/" .. filename
+
+            -- Ensure cache dir exists
+            vim.fn.mkdir(cache_dir, "p")
+
+            local md_path = cache_dir .. "/" .. cell_id .. ".md"
+            local f = io.open(md_path, "w")
+            if f then
+                f:write(msg.content_md)
+                f:close()
+                msg.file = md_path -- Update to local path
+            end
+        end
+
+        if on_complete then
+            on_complete()
+        end
     end
 
-    -- Sync content to local cache if provided (SSH or Local)
-    if msg.content_md then
-        local cell_id = msg.cell_id
+    local function handle_images()
+        if not msg.images or vim.tbl_count(msg.images) == 0 then
+            finish()
+            return
+        end
+
         local filename = vim.fn.expand("%:t")
         if filename == "" then
             filename = "scratchpad"
         end
         local file_dir = vim.fn.expand("%:p:h")
         local cache_dir = file_dir .. "/.jovian_cache/" .. filename
-
-        -- Ensure cache dir exists
         vim.fn.mkdir(cache_dir, "p")
 
-        -- Write Images
-        if msg.images then
-            for img_name, b64 in pairs(msg.images) do
-                local img_path = cache_dir .. "/" .. img_name
-                local write_script = string.format(
-                    "import base64, sys; open('%s', 'wb').write(base64.b64decode(sys.stdin.read()))",
-                    img_path
-                )
-                vim.fn.system({ Config.options.python_interpreter, "-c", write_script }, b64)
+        local images_to_process = {}
+        for img_name, b64 in pairs(msg.images) do
+            table.insert(images_to_process, { name = img_name, data = b64 })
+        end
+
+        local function process_next_image(idx)
+            if idx > #images_to_process then
+                finish()
+                return
+            end
+
+            local item = images_to_process[idx]
+            local img_path = cache_dir .. "/" .. item.name
+            local write_script = string.format(
+                "import base64, sys; open('%s', 'wb').write(base64.b64decode(sys.stdin.read()))",
+                img_path
+            )
+
+            local job_id = vim.fn.jobstart({ Config.options.python_interpreter, "-c", write_script }, {
+                on_exit = function()
+                    process_next_image(idx + 1)
+                end,
+                rpc = false,
+            })
+            if job_id > 0 then
+                vim.fn.chansend(job_id, item.data)
+                vim.fn.chanclose(job_id, "stdin")
             end
         end
 
-        -- Write MD
-        local md_path = cache_dir .. "/" .. cell_id .. ".md"
-        local f = io.open(md_path, "w")
-        if f then
-            f:write(msg.content_md)
-            f:close()
-            msg.file = md_path -- Update to local path
-        end
+        process_next_image(1)
+    end
+
+    if Config.options.ssh_host then
+        M.sync_remote_file(msg.file, handle_images)
+    else
+        handle_images()
     end
 end
 

@@ -69,23 +69,32 @@ function M.fix_duplicate_ids(bufnr)
 end
 
 function M.get_cell_range(lnum)
-    local cursor = lnum or vim.api.nvim_win_get_cursor(0)[1]
+    local original_cursor = vim.api.nvim_win_get_cursor(0)
+    if lnum then
+        vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+    end
+
     local total = vim.api.nvim_buf_line_count(0)
-    local s, e = cursor, cursor
-    while s > 1 do
-        local line = vim.api.nvim_buf_get_lines(0, s - 1, s, false)[1]
-        if line:match("^# %%%%") then
-            break
-        end
-        s = s - 1
+
+    -- Find start of cell (including current line)
+    local s = vim.fn.search("^# %%", "bncW", 0)
+    if s == 0 then
+        s = 1
     end
-    while e < total do
-        local line = vim.api.nvim_buf_get_lines(0, e, e + 1, false)[1]
-        if line:match("^# %%%%") then
-            break
-        end
-        e = e + 1
+
+    -- Find end of cell (start of next cell - 1)
+    local next_s = vim.fn.search("^# %%", "nW", 0)
+    local e
+    if next_s == 0 then
+        e = total
+    else
+        e = next_s - 1
     end
+
+    if lnum then
+        vim.api.nvim_win_set_cursor(0, original_cursor)
+    end
+
     return s, e
 end
 
@@ -93,11 +102,6 @@ function M.ensure_cell_id(line_num, line_content)
     local id = line_content:match('id="([%w%-_]+)"')
     if id then
         return id
-    end
-
-    -- Skip markdown cells
-    if line_content:lower():match("%[markdown%]") then
-        return nil
     end
 
     local all_ids = M.get_all_ids(0)

@@ -55,77 +55,77 @@ end
 function M.handle_result_ready(msg)
     State.current_preview_file = nil
 
-    Session.save_execution_result(msg)
+    Session.save_execution_result(msg, function()
+        UI.open_markdown_preview(msg.file)
+        UI.update_variables_pane()
 
-    UI.open_markdown_preview(msg.file)
-    UI.update_variables_pane()
+        local target_buf = State.cell_buf_map[msg.cell_id]
+        if target_buf and vim.api.nvim_buf_is_valid(target_buf) then
+            local should_notify = false
+            local notify_msg = "Calculation " .. msg.cell_id .. " Finished!"
 
-    local target_buf = State.cell_buf_map[msg.cell_id]
-    if target_buf and vim.api.nvim_buf_is_valid(target_buf) then
-        local should_notify = false
-        local notify_msg = "Calculation " .. msg.cell_id .. " Finished!"
-
-        if State.batch_execution then
-            State.batch_execution.current = State.batch_execution.current + 1
-            if State.batch_execution.current >= State.batch_execution.total then
-                local batch_dur = os.time() - State.batch_execution.start_time
-                if batch_dur >= Config.options.notify_threshold then
-                    should_notify = true
-                    notify_msg = "Run All Finished (" .. batch_dur .. "s)"
-                end
-                State.batch_execution = nil
-            end
-        else
-            local start_t = State.cell_start_time[msg.cell_id]
-            if start_t and (os.time() - start_t) >= Config.options.notify_threshold then
-                should_notify = true
-            end
-        end
-
-        if should_notify then
-            UI.send_notification(notify_msg, "info")
-        end
-        vim.api.nvim_buf_clear_namespace(target_buf, State.diag_ns, 0, -1)
-
-        local timestamp = ""
-        if Config.options.show_execution_time then
-            timestamp = " (" .. os.date("%H:%M:%S") .. ")"
-        end
-
-        if msg.error or msg.status == "error" then
-            UI.send_notification("Error in cell " .. msg.cell_id, "error")
-            UI.set_cell_status(target_buf, msg.cell_id, "error", Config.options.ui_symbols.error .. timestamp)
-
-            -- Show diagnostics if error info exists
-            if msg.error then
-                require("jovian.core").show_error_diagnostics(target_buf, msg.cell_id, msg.error)
-            end
-
-            -- If in a batch and this is an error, clear the batch state and only the PENDING spinners
             if State.batch_execution then
-                State.batch_execution = nil
-                -- Clear ALL cells that are currently in 'running' state
-                for id, _ in pairs(State.running_cells) do
-                    if id ~= msg.cell_id then
-                        local bufnr = State.cell_buf_map[id]
-                        if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
-                            UI.set_cell_status(bufnr, id, "idle", "")
+                State.batch_execution.current = State.batch_execution.current + 1
+                if State.batch_execution.current >= State.batch_execution.total then
+                    local batch_dur = os.time() - State.batch_execution.start_time
+                    if batch_dur >= Config.options.notify_threshold then
+                        should_notify = true
+                        notify_msg = "Run All Finished (" .. batch_dur .. "s)"
+                    end
+                    State.batch_execution = nil
+                end
+            else
+                local start_t = State.cell_start_time[msg.cell_id]
+                if start_t and (os.time() - start_t) >= Config.options.notify_threshold then
+                    should_notify = true
+                end
+            end
+
+            if should_notify then
+                UI.send_notification(notify_msg, "info")
+            end
+            vim.api.nvim_buf_clear_namespace(target_buf, State.diag_ns, 0, -1)
+
+            local timestamp = ""
+            if Config.options.show_execution_time then
+                timestamp = " (" .. os.date("%H:%M:%S") .. ")"
+            end
+
+            if msg.error or msg.status == "error" then
+                UI.send_notification("Error in cell " .. msg.cell_id, "error")
+                UI.set_cell_status(target_buf, msg.cell_id, "error", Config.options.ui_symbols.error .. timestamp)
+
+                -- Show diagnostics if error info exists
+                if msg.error then
+                    require("jovian.core").show_error_diagnostics(target_buf, msg.cell_id, msg.error)
+                end
+
+                -- If in a batch and this is an error, clear the batch state and only the PENDING spinners
+                if State.batch_execution then
+                    State.batch_execution = nil
+                    -- Clear ALL cells that are currently in 'running' state
+                    for id, _ in pairs(State.running_cells) do
+                        if id ~= msg.cell_id then
+                            local bufnr = State.cell_buf_map[id]
+                            if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+                                UI.set_cell_status(bufnr, id, "idle", "")
+                            end
                         end
                     end
+                    -- Clear the running_cells table
+                    State.running_cells = {}
                 end
-                -- Clear the running_cells table
-                State.running_cells = {}
+                -- Note: UI.set_cell_status for this error was already called at line 97
+                State.running_cells[msg.cell_id] = nil
+            else
+                UI.set_cell_status(target_buf, msg.cell_id, "done", Config.options.ui_symbols.done .. timestamp)
+                State.running_cells[msg.cell_id] = nil
             end
-            -- Note: UI.set_cell_status for this error was already called at line 97
-            State.running_cells[msg.cell_id] = nil
-        else
-            UI.set_cell_status(target_buf, msg.cell_id, "done", Config.options.ui_symbols.done .. timestamp)
-            State.running_cells[msg.cell_id] = nil
         end
-    end
-    State.cell_buf_map[msg.cell_id] = nil
-    State.cell_start_time[msg.cell_id] = nil
-    State.cell_start_line[msg.cell_id] = nil
+        State.cell_buf_map[msg.cell_id] = nil
+        State.cell_start_time[msg.cell_id] = nil
+        State.cell_start_line[msg.cell_id] = nil
+    end)
 end
 
 function M.handle_variable_list(msg)

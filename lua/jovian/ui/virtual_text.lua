@@ -24,6 +24,12 @@ function M.set_cell_status(bufnr, cell_id, status, msg)
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     for i, line in ipairs(lines) do
         if line:find('id="' .. cell_id .. '"', 1, true) then
+            -- BOLD SAFETY: If it's a header line AND says markdown anywhere, SKIP IT.
+            
+            if line:lower():find("# %% [markdown]", 1, true) then
+                return
+            end
+
             -- Defensive: Clear any existing status on this line first
             vim.api.nvim_buf_clear_namespace(bufnr, State.status_ns, i - 1, i)
 

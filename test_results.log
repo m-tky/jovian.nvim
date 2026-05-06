@@ -1,0 +1,9 @@
+Starting Kernel...
+[HANDLER] handle_ready called with msg: {"type":"ready"}
+[SENT TO KERNEL] {"command":"set_plot_mode","mode":"inline"}
+
+Kernel Ready!
+
+--- Testing Cell: 3HBWq2Im4lG4 ---
+Cursor at: { 13, 0 }
+Cell 3HBWq2Im4lG4 status: Finished

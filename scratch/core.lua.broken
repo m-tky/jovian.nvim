@@ -3,6 +3,7 @@ local State = require("jovian.state")
 local Config = require("jovian.config")
 local UI = require("jovian.ui")
 local Cell = require("jovian.cell")
+local uv = vim.uv or vim.loop
 
 local function is_window_open()
     return State.win.output and vim.api.nvim_win_is_valid(State.win.output)
@@ -14,57 +15,46 @@ local Hosts = require("jovian.hosts")
 local Handlers = require("jovian.handlers")
 
 local function process_output_data(data, buffer_key)
-    if not data or #data == 0 then
-        return
+    if not data or #data == 0 then return end
+
+    local stream_type = (buffer_key == "stdout_buffer") and "stdout" or "stderr"
+    
+    -- Accumulate with existing buffer
+    local lines = data
+    if State[buffer_key] and State[buffer_key] ~= "" then
+        lines[1] = State[buffer_key] .. lines[1]
+        State[buffer_key] = ""
     end
 
-    local first = data[1] or ""
-    State[buffer_key] = (State[buffer_key] or "") .. first
-
-    if #data > 1 then
-        local line = State[buffer_key]
+    -- Process each line
+    for i, line in ipairs(lines) do
         if line ~= "" then
-            local ok, msg = pcall(vim.json and vim.json.decode or vim.fn.json_decode, line)
-            if ok and msg then
-                vim.schedule(function()
-                    local handler_name = "handle_" .. (msg.type or "")
-                    if Handlers[handler_name] then
-                        local h_ok, h_err = pcall(Handlers[handler_name], msg)
-                        if not h_ok then
-                            UI.append_to_repl("[Handler Error: " .. tostring(h_err) .. "]", "ErrorMsg")
-                        end
-                    end
-                end)
+            local is_last = (i == #lines)
+            
+            -- If it's a potential JSON message but incomplete, buffer it
+            if is_last and line:match("^%s*{") then
+                State[buffer_key] = line
             else
-                vim.schedule(function()
-                    UI.append_to_repl(line, "Comment")
-                end)
-            end
-        end
-
-        for i = 2, #data - 1 do
-            local l = data[i]
-            if l ~= "" then
-                local ok, msg = pcall(vim.json and vim.json.decode or vim.fn.json_decode, l)
-                if ok and msg then
-                    vim.schedule(function()
-                        local handler_name = "handle_" .. (msg.type or "")
-                        if Handlers[handler_name] then
-                            local h_ok, h_err = pcall(Handlers[handler_name], msg)
-                            if not h_ok then
-                                UI.append_to_repl("[Handler Error: " .. tostring(h_err) .. "]", "ErrorMsg")
-                            end
-                        end
-                    end)
+                -- Process the line immediately
+                if line:match("^%s*{") then
+                    local ok, msg = pcall(vim.json.decode, line)
+                    if ok and msg and type(msg) == "table" then
+                        vim.schedule(function()
+                            local h_name = "handle_" .. (msg.type or "")
+                            if Handlers[h_name] then pcall(Handlers[h_name], msg) end
+                        end)
+                    else
+                        vim.schedule(function() UI.append_stream_text(line .. "\n", stream_type) end)
+                    end
                 else
                     vim.schedule(function()
-                        UI.append_to_repl(l, "Comment")
+                        local suffix = is_last and "" or "\n"
+                        if line:match("[\r\b]$") then suffix = "" end
+                        UI.append_stream_text(line .. suffix, stream_type)
                     end)
                 end
             end
         end
-
-        State[buffer_key] = data[#data]
     end
 end
 
@@ -87,8 +77,8 @@ function M._prepare_kernel_command(script_path)
         UI.append_to_repl("[Jovian] Connecting to kernel via: " .. Config.options.connection_file, "Special")
     elseif Config.options.ssh_host then
         local host = Config.options.ssh_host
-        local remote_python = Config.options.ssh_python
-        cmd = { "ssh", host, remote_python, "-u", "/tmp/jovian_backend/kernel_bridge.py" }
+        local remote_dir = "/tmp/jovian_backend_" .. (os.getenv("USER") or "unknown")
+        cmd = { "ssh", host, remote_python, "-u", remote_dir .. "/kernel_bridge.py" }
         UI.append_to_repl("[Jovian] Connecting to remote: " .. host, "Special")
     else
         -- Local execution
@@ -104,11 +94,13 @@ function M.sync_backend(host, backend_dir, on_success, on_error)
     local local_hash = vim.fn.trim(vim.fn.system(hash_cmd))
 
     -- Check remote hash
-    local check_cmd = string.format("ssh %s 'cat /tmp/jovian_backend/.hash 2>/dev/null'", host)
+    local remote_dir = "/tmp/jovian_backend_" .. (os.getenv("USER") or "unknown")
+    local check_cmd = string.format("ssh %s 'cat %s/.hash 2>/dev/null'", host, remote_dir)
 
     local function do_sync()
         -- Sync files and update hash
-        local setup_cmd = string.format("ssh %s 'rm -rf /tmp/jovian_backend && mkdir -p /tmp/jovian_backend'", host)
+        local remote_dir = "/tmp/jovian_backend_" .. (os.getenv("USER") or "unknown")
+        local setup_cmd = string.format("ssh %s 'rm -rf %s && mkdir -p %s'", host, remote_dir, remote_dir)
 
         vim.fn.jobstart(setup_cmd, {
             on_exit = function(_, code)
@@ -119,7 +111,8 @@ function M.sync_backend(host, backend_dir, on_success, on_error)
                     return
                 end
 
-                local scp_cmd = string.format("scp -r %s/. %s:/tmp/jovian_backend", backend_dir, host)
+                local remote_dir = "/tmp/jovian_backend_" .. (os.getenv("USER") or "unknown")
+                local scp_cmd = string.format("scp -r %s/. %s:%s", backend_dir, host, remote_dir)
                 vim.fn.jobstart(scp_cmd, {
                     on_exit = function(_, scp_code)
                         if scp_code ~= 0 then
@@ -128,8 +121,9 @@ function M.sync_backend(host, backend_dir, on_success, on_error)
                             end
                         else
                             -- Write hash file
+                            local remote_dir = "/tmp/jovian_backend_" .. (os.getenv("USER") or "unknown")
                             local hash_write_cmd =
-                                string.format("ssh %s 'echo %s > /tmp/jovian_backend/.hash'", host, local_hash)
+                                string.format("ssh %s 'echo %s > %s/.hash'", host, local_hash, remote_dir)
                             vim.fn.jobstart(hash_write_cmd, {
                                 on_exit = function()
                                     if on_success then
@@ -266,6 +260,7 @@ function M.send_payload(code, cell_id, filename)
     end
     local current_buf = vim.api.nvim_get_current_buf()
 
+    cell_id = cell_id or "scratchpad"
     State.cell_buf_map[cell_id] = current_buf
     State.cell_start_time[cell_id] = os.time()
     State.cell_hashes[cell_id] = Cell.get_cell_hash(code)
@@ -315,6 +310,7 @@ function M.profile_cell(code, cell_id)
         end)
         return
     end
+    vim.notify("[Jovian DEBUG] Output for ID: " .. tostring(cell_id), vim.log.levels.DEBUG)
     local msg = vim.json.encode({
         command = "profile",
         code = code,
@@ -366,11 +362,8 @@ function M.send_cell()
     local s, e = Cell.get_cell_range()
     UI.flash_range(s, e)
     local lines = vim.api.nvim_buf_get_lines(0, s - 1, e, false)
-    if #lines > 0 and lines[1]:match("^# %%%%") then
-        if lines[1]:lower():match("%[markdown%]") then
-            return vim.notify("Skipping markdown cell", vim.log.levels.INFO)
-        end
-        table.remove(lines, 1)
+    if #lines > 0 and lines[1]:lower():match("^# %%%% %[markdown%]") then
+        return vim.notify("Skipping markdown cell", vim.log.levels.INFO)
     end
     local id = Cell.get_current_cell_id(s, true)
     local fn = vim.fn.expand("%:t")
@@ -457,6 +450,63 @@ function M.run_line()
     M.send_payload(line, id, fn)
 end
 
+function M.send_payload(code, cell_id, filename)
+    if not State.job_id then
+        M.start_kernel(function() M.send_payload(code, cell_id, filename) end)
+        return
+    end
+
+    -- Safety Check: If code is empty or only whitespace, don't send but mark as done if it was a real cell
+    if not code or code:match("^%s*$") then
+        return
+    end
+
+    local current_buf = vim.api.nvim_get_current_buf()
+    cell_id = cell_id or "scratchpad"
+    
+    State.cell_buf_map[cell_id] = current_buf
+    State.cell_start_time[cell_id] = os.time()
+    State.cell_hashes[cell_id] = Cell.get_cell_hash(code)
+    State.running_cells[cell_id] = true
+
+    -- Update status
+    UI.set_cell_status(current_buf, cell_id, "running", Config.options.ui_symbols.running)
+
+    local file_dir = vim.fn.expand("%:p:h")
+    local cache_dir = file_dir .. "/.jovian_cache/" .. (filename or "scratchpad")
+    vim.fn.mkdir(cache_dir, "p")
+
+    local payload = {
+        command = "execute",
+        code = code,
+        cell_id = cell_id,
+        file_dir = cache_dir,
+        cwd = file_dir,
+    }
+
+    local msg = vim.json.encode(payload)
+    vim.api.nvim_chan_send(State.job_id, msg .. "\n")
+end
+
+function M.send_cell()
+    if not is_window_open() then return end
+    local s, e = Cell.get_cell_range()
+    local lines = vim.api.nvim_buf_get_lines(0, s - 1, e, false)
+    if #lines == 0 then return end
+
+    if lines[1]:lower():find("# %% [markdown]", 1, true) then
+        return vim.notify("Skipping markdown cell", vim.log.levels.INFO)
+    end
+
+    table.remove(lines, 1) -- Remove header
+    local code = table.concat(lines, "\n")
+    local id = Cell.get_current_cell_id(s, true)
+    local fn = vim.fn.expand("%:t")
+    
+    UI.flash_range(s, e)
+    M.send_payload(code, id, fn)
+end
+
 function M.run_all_cells()
     if not is_window_open() then return end
     local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
@@ -465,11 +515,11 @@ function M.run_all_cells()
 
     for i, line in ipairs(lines) do
         if line:match("^# %%%%") then
-            -- 1. Send previous cell
+            -- 1. Send previous cell if it was code
             if #blk > 0 and is_code and current_bid then
                 M.send_payload(table.concat(blk, "\n"), current_bid, fn)
             end
-            -- 2. New Cell
+            -- 2. Reset for new cell
             blk = {}
             current_bid = Cell.ensure_cell_id(i, line)
             is_code = not line:lower():find("# %% [markdown]", 1, true)
@@ -477,7 +527,7 @@ function M.run_all_cells()
             table.insert(blk, line)
         end
     end
-    -- 3. Final cell
+    -- 3. Send final cell
     if #blk > 0 and is_code and current_bid then
         M.send_payload(table.concat(blk, "\n"), current_bid, fn)
     end
@@ -494,11 +544,11 @@ function M.run_cells_above()
 
     for i, line in ipairs(lines) do
         if line:match("^# %%%%") then
-            -- 1. Send previous cell
+            -- 1. Send previous cell if it was code
             if #blk > 0 and is_code and current_bid then
                 M.send_payload(table.concat(blk, "\n"), current_bid, fn)
             end
-            -- 2. New Cell
+            -- 2. Reset for new cell
             blk = {}
             current_bid = Cell.ensure_cell_id(i, line)
             is_code = not line:lower():find("# %% [markdown]", 1, true)
@@ -506,7 +556,7 @@ function M.run_cells_above()
             table.insert(blk, line)
         end
     end
-    -- 3. Final cell
+    -- 3. Send final cell
     if #blk > 0 and is_code and current_bid then
         M.send_payload(table.concat(blk, "\n"), current_bid, fn)
     end
@@ -554,7 +604,7 @@ function M.interrupt_kernel()
     local pid = vim.fn.jobpid(State.job_id)
     if pid then
         -- kill -2 for Unix, assuming Linux/Mac for now
-        vim.loop.kill(pid, 2) -- 2 = SIGINT
+        uv.kill(pid, 2) -- 2 = SIGINT
         UI.append_to_repl("[Kernel Interrupted!]", "WarningMsg")
 
         -- Change status to Error if running

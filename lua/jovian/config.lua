@@ -9,7 +9,7 @@ M.defaults = {
     float_border = "rounded", -- Border style for floating windows (single, double, rounded, solid, shadow)
 
     -- Python Environment
-    python_interpreter = "python3",
+    python_interpreter = os.getenv("JOVIAN_PYTHON") or "python3",
 
     -- Behavior
     notify_threshold = 10,
