@@ -15,6 +15,7 @@ import subprocess
 try:
     from jupyter_client.blocking.client import BlockingKernelClient
     from jupyter_client.manager import KernelManager
+    from jupyter_client.session import Session
 except ImportError as e:
     # Handle environment issues (common on NixOS/Linux with missing libs)
     sys.stderr.write(f"[Jovian] Critical Import Error: {e}\n")
@@ -117,7 +118,15 @@ class KernelBridge:
                     "{connection_file}",
                 ]
             )
+            # Explicitly set signature scheme to ensure compatibility
+            if not hasattr(self.km, "session") or not self.km.session:
+                self.km.session = Session(key=os.urandom(16), signature_scheme="hmac-sha256")
+            
             self.km.start_kernel(stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            
+            # Give the kernel a moment to initialize its sockets
+            time.sleep(0.5)
+            
             self.kc = self.km.client()
             self.kc.start_channels()
 
