@@ -18,7 +18,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --check .
       - name: Luacheck
-        uses: lunarmodules/luacheck-action@v1
+        uses: lunarmodules/luacheck@v1
         with:
           args: .
 
