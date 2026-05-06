@@ -226,6 +226,7 @@ function M.send_payload(code, cell_id, filename)
 	State.cell_buf_map[cell_id] = current_buf
 	State.cell_start_time[cell_id] = os.time()
     State.cell_hashes[cell_id] = Cell.get_cell_hash(code)
+    State.running_cells[cell_id] = true
 
 	local lines = vim.api.nvim_buf_get_lines(current_buf, 0, -1, false)
 	for i, line in ipairs(lines) do

@@ -35,5 +35,6 @@ M.batch_execution = nil -- { total = int, current = int, start_time = timestamp 
 
 M.inline_images = {} -- { [bufnr] = { images = {}, mtime = 0 } }
 M.is_starting_kernel = false
+M.running_cells = {} -- { [cell_id] = true }
 
 return M
