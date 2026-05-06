@@ -39,7 +39,11 @@ local function process_output_data(data, buffer_key)
                 vim.schedule(function()
                     local handler_name = "handle_" .. (msg.type or "")
                     if Handlers[handler_name] then
+                        local start_time = vim.loop.hrtime()
                         local h_ok, h_err = pcall(Handlers[handler_name], msg)
+                        local end_time = vim.loop.hrtime()
+                        local duration = (end_time - start_time) / 1000000 -- ms
+                        debug_log("HANDLER_DONE: " .. handler_name .. " duration=" .. duration .. "ms")
                         if not h_ok then
                             debug_log("HANDLER_ERROR: " .. tostring(h_err))
                             UI.append_to_repl("[Handler Error: " .. tostring(h_err) .. "]", "ErrorMsg")
@@ -65,7 +69,11 @@ local function process_output_data(data, buffer_key)
                     vim.schedule(function()
                         local handler_name = "handle_" .. (msg.type or "")
                         if Handlers[handler_name] then
+                            local start_time = vim.loop.hrtime()
                             local h_ok, h_err = pcall(Handlers[handler_name], msg)
+                            local end_time = vim.loop.hrtime()
+                            local duration = (end_time - start_time) / 1000000 -- ms
+                            debug_log("HANDLER_DONE_LOOP: " .. handler_name .. " duration=" .. duration .. "ms")
                             if not h_ok then
                                 debug_log("HANDLER_ERROR_LOOP: " .. tostring(h_err))
                                 UI.append_to_repl("[Handler Error: " .. tostring(h_err) .. "]", "ErrorMsg")

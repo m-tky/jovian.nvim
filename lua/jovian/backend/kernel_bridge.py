@@ -614,13 +614,14 @@ except Exception:
                 else:
                     f.write("\n".join(output_md_lines))
 
-            # Send result_ready
+            # Send result_ready - DO NOT include large base64 data in the JSON
+            # The images are already saved to disk, Neovim only needs the paths.
             msg = {
                 "type": "result_ready",
                 "cell_id": self.current_cell_id,
                 "file": os.path.abspath(md_path),
                 "status": "error" if error_info else "ok",
-                "images": images,
+                "images": list(images.keys()), # Just send filenames
             }
             if error_info:
                 msg["error"] = error_info
