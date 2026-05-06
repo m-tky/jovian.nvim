@@ -1,0 +1,44 @@
+name: CI
+
+on: [push, pull_request]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  lint:
+    name: Linting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v25
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - name: StyLua Check
+        run: nix develop --command stylua --check .
+      - name: Lua Linting (Luacheck)
+        run: nix develop --command luacheck .
+      - name: Python Linting (Ruff)
+        run: nix develop --command ruff check .
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v25
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - name: Run Tests
+        run: |
+          echo ">>> Running Integration Tests (Real Kernel)..."
+          nix develop --command nvim --headless -l tests/edge_cases.lua
+          
+          echo ">>> Running Command Tests (Mocked)..."
+          nix develop --command nvim --headless -l tests/test_commands.lua
+          
+          echo ">>> Running Async Flow Tests..."
+          nix develop --command nvim --headless -l tests/test_async_flow.lua
+          
+          echo ">>> Running UI/Layout Tests..."
+          nix develop --command nvim --headless -l tests/test_resize_layout.lua

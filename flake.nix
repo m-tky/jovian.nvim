@@ -20,7 +20,7 @@
       packages = forAllSystems (
         system:
         let
-          pkgs = import nixpkgs { inherit system; };
+          pkgs = import nixpkgs { inherit system; config.allowUnfree = true; };
 
           pythonEnv = pkgs.python3.withPackages (
             ps: with ps; [
@@ -57,7 +57,7 @@
 
             -- Setup jovian.nvim
             require("jovian").setup({
-              -- python_interpreter = "${pythonEnv}/bin/python3",
+              python_interpreter = "${pythonEnv}/bin/python3",
             })
 
             -- Setup nvim-treesitter
@@ -110,6 +110,7 @@
             export XDG_CONFIG_HOME=$(mktemp -d)
             export XDG_DATA_HOME=$(mktemp -d)
             export XDG_STATE_HOME=$(mktemp -d)
+            export JOVIAN_PYTHON="${pythonEnv}/bin/python3"
             exec ${neovimWithPlugins}/bin/nvim -u ${initLua} "$@"
           '';
 
@@ -117,13 +118,14 @@
         {
           default = nvim-jovian;
           nvim-jovian = nvim-jovian;
+          pythonEnv = pythonEnv;
         }
       );
 
       devShells = forAllSystems (
         system:
         let
-          pkgs = import nixpkgs { inherit system; };
+          pkgs = import nixpkgs { inherit system; config.allowUnfree = true; };
           pythonEnv = pkgs.python3.withPackages (
             ps: with ps; [
               ipython
@@ -144,6 +146,8 @@
               pkgs.imagemagick
               pkgs.pyright
               pkgs.ruff
+              pkgs.stylua
+              pkgs.lua51Packages.luacheck
               pkgs.libnotify
               pythonEnv
             ];
