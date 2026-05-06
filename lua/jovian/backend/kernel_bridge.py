@@ -643,10 +643,15 @@ except:
         self.current_msg_id = None
         self.output_counter = 0
 
+        # If there was an error, clear the execution queue (abort run-all)
+        if error_info and not self.execution_queue.empty():
+            q_size = self.execution_queue.qsize()
+            send_json({"type": "batch_aborted", "msg": f"Aborting {q_size} queued cells due to error."})
+            with self.execution_queue.mutex:
+                self.execution_queue.queue.clear()
+
         # Process next item in execution queue
         if not self.execution_queue.empty():
-            q_size = self.execution_queue.qsize()
-            # send_json({"type": "kernel_log", "stream": "stdout", "msg": f"[Jovian] Processing next cell (queued: {q_size})..."})
             next_cmd = self.execution_queue.get()
             self._do_execute(
                 next_cmd["code"],

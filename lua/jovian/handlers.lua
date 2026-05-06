@@ -98,19 +98,23 @@ function M.handle_result_ready(msg)
 
 			-- Show diagnostics if error info exists
 			if msg.error then
-				local start_line = State.cell_start_line[msg.cell_id] or 1
-				local err_line = msg.error.line or 1
-				local target_line = (start_line - 1) + err_line
-				vim.diagnostic.set(State.diag_ns, target_buf, {
-					{
-						lnum = target_line,
-						col = 0,
-						message = msg.error.msg,
-						severity = vim.diagnostic.severity.ERROR,
-						source = "Jovian",
-					},
-				})
+				require("jovian.core").show_error_diagnostics(target_buf, msg.cell_id, msg.error)
 			end
+
+            -- If in a batch and this is an error, clear the batch state
+            if State.batch_execution then
+                State.batch_execution = nil
+                -- Clear status of any other cells that were waiting
+                local bufnr = target_buf
+                local ids = require("jovian.cell").get_all_ids(bufnr)
+                for _, id in ipairs(ids) do
+                    -- If it's still showing 'running' but it's not this cell, clear it
+                    local status = UI.get_cell_status and UI.get_cell_status(bufnr, id) or "running"
+                    if id ~= msg.cell_id then
+                        UI.set_cell_status(bufnr, id, "idle", "")
+                    end
+                end
+            end
 		else
 			UI.set_cell_status(target_buf, msg.cell_id, "done", Config.options.ui_symbols.done .. timestamp)
 		end
@@ -157,6 +161,11 @@ function M.handle_input_request(msg)
 			vim.fn.chansend(State.job_id, reply .. "\n")
 		end
 	end)
+end
+
+function M.handle_batch_aborted(msg)
+    UI.send_notification(msg.msg, "warn")
+    State.batch_execution = nil
 end
 
 return M
