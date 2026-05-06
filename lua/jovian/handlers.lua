@@ -165,7 +165,24 @@ end
 
 function M.handle_batch_aborted(msg)
     UI.send_notification(msg.msg, "warn")
+    
+    -- Clear batch state
     State.batch_execution = nil
+    
+    -- Clear all 'running' status indicators in all visible buffers
+    -- because we don't know exactly which buffer the batch was in here,
+    -- or better yet, just clear all status extmarks for cells that are 'running'
+    for id, _ in pairs(State.cell_start_time) do
+        -- Find which buffer this cell belongs to
+        local bufnr = State.cell_buf_map[id]
+        if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+            UI.set_cell_status(bufnr, id, "idle", "")
+        end
+    end
+    
+    -- Final cleanup of local state
+    State.cell_start_time = {}
+    State.cell_buf_map = {}
 end
 
 return M
