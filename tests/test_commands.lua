@@ -242,10 +242,9 @@ assert_test(#sent_payloads > 0 and sent_payloads[1]:match("command=profile"), "J
 
 -- Test 9: JovianCopy (Should send copy_to_clipboard command)
 run_command("JovianCopy", "my_var")
+local payload = sent_payloads[1] or ""
 assert_test(
-    #sent_payloads > 0
-        and sent_payloads[1]:match("command=copy_to_clipboard")
-        and sent_payloads[1]:match("name=my_var"),
+    #sent_payloads > 0 and payload:match("command=copy_to_clipboard") and payload:match("name=my_var"),
     "JovianCopy sent copy_to_clipboard payload"
 )
 
