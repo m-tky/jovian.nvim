@@ -36,15 +36,4 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
       - name: Run Tests
-        run: |
-          echo ">>> Running Integration Tests (Real Kernel)..."
-          nix develop --command nvim-jovian --headless -l tests/edge_cases.lua
-          
-          echo ">>> Running Command Tests (Mocked)..."
-          nix develop --command nvim-jovian --headless -l tests/test_commands.lua
-          
-          echo ">>> Running Async Flow Tests..."
-          nix develop --command nvim-jovian --headless -l tests/test_async_flow.lua
-          
-          echo ">>> Running UI/Layout Tests..."
-          nix develop --command nvim-jovian --headless -l tests/test_resize_layout.lua
+        run: nix run .#run-tests

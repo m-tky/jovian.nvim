@@ -119,8 +119,36 @@
           default = nvim-jovian;
           nvim-jovian = nvim-jovian;
           pythonEnv = pythonEnv;
+
+          run-tests = pkgs.writeShellScriptBin "run-tests" ''
+            echo ">>> Running Integration Tests (Real Kernel)..."
+            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/edge_cases.lua
+            
+            echo ">>> Running Command Tests (Mocked)..."
+            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_commands.lua
+            
+            echo ">>> Running Async Flow Tests..."
+            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_async_flow.lua
+            
+            echo ">>> Running UI/Layout Tests..."
+            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_resize_layout.lua
+          '';
         }
       );
+
+      checks = forAllSystems (system: {
+        integration-test = pkgs.stdenv.mkDerivation {
+          name = "jovian-integration-test";
+          src = self;
+          buildInputs = [ self.packages.${system}.run-tests ];
+          buildPhase = ''
+            export HOME=$TMPDIR
+            # Run the tests. We use a real HOME because Neovim/Jupyter might need it.
+            ${self.packages.${system}.run-tests}/bin/run-tests
+          '';
+          installPhase = "touch $out";
+        };
+      });
 
       devShells = forAllSystems (
         system:
@@ -143,6 +171,7 @@
           default = pkgs.mkShell {
             packages = [
               self.packages.${system}.nvim-jovian
+              self.packages.${system}.run-tests
               pkgs.neovim
               pkgs.imagemagick
               pkgs.pyright
