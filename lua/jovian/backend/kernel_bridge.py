@@ -721,7 +721,7 @@ def _jovian_get_variables():
             
             type_name = type(value).__name__
             info = str(value)
-            info = info.replace("\n", " ")
+            info = info.replace("\\n", " ")
             if len(info) > 200: info = info[:197] + "..."
 
             if hasattr(value, 'shape'):
