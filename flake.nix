@@ -34,13 +34,19 @@
             ]
           );
 
+          jovian-nvim = pkgs.vimUtils.buildVimPlugin {
+            pname = "jovian-nvim";
+            version = "unstable";
+            src = self;
+            dependencies = [
+              pkgs.vimPlugins.image-nvim
+              pkgs.vimPlugins.jupytext-nvim
+              pkgs.vimPlugins.nvim-lspconfig
+              pkgs.vimPlugins.nvim-treesitter
+            ];
+          };
+
           initLua = pkgs.writeText "init.lua" ''
-            -- Add the plugin source from the Nix store to the runtime path
-            vim.opt.rtp:prepend("${self}")
-
-            -- Also add current directory (for local development)
-            vim.opt.rtp:prepend(".")
-
             -- Setup image.nvim
             local image_ok, image = pcall(require, "image")
             if image_ok then
@@ -92,6 +98,7 @@
               customRC = "";
               packages.myVimPackage = {
                 start = [
+                  jovian-nvim
                   pkgs.vimPlugins.image-nvim
                   pkgs.vimPlugins.jupytext-nvim
                   pkgs.vimPlugins.nvim-lspconfig
@@ -119,6 +126,7 @@
         {
           default = nvim-jovian;
           nvim-jovian = nvim-jovian;
+          jovian-nvim = jovian-nvim;
           pythonEnv = pythonEnv;
 
           run-tests = pkgs.writeShellScriptBin "run-tests" ''
