@@ -115,7 +115,11 @@ end
 
 function M.sync_backend(host, backend_dir, on_success, on_error)
     -- Calculate local hash
-    local hash_cmd = "sha256sum " .. backend_dir .. "/* | sha256sum | awk '{print $1}'"
+    local hasher = "sha256sum"
+    if vim.fn.executable("sha256sum") == 0 and vim.fn.executable("shasum") == 1 then
+        hasher = "shasum -a 256"
+    end
+    local hash_cmd = hasher .. " " .. backend_dir .. "/* | " .. hasher .. " | awk '{print $1}'"
     local local_hash = vim.fn.trim(vim.fn.system(hash_cmd))
 
     -- Check remote hash
@@ -254,15 +258,18 @@ function M.start_kernel(on_ready)
 
                 if ok then
                     if not m.is_available() then
-                        vim.schedule(function()
-                            vim.notify(
-                                "[Jovian] Performance Mode (Native ZMQ) is unavailable because "
-                                    .. "'libzmq' or 'openssl' is missing.\n"
-                                    .. "Falling back to Python bridge. For maximum performance, "
-                                    .. "please install these system dependencies.",
-                                vim.log.levels.WARN
-                            )
-                        end)
+                        if not State.has_warned_native_unavailable then
+                            vim.schedule(function()
+                                vim.notify(
+                                    "[Jovian] Performance Mode (Native ZMQ) is unavailable because "
+                                        .. "'libzmq' or 'openssl' is missing.\n"
+                                        .. "Falling back to Python bridge. For maximum performance, "
+                                        .. "please install these system dependencies.",
+                                    vim.log.levels.WARN
+                                )
+                            end)
+                            State.has_warned_native_unavailable = true
+                        end
                         return
                     end
 
@@ -276,7 +283,7 @@ function M.start_kernel(on_ready)
                     z.connect(iopub_socket, iopub_endpoint)
                     z.connect(shell_socket, shell_endpoint)
 
-                    z.zmq_setsockopt_string(iopub_socket, z.SUBSCRIBE, "")
+                    z.setsockopt(iopub_socket, z.SUBSCRIBE, "", 0)
 
                     State.lua_shell_socket = shell_socket
                     State.lua_zmq_key = content.key
@@ -336,6 +343,16 @@ function M.start_kernel(on_ready)
                                 elseif msg.header.msg_type == "stream" then
                                     table.insert(stream_buffer, msg.content.text)
                                 end
+                            end
+
+                            -- Poll Shell Socket for replies to keep REQ/REP state clean
+                            while true do
+                                local reply = m.parse_multipart(shell_socket, z.DONTWAIT)
+                                if not reply then
+                                    break
+                                end
+                                -- We currently don't need to do much with shell replies in background
+                                -- but we could buffer them if needed for async execution tracking.
                             end
                         end)
                     )

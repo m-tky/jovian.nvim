@@ -51,5 +51,6 @@ M.dataframe_sessions = {} -- { [var_name] = { total, offset, limit, columns } }
 M.tunnel_job_id = nil
 M.tunnel_host = nil
 M.remote_kernel_pid = nil
+M.has_warned_native_unavailable = false
 
 return M

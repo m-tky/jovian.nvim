@@ -5,6 +5,11 @@ local State = require("jovian.state")
 local Session = require("jovian.session")
 
 function M.handle_stream(msg)
+    -- If Native Lua messenger is active, it handles streams directly with lower latency.
+    -- We skip the Python bridge's stream messages to avoid duplicates.
+    if State.lua_shell_socket then
+        return
+    end
     UI.append_stream_text(msg.text, msg.stream)
 end
 
