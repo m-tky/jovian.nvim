@@ -646,16 +646,16 @@ function M.run_line()
 end
 
 function M._execute_lines(lines, batch_name)
-    local blk, current_bid, is_code = {}, nil, false
     local fn = vim.fn.expand("%:t")
+    local cells_to_run = {}
+    local blk, current_bid, is_code = {}, nil, false
 
+    -- 1. Identify all code cells and their content first
     for i, line in ipairs(lines) do
         if line:match("^# %%%%") then
-            -- 1. Send previous cell
             if #blk > 0 and is_code and current_bid then
-                M.send_payload(table.concat(blk, "\n"), current_bid, fn)
+                table.insert(cells_to_run, { code = table.concat(blk, "\n"), id = current_bid })
             end
-            -- 2. New Cell
             blk = {}
             current_bid = Cell.ensure_cell_id(i, line)
             is_code = not line:lower():find("# %% [markdown]", 1, true)
@@ -663,12 +663,27 @@ function M._execute_lines(lines, batch_name)
             table.insert(blk, line)
         end
     end
-    -- 3. Final cell
     if #blk > 0 and is_code and current_bid then
-        M.send_payload(table.concat(blk, "\n"), current_bid, fn)
+        table.insert(cells_to_run, { code = table.concat(blk, "\n"), id = current_bid })
     end
+
+    if #cells_to_run == 0 then
+        return
+    end
+
+    -- 2. Initialize batch state for asynchronous tracking
     if batch_name then
-        vim.notify("Jovian: " .. batch_name .. " finished", vim.log.levels.INFO)
+        State.batch_execution = {
+            total = #cells_to_run,
+            current = 0,
+            start_time = os.time(),
+            name = batch_name,
+        }
+    end
+
+    -- 3. Dispatch executions
+    for _, cell in ipairs(cells_to_run) do
+        M.send_payload(cell.code, cell.id, fn)
     end
 end
 

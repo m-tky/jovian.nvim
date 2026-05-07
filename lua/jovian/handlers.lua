@@ -76,10 +76,8 @@ function M.handle_result_ready(msg)
                 State.batch_execution.current = State.batch_execution.current + 1
                 if State.batch_execution.current >= State.batch_execution.total then
                     local batch_dur = os.time() - State.batch_execution.start_time
-                    if batch_dur >= Config.options.notify_threshold then
-                        should_notify = true
-                        notify_msg = "Run All Finished (" .. batch_dur .. "s)"
-                    end
+                    should_notify = true
+                    notify_msg = string.format("Jovian: %s finished (%ds)", State.batch_execution.name or "Batch", batch_dur)
                     State.batch_execution = nil
                 end
             else
