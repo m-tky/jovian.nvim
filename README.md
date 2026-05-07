@@ -29,9 +29,10 @@
 
 | Feature                      | Description                                                             |
 | :--------------------------- | :---------------------------------------------------------------------- |
-| **🚀 Interactive Execution** | Run code cells (`# %%`) or selections instantly.                        |
+| **🚀 Native Performance**    | Blazing fast zero-latency execution via Lua-native ZMQ bridge.          |
+| **🧠 Smart Fallback**        | Automatically falls back to Python bridge if system libs are missing.   |
 | **👀 Live Preview**          | See results (text & plots) in a side-by-side preview window.            |
-| **📊 Variables Pane**        | Monitor active variables, their types, and values in real-time.         |
+| **📊 Variables Pane**        | Monitor active variables with real-time paging support.                 |
 | **🖼️ Plot Support**          | View Matplotlib/Plotly plots directly in Neovim (via `image.nvim`).     |
 | **☁️ Remote & Tailscale**    | One-button SSH/Tailscale tunneling with automatic lifecycle management. |
 | **🔄 Easy Sync**             | Build-in `rsync` command to keep local/remote files in sync.           |
@@ -42,32 +43,29 @@
 
 ## ⚡ Try with Nix
 
-No install needed! If you have [Nix](https://nixos.org/), try `jovian.nvim` instantly:
+No install needed! If you have [Nix](https://nixos.org/), try `jovian.nvim` with full performance features:
 
 ```bash
-nix develop github:m-tky/jovian.nvim
-# Inside the shell:
-nvim-jovian demo_jovian.py
+nix run github:m-tky/jovian.nvim -- demo_jovian.py
 ```
-
-> [!NOTE]
-> This trial environment uses the **Kitty** terminal backend for image rendering. Run inside [Kitty](https://sw.kovidgoyal.net/kitty/) for best results.
 
 ---
 
 ## 📋 Requirements
 
 - **Neovim** (v0.9+)
-- **System Libraries** (Required for Lua-native ZMQ & Sync):
+- **System Libraries** (Optional but **highly recommended** for Native Performance):
   - **`libzmq`** (ZeroMQ)
-  - **`openssl`**
-  - **`rsync`** (For `:JovianSync`)
+  - **`openssl`** (libcrypto)
+- **Other Utilities**:
+  - **`rsync`** (Required for `:JovianSync`)
 - **Python 3** with dependencies:
   ```bash
-  pip install ipykernel jupyter_client pandas
+  pip install ipykernel jupyter_client
   ```
-- **[image.nvim](https://github.com/3rd/image.nvim)** — Required for plot viewing
-- **[jupytext.nvim](https://github.com/GCBallesteros/jupytext.nvim)** — Recommended for `.ipynb` support
+- **Recommended Plugins**:
+  - **[image.nvim](https://github.com/3rd/image.nvim)** — For plot viewing
+  - **[jupytext.nvim](https://github.com/GCBallesteros/jupytext.nvim)** — For `.ipynb` support
 
 ---
 
@@ -84,13 +82,14 @@ nvim-jovian demo_jovian.py
     config = function()
         require("jovian").setup({
             python_interpreter = "python3",
+            use_lua_native_shell = true, -- Enable zero-latency mode
         })
     end
 }
 ```
 
 #### Using Nix (Flake)
-If you are using Nix, Jovian provides a standard Neovim plugin package and a pre-configured Python environment with all necessary dependencies (`ipykernel`, `pandas`, `zeromq`, etc.).
+Jovian provides a standalone plugin package and two Python environments (Minimal and Full).
 
 ```nix
 # Example usage in another flake
@@ -101,12 +100,16 @@ If you are using Nix, Jovian provides a standard Neovim plugin package and a pre
     neovim = pkgs.neovim.override {
       configure.packages.myVimPackage.start = [
         jovian.packages.${system}.jovian-nvim
+        # Manage your own dependencies
+        pkgs.vimPlugins.image-nvim
+        pkgs.vimPlugins.jupytext-nvim
       ];
-      # Point to the pre-bundled Python environment
+      
       customRC = ''
         lua << EOF
           require("jovian").setup({
-            python_interpreter = "${jovian.packages.${system}.pythonEnv}/bin/python3",
+            -- Use the minimal environment for the bridge
+            python_interpreter = "${jovian.packages.${system}.pythonEnvMinimal}/bin/python3",
           })
         EOF
       '';
@@ -276,14 +279,12 @@ Neovim's TreeSitter will automatically pick up these queries.
 
 ## 🧠 How it Works
 
-`jovian.nvim` bridges Neovim with a persistent Python process:
+`jovian.nvim` uses a **Dual-Bridge Architecture** to balance extreme performance with broad compatibility:
 
-1. **Kernel Bridge** — Launches `kernel_bridge.py` in the background (local or SSH)
-2. **Communication** — JSON messages via stdin/stdout
-3. **Execution** — Wraps an embedded IPython kernel
-4. **Plotting** — Saves plots as images, rendered via `image.nvim`
-
-This keeps Neovim responsive while heavy computations run in the background.
+1.  **Native Lua Bridge (Primary)**: Uses `libzmq` and FFI to talk directly to the Jupyter kernel from Neovim's Lua thread. This provides **zero-latency** execution and autocompletion.
+2.  **Python Bridge (Fallback & Background)**: A persistent `kernel_bridge.py` process that handles complex background tasks, SSH tunneling, and rich data inspection (like DataFrames).
+3.  **Smart Routing**: Execution and status updates go through the fastest available path, while stdout/stderr are streamed asynchronously to keep Neovim responsive.
+4.  **Plotting**: Intercepts display data from the kernel, saving plots as temporary images rendered via `image.nvim`.
 
 ---
 
