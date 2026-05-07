@@ -53,19 +53,35 @@ nix run github:m-tky/jovian.nvim -- demo_jovian.py
 
 ## 📋 Requirements
 
-- **Neovim** (v0.9+)
-- **System Libraries** (Optional but **highly recommended** for Native Performance):
-  - **`libzmq`** (ZeroMQ)
-  - **`openssl`** (libcrypto)
-- **Other Utilities**:
-  - **`rsync`** (Required for `:JovianSync`)
-- **Python 3** with dependencies:
-  ```bash
-  pip install ipykernel jupyter_client
-  ```
-- **Recommended Plugins**:
-  - **[image.nvim](https://github.com/3rd/image.nvim)** — For plot viewing
-  - **[jupytext.nvim](https://github.com/GCBallesteros/jupytext.nvim)** — For `.ipynb` support
+`jovian.nvim` の依存関係は、用途に合わせて以下の 3 つのカテゴリに分けられます。
+> [!TIP]
+> **Nix / NixOS をお使いの場合**: 付属の Flake を使用すれば、これらの依存関係（システムライブラリ含む）はすべて自動的に解決されます。詳細は [Installation (Nix)](#using-nix-flake) を参照してください。
+
+### 1. Core (必須)
+プラグインの基本機能（カーネル接続、コード実行）に必要です。
+*   **Python 3.10+**: 下記のライブラリを含む環境。
+    *   `ipython`, `ipykernel`, `jupyter-client`
+*   **外部コマンド**:
+    *   `awk`, `shasum` (または `sha256sum`): セッションの整合性チェックに使用。
+
+### 2. Performance & Native Mode (推奨)
+通信パフォーマンスを劇的に向上させ、**Native ZMQ モード**を利用するために必要です。
+*   **システムライブラリ**:
+    *   **`libzmq`**: 高速なメッセージング用。
+    *   **`openssl`** (libcrypto): セキュアな通信用。
+*   **Python ライブラリ**:
+    *   `pyzmq`: (システムライブラリの `libzmq` を利用するようにビルドされていることが望ましい)
+
+### 3. Feature-specific (特定機能用)
+特定のコマンドや表示機能を利用する場合のみ必要です。
+*   **Remote Synchronization (`:JovianSync`)**:
+    *   `rsync`: ローカルとリモート間の高速なファイル同期に必須。
+*   **Tailscale Integration**:
+    *   `tailscale`: Tailscale ネットワーク内のノードに直接接続する場合。
+*   **Rich Visualization (グラフ表示)**:
+    *   **[image.nvim](https://github.com/3rd/image.nvim)**: カーネルからの画像を Neovim 内でレンダリングするために必須。
+*   **Advanced Highlighting**:
+    *   **[nvim-treesitter](https://github.com/nvim-treesitter/nvim-treesitter)**: セル内のコードハイライトや Markdown インジェクションを適切に表示するために推奨。
 
 ---
 
