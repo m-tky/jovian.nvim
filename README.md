@@ -53,35 +53,37 @@ nix run github:m-tky/jovian.nvim -- demo_jovian.py
 
 ## 📋 Requirements
 
-`jovian.nvim` の依存関係は、用途に合わせて以下の 3 つのカテゴリに分けられます。
+## 📋 Requirements
+
+Dependencies for `jovian.nvim` are categorized into three levels based on your usage.
 > [!TIP]
-> **Nix / NixOS をお使いの場合**: 付属の Flake を使用すれば、これらの依存関係（システムライブラリ含む）はすべて自動的に解決されます。詳細は [Installation (Nix)](#using-nix-flake) を参照してください。
+> **For Nix / NixOS users**: All dependencies (including system libraries) are automatically handled by the provided Flake. See [Installation (Nix)](#using-nix-flake) for details.
 
-### 1. Core (必須)
-プラグインの基本機能（カーネル接続、コード実行）に必要です。
-*   **Python 3.10+**: 下記のライブラリを含む環境。
+### 1. Core (Essential)
+Required for basic functionality (kernel connection, code execution).
+*   **Python 3.10+**: Environment containing the following:
     *   `ipython`, `ipykernel`, `jupyter-client`
-*   **外部コマンド**:
-    *   `awk`, `shasum` (または `sha256sum`): セッションの整合性チェックに使用。
+*   **System Commands**:
+    *   `awk`, `shasum` (or `sha256sum`): Used for backend session integrity checks.
 
-### 2. Performance & Native Mode (推奨)
-通信パフォーマンスを劇的に向上させ、**Native ZMQ モード**を利用するために必要です。
-*   **システムライブラリ**:
-    *   **`libzmq`**: 高速なメッセージング用。
-    *   **`openssl`** (libcrypto): セキュアな通信用。
-*   **Python ライブラリ**:
-    *   `pyzmq`: (システムライブラリの `libzmq` を利用するようにビルドされていることが望ましい)
+### 2. Performance & Native Mode (Recommended)
+Required to enable **Native ZMQ Mode** for near-zero latency execution.
+*   **System Libraries**:
+    *   **`libzmq`**: High-performance messaging.
+    *   **`openssl`** (libcrypto): Secure communication.
+*   **Python Libraries**:
+    *   `pyzmq`: (Preferably built against the system `libzmq`).
 
-### 3. Feature-specific (特定機能用)
-特定のコマンドや表示機能を利用する場合のみ必要です。
+### 3. Feature-specific (Optional)
+Required only if you use specific commands or visualization features.
 *   **Remote Synchronization (`:JovianSync`)**:
-    *   `rsync`: ローカルとリモート間の高速なファイル同期に必須。
+    - **`rsync`**: Essential for fast file synchronization between local and remote hosts.
 *   **Tailscale Integration**:
-    *   `tailscale`: Tailscale ネットワーク内のノードに直接接続する場合。
-*   **Rich Visualization (グラフ表示)**:
-    *   **[image.nvim](https://github.com/3rd/image.nvim)**: カーネルからの画像を Neovim 内でレンダリングするために必須。
+    - **`tailscale`**: Required when connecting to nodes within a Tailscale network.
+*   **Rich Visualization (Plots)**:
+    - **[image.nvim](https://github.com/3rd/image.nvim)**: Required to render kernel-generated plots inside Neovim.
 *   **Advanced Highlighting**:
-    *   **[nvim-treesitter](https://github.com/nvim-treesitter/nvim-treesitter)**: セル内のコードハイライトや Markdown インジェクションを適切に表示するために推奨。
+    - **[nvim-treesitter](https://github.com/nvim-treesitter/nvim-treesitter)**: Recommended for proper code highlighting and Markdown injection in cells.
 
 ---
 
