@@ -151,7 +151,7 @@ if shell:
 """
         if script:
             # For execute commands, we must ensure the mapping is ready before IOPUB messages arrive.
-            # While execute() returns the msg_id, the kernel might be so fast that IOPUB 
+            # While execute() returns the msg_id, the kernel might be so fast that IOPUB
             # messages arrive before the next line of Python is executed here.
             msg_id = self.kc.execute(script, silent=False, store_history=False)
             self.msg_id_map[msg_id] = {"type": cmd_type}

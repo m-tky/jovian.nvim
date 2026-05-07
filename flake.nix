@@ -24,6 +24,12 @@
             version = "unstable";
             src = self;
             dependencies = [ ];
+            postPatch = ''
+              substituteInPlace lua/jovian/backend/zmq.lua \
+                --replace 'ffi.load, "zmq"' 'ffi.load, "${final.zeromq}/lib/libzmq${final.stdenv.hostPlatform.extensions.sharedLibrary}"'
+              substituteInPlace lua/jovian/backend/messenger.lua \
+                --replace 'ffi.load, "crypto"' 'ffi.load, "${final.openssl.out}/lib/libcrypto${final.stdenv.hostPlatform.extensions.sharedLibrary}"'
+            '';
           };
         };
         # Provide the minimal python environment as a top-level attribute in pkgs

@@ -53,4 +53,10 @@ M.tunnel_host = nil
 M.remote_kernel_pid = nil
 M.has_warned_native_unavailable = false
 
+-- Native ZMQ / Lua Messenger state
+M.is_discovering_zmq = false
+M.lua_shell_socket = nil
+M.lua_zmq_key = nil
+M.lua_messenger_stop = nil
+
 return M

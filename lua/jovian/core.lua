@@ -243,6 +243,28 @@ function M.start_kernel(on_ready)
                 end
 
                 local m = get_messenger()
+                if not m.is_available() then
+                    if State.is_discovering_zmq then
+                        -- Discovery is still in progress, wait a bit and retry
+                        vim.defer_fn(start_lua_messenger, 200)
+                        return
+                    end
+
+                    if not State.has_warned_native_unavailable then
+                        vim.schedule(function()
+                            vim.notify(
+                                "[Jovian] Performance Mode (Native ZMQ) is unavailable because "
+                                    .. "'libzmq' or 'openssl' is missing.\n"
+                                    .. "Falling back to Python bridge. For maximum performance, "
+                                    .. "please install these system dependencies.",
+                                vim.log.levels.WARN
+                            )
+                        end)
+                        State.has_warned_native_unavailable = true
+                    end
+                    return
+                end
+
                 local z = get_zmq()
                 local conn_file = Config.options.connection_file
                 if not conn_file then
@@ -257,22 +279,6 @@ function M.start_kernel(on_ready)
                 end)
 
                 if ok then
-                    if not m.is_available() then
-                        if not State.has_warned_native_unavailable then
-                            vim.schedule(function()
-                                vim.notify(
-                                    "[Jovian] Performance Mode (Native ZMQ) is unavailable because "
-                                        .. "'libzmq' or 'openssl' is missing.\n"
-                                        .. "Falling back to Python bridge. For maximum performance, "
-                                        .. "please install these system dependencies.",
-                                    vim.log.levels.WARN
-                                )
-                            end)
-                            State.has_warned_native_unavailable = true
-                        end
-                        return
-                    end
-
                     local ctx = z.new_ctx()
                     local iopub_socket = z.new_socket(ctx, z.SUB)
                     local shell_socket = z.new_socket(ctx, z.REQ)
