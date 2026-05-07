@@ -1,3 +1,0 @@
-# Output: setup
-
-*(No output)*

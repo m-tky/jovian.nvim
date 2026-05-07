@@ -1,3 +1,6 @@
 **/__pycache__
 **/.direnv
 **/.jovian_cache
+.ruff_cache/
+*.log
+cell_*.md
