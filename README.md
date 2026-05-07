@@ -16,8 +16,8 @@
 - [Requirements](#-requirements)
 - [Installation](#-installation)
 - [Usage Guide](#-usage-guide)
-- [Keybindings](#-recommended-keybindings)
-- [Configuration](#-configuration)
+- [Recommended Keybindings](#️-recommended-keybindings)
+- [Configuration](#️-configuration)
 - [How it Works](#-how-it-works)
 - [Command Reference](#-command-reference)
 - [Customization](#-customization)
@@ -53,9 +53,8 @@ nix run github:m-tky/jovian.nvim -- demo_jovian.py
 
 ## 📋 Requirements
 
-## 📋 Requirements
-
 Dependencies for `jovian.nvim` are categorized into three levels based on your usage.
+
 > [!TIP]
 > **For Nix / NixOS users**: All dependencies (including system libraries) are automatically handled by the provided Flake. See [Installation (Nix)](#using-nix-flake) for details.
 
@@ -82,6 +81,8 @@ Required only if you use specific commands or visualization features.
     - **`tailscale`**: Required when connecting to nodes within a Tailscale network.
 *   **Rich Visualization (Plots)**:
     - **[image.nvim](https://github.com/3rd/image.nvim)**: Required to render kernel-generated plots inside Neovim.
+*   **Notebook Support**:
+    - **[jupytext.nvim](https://github.com/GCBallesteros/jupytext.nvim)**: Highly recommended for opening and editing `.ipynb` files.
 *   **Advanced Highlighting**:
     - **[nvim-treesitter](https://github.com/nvim-treesitter/nvim-treesitter)**: Recommended for proper code highlighting and Markdown injection in cells.
 
@@ -287,6 +288,8 @@ require("jovian").setup({
 ```
 
 </details>
+
+---
 
 ## 🌲 TreeSitter Queries
 
