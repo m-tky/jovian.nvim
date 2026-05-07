@@ -58,9 +58,13 @@ nvim-jovian demo_jovian.py
 ## 📋 Requirements
 
 - **Neovim** (v0.9+)
+- **System Libraries** (Required for Lua-native ZMQ & Sync):
+  - **`libzmq`** (ZeroMQ)
+  - **`openssl`**
+  - **`rsync`** (For `:JovianSync`)
 - **Python 3** with dependencies:
   ```bash
-  pip install ipykernel jupyter_client
+  pip install ipykernel jupyter_client pandas
   ```
 - **[image.nvim](https://github.com/3rd/image.nvim)** — Required for plot viewing
 - **[jupytext.nvim](https://github.com/GCBallesteros/jupytext.nvim)** — Recommended for `.ipynb` support
