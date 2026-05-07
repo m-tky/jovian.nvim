@@ -22,6 +22,7 @@
         let
           pkgs = import nixpkgs { inherit system; config.allowUnfree = true; };
 
+          # Full environment for testing and demoing
           pythonEnv = pkgs.python3.withPackages (
             ps: with ps; [
               ipython
@@ -34,16 +35,20 @@
             ]
           );
 
+          # Bare minimum for the plugin bridge to function
+          pythonEnvMinimal = pkgs.python3.withPackages (
+            ps: with ps; [
+              ipython
+              ipykernel
+              jupyter-client
+            ]
+          );
+
           jovian-nvim = pkgs.vimUtils.buildVimPlugin {
             pname = "jovian-nvim";
             version = "unstable";
             src = self;
-            dependencies = [
-              pkgs.vimPlugins.image-nvim
-              pkgs.vimPlugins.jupytext-nvim
-              pkgs.vimPlugins.nvim-lspconfig
-              pkgs.vimPlugins.nvim-treesitter
-            ];
+            dependencies = [ ]; # Keep it lean, let users manage their own dependencies
           };
 
           initLua = pkgs.writeText "init.lua" ''
@@ -99,6 +104,7 @@
               packages.myVimPackage = {
                 start = [
                   jovian-nvim
+                  # Explicitly bundle dependencies here for the test/demo environment
                   pkgs.vimPlugins.image-nvim
                   pkgs.vimPlugins.jupytext-nvim
                   pkgs.vimPlugins.nvim-lspconfig
@@ -161,6 +167,7 @@
           nvim-jovian-fallback = nvim-jovian-fallback;
           jovian-nvim = jovian-nvim;
           pythonEnv = pythonEnv;
+          pythonEnvMinimal = pythonEnvMinimal;
           run-tests = run-tests;
           run-tests-fallback = run-tests-fallback;
         }
