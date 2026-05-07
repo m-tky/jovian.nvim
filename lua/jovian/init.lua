@@ -12,7 +12,7 @@ function M.setup(opts)
     -- vim.opt.rtp:prepend(queries_path)
 
     -- Register custom predicate for magic command highlighting
-    local _ = pcall(function()
+    pcall(function()
         vim.treesitter.query.add_predicate("same-line?", function(match, _pattern, _bufnr, predicate)
             local node1 = match[predicate[2]]
             local node2 = match[predicate[3]]

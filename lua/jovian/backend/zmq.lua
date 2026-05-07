@@ -24,13 +24,17 @@ local function get_zmq()
     ]])
     local ok, lib = pcall(ffi.load, "zmq")
     if not ok then
-        error("Jovian: libzmq.so not found. Please ensure zeromq is installed.")
+        return nil
     end
     zmq_lib = lib
     return zmq_lib
 end
 
 local M = {}
+
+function M.is_available()
+    return get_zmq() ~= nil
+end
 
 M.SUB = 2
 M.REQ = 3

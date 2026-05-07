@@ -138,6 +138,17 @@ shell = get_ipython(); ns = shell.user_ns if shell else globals()
 if "{name}" in ns:
     display({{"application/vnd.jovian.clipboard+json": {{"content": str(ns["{name}"])}}}}, raw=True)
 """
+        if cmd_type == "complete":
+            code = cmd.get("code", "")
+            cursor_pos = cmd.get("cursor_pos", 0)
+            script = f"""
+from IPython import get_ipython
+from IPython.display import display
+shell = get_ipython()
+if shell:
+    matches = shell.Completer.complete(line_buffer='''{code}''', cursor_pos={cursor_pos})[1]
+    display({{"application/vnd.jovian.complete+json": {{"matches": matches}}}}, raw=True)
+"""
         if script:
             msg_id = self.kc.execute(script, silent=False, store_history=False)
             self.msg_id_map[msg_id] = {"type": cmd_type}
@@ -183,6 +194,8 @@ if "{name}" in ns:
                 send_json({"type": "peek_data", "data": data["application/vnd.jovian.peek+json"]})
             elif "application/vnd.jovian.inspection+json" in data:
                 send_json({"type": "inspection_data", "data": data["application/vnd.jovian.inspection+json"]})
+            elif "application/vnd.jovian.complete+json" in data:
+                send_json({"type": "complete_data", "matches": data["application/vnd.jovian.complete+json"]["matches"]})
             elif "application/vnd.jovian.clipboard+json" in data:
                 send_json({"type": "clipboard_data", "content": data["application/vnd.jovian.clipboard+json"]["content"]})
             elif "image/png" in data:

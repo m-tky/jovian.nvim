@@ -2,6 +2,9 @@ local M = {}
 local State = require("jovian.state")
 local Windows = require("jovian.ui.windows")
 
+local SEPARATOR = " │ "
+local PADDING = 1
+
 local function get_var_column_widths(vars)
     local max_name_w = 4
     local max_type_w = 4
@@ -22,9 +25,6 @@ function M.render_variables_pane(vars)
         return
     end
     local buf = State.buf.variables
-
-    local SEPARATOR = " "
-    local PADDING = 1
 
     local max_name_w, max_type_w = get_var_column_widths(vars)
 
@@ -103,9 +103,6 @@ function M.show_variables(msg, force_float)
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_name(buf, "JovianVariables")
     vim.bo[buf].bufhidden = "wipe"
-
-    local SEPARATOR = " │ "
-    local PADDING = 1
 
     local max_name_w, max_type_w = get_var_column_widths(vars)
 
@@ -236,9 +233,6 @@ function M.show_profile_stats(text)
 end
 
 function M.show_dataframe(data)
-    local SEPARATOR = " │ "
-    local PADDING = 1
-
     local headers = { "" }
     for _, c in ipairs(data.columns) do
         table.insert(headers, tostring(c))

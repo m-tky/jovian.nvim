@@ -12,6 +12,18 @@ end
 local Hosts = require("jovian.hosts")
 
 local Handlers = require("jovian.handlers")
+local Messenger = nil
+local Zmq = nil
+
+local function get_messenger()
+    Messenger = Messenger or require("jovian.backend.messenger")
+    return Messenger
+end
+
+local function get_zmq()
+    Zmq = Zmq or require("jovian.backend.zmq")
+    return Zmq
+end
 
 local function process_output_data(data, buffer_key)
     if not data or #data == 0 then
@@ -222,8 +234,8 @@ function M.start_kernel(on_ready)
 
             -- Native Lua Messenger (IOPUB & SHELL)
             local function start_lua_messenger()
-                local Messenger = require("jovian.backend.messenger")
-                local Zmq = require("jovian.backend.zmq")
+                local m = get_messenger()
+                local z = get_zmq()
                 local conn_file = Config.options.connection_file
                 if not conn_file then
                     return
@@ -237,17 +249,28 @@ function M.start_kernel(on_ready)
                 end)
 
                 if ok then
-                    local ctx = Zmq.new_ctx()
-                    local iopub_socket = Zmq.new_socket(ctx, Zmq.SUB)
-                    local shell_socket = Zmq.new_socket(ctx, Zmq.REQ)
+                    if not m.is_available() then
+                        vim.schedule(function()
+                            vim.notify(
+                                "[Jovian] Performance mode disabled (missing libzmq or openssl). "
+                                    .. "Using fallback bridge.",
+                                vim.log.levels.INFO
+                            )
+                        end)
+                        return
+                    end
+
+                    local ctx = z.new_ctx()
+                    local iopub_socket = z.new_socket(ctx, z.SUB)
+                    local shell_socket = z.new_socket(ctx, z.REQ)
 
                     local iopub_endpoint = string.format("tcp://%s:%d", content.ip, content.iopub_port)
                     local shell_endpoint = string.format("tcp://%s:%d", content.ip, content.shell_port)
 
-                    Zmq.connect(iopub_socket, iopub_endpoint)
-                    Zmq.connect(shell_socket, shell_endpoint)
+                    z.connect(iopub_socket, iopub_endpoint)
+                    z.connect(shell_socket, shell_endpoint)
 
-                    Zmq.setsockopt(iopub_socket, Zmq.SUBSCRIBE, "", 0)
+                    z.zmq_setsockopt_string(iopub_socket, z.SUBSCRIBE, "")
 
                     State.lua_shell_socket = shell_socket
                     State.lua_zmq_key = content.key
@@ -273,7 +296,7 @@ function M.start_kernel(on_ready)
                         20, -- Faster poll for responsiveness
                         vim.schedule_wrap(function()
                             while true do
-                                local msg = Messenger.parse_multipart(iopub_socket)
+                                local msg = m.parse_multipart(iopub_socket)
                                 if not msg then
                                     break
                                 end
@@ -316,9 +339,9 @@ function M.start_kernel(on_ready)
                         timer:close()
                         flush_timer:stop()
                         flush_timer:close()
-                        Zmq.zmq_close(iopub_socket)
-                        Zmq.zmq_close(shell_socket)
-                        Zmq.zmq_ctx_destroy(ctx)
+                        z.zmq_close(iopub_socket)
+                        z.zmq_close(shell_socket)
+                        z.zmq_ctx_destroy(ctx)
                         State.lua_shell_socket = nil
                     end
                 end
@@ -401,7 +424,7 @@ function M.send_payload(code, cell_id, filename)
 
     UI.set_cell_status(current_buf, cell_id, "running", Config.options.ui_symbols.running)
 
-    filename = vim.fn.expand("%:t")
+    filename = filename or vim.fn.expand("%:t")
     if filename == "" then
         filename = "scratchpad"
     end
@@ -409,9 +432,9 @@ function M.send_payload(code, cell_id, filename)
     local cache_dir = file_dir .. "/.jovian_cache/" .. filename
     vim.fn.mkdir(cache_dir, "p")
 
-    if State.lua_shell_socket then
-        local Messenger = require("jovian.backend.messenger")
-        local req = Messenger.create_message("execute_request", {
+    if State.lua_shell_socket and Config.options.use_lua_native_shell then
+        local m = get_messenger()
+        local req = m.create_message("execute_request", {
             code = code,
             silent = false,
             store_history = true,
@@ -419,9 +442,8 @@ function M.send_payload(code, cell_id, filename)
             allow_stdin = true,
             stop_on_error = true,
         })
-        local msg_id = Messenger.send_message(State.lua_shell_socket, req, State.lua_zmq_key)
+        local msg_id = m.send_message(State.lua_shell_socket, req, State.lua_zmq_key)
         State.msg_id_cell_map[msg_id] = cell_id
-        State.cell_hashes[cell_id] = Cell.get_cell_hash(code)
 
         -- Pre-set status to running for instant feedback
         local bufnr = vim.api.nvim_get_current_buf()

@@ -158,6 +158,10 @@ function M.handle_peek_data(msg)
     UI.show_peek(msg.data or msg)
 end
 
+function M.handle_complete_data(msg)
+    State.last_completion_results = msg.matches
+end
+
 function M.handle_clipboard_data(msg)
     vim.fn.setreg("+", msg.content)
     vim.notify("Copied to system clipboard!", vim.log.levels.INFO)

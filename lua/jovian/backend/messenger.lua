@@ -17,10 +17,16 @@ local function get_crypto()
     end
     local ok, lib = pcall(ffi.load, "crypto")
     if not ok then
-        error("Jovian: libcrypto not found. Please ensure openssl is installed.")
+        return nil
     end
     crypto_lib = lib
     return crypto_lib
+end
+
+local M = {}
+
+function M.is_available()
+    return zmq.is_available() and get_crypto() ~= nil
 end
 
 local function hmac_sha256(key, data)
@@ -37,8 +43,6 @@ local function hmac_sha256(key, data)
     end
     return hex
 end
-
-local M = {}
 
 function M.parse_multipart(socket, flags)
     local parts = {}
