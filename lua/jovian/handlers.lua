@@ -165,6 +165,10 @@ end
 function M.handle_clipboard_data(msg)
     vim.fn.setreg("+", msg.content)
     vim.notify("Copied to system clipboard!", vim.log.levels.INFO)
+    -- Debug for tests
+    if vim.g.jovian_test_mode then
+        vim.g.jovian_last_clipboard = msg.content
+    end
 end
 
 function M.handle_input_request(msg)

@@ -234,6 +234,10 @@ function M.start_kernel(on_ready)
 
             -- Native Lua Messenger (IOPUB & SHELL)
             local function start_lua_messenger()
+                if not Config.options.use_lua_native_shell then
+                    return
+                end
+
                 local m = get_messenger()
                 local z = get_zmq()
                 local conn_file = Config.options.connection_file
@@ -252,9 +256,11 @@ function M.start_kernel(on_ready)
                     if not m.is_available() then
                         vim.schedule(function()
                             vim.notify(
-                                "[Jovian] Performance mode disabled (missing libzmq or openssl). "
-                                    .. "Using fallback bridge.",
-                                vim.log.levels.INFO
+                                "[Jovian] Performance Mode (Native ZMQ) is unavailable because "
+                                    .. "'libzmq' or 'openssl' is missing.\n"
+                                    .. "Falling back to Python bridge. For maximum performance, "
+                                    .. "please install these system dependencies.",
+                                vim.log.levels.WARN
                             )
                         end)
                         return

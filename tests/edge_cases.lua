@@ -2,18 +2,7 @@
 -- REAL integration testing for Jovian.nvim (No mocks)
 
 local function run_real_integration_tests()
-    local root = vim.fn.getcwd()
-    vim.opt.rtp:append(root)
-
-    -- Real setup
-    local jovian = require("jovian")
-    jovian.setup({})
-
-    local core = require("jovian.core")
-    local ui = require("jovian.ui")
-    local state = require("jovian.state")
-
-    -- Mock clipboard for headless CI
+    -- Mock clipboard for headless CI (Must be set early)
     vim.g.clipboard = {
         name = "mock",
         copy = {
@@ -34,6 +23,20 @@ local function run_real_integration_tests()
         },
         cache_enabled = 0,
     }
+
+    -- Set test mode flag for handlers
+    vim.g.jovian_test_mode = true
+
+    local root = vim.fn.getcwd()
+    vim.opt.rtp:append(root)
+
+    -- Real setup
+    local jovian = require("jovian")
+    jovian.setup({})
+
+    local core = require("jovian.core")
+    local ui = require("jovian.ui")
+    local state = require("jovian.state")
 
     -- Also override vim.fn.getreg for consistency if needed,
     -- but usually vim.g.clipboard is enough for setreg("+", ...)
@@ -146,21 +149,14 @@ local function run_real_integration_tests()
 
     -- Step 4: Test Clipboard
     log("\n>>> Step 4: Testing JovianCopy")
-    vim.fn.setreg("+", "empty")
+    vim.g.jovian_last_clipboard = "empty"
     vim.cmd("JovianCopy x")
-    if
-        vim.wait(5000, function()
-            -- Use getreg but be aware it might return a table or string depending on provider
-            local val = vim.fn.getreg("+")
-            if type(val) == "table" then
-                val = table.concat(val, "\n")
-            end
-            return val == "11223"
-        end)
-    then
-        log("[OK] JovianCopy verified")
+    if vim.wait(5000, function()
+        return vim.g.jovian_last_clipboard == "11223"
+    end) then
+        log("[OK] JovianCopy verified via jovian_last_clipboard")
     else
-        log("[FAIL] JovianCopy failed. Reg value: " .. vim.inspect(vim.fn.getreg("+")))
+        log("[FAIL] JovianCopy failed. Last clipboard: " .. vim.inspect(vim.g.jovian_last_clipboard))
         os.exit(1)
     end
 

@@ -66,6 +66,7 @@ M.defaults = {
         markdown_injection = true,
         magic_command_highlight = true,
     },
+    use_lua_native_shell = true,
 }
 
 M.options = vim.deepcopy(M.defaults)
