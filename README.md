@@ -89,31 +89,35 @@ nix run github:m-tky/jovian.nvim -- demo_jovian.py
 ```
 
 #### Using Nix (Flake)
-Jovian provides a standalone plugin package and two Python environments (Minimal and Full).
+The recommended way to use Jovian on Nix is via its **Overlay**, which adds `jovian-nvim` to `pkgs.vimPlugins`.
 
 ```nix
-# Example usage in another flake
+# Example integration in your flake.nix
 {
   inputs.jovian.url = "github:m-tky/jovian.nvim";
   
-  outputs = { self, nixpkgs, jovian }: {
-    neovim = pkgs.neovim.override {
-      configure.packages.myVimPackage.start = [
-        jovian.packages.${system}.jovian-nvim
-        # Manage your own dependencies
-        pkgs.vimPlugins.image-nvim
-        pkgs.vimPlugins.jupytext-nvim
-      ];
-      
-      customRC = ''
-        lua << EOF
-          require("jovian").setup({
-            -- Use the minimal environment for the bridge
-            python_interpreter = "${jovian.packages.${system}.pythonEnvMinimal}/bin/python3",
-          })
-        EOF
-      '';
+  outputs = { nixpkgs, jovian, ... }: {
+    # 1. Apply the overlay
+    pkgs = import nixpkgs {
+      inherit system;
+      overlays = [ jovian.overlays.default ];
     };
+
+    # 2. Add it to your Neovim plugins like any other plugin
+    # Example using Home Manager:
+    programs.neovim.plugins = [
+      pkgs.vimPlugins.jovian-nvim
+      pkgs.vimPlugins.image-nvim -- Optional: for plots
+    ];
+
+    # 3. (Optional) Use the provided minimal Python environment
+    # customRC = ''
+    #   lua << EOF
+    #     require("jovian").setup({
+    #       python_interpreter = "${pkgs.jovian-minimal-python}/bin/python3",
+    #     })
+    #   EOF
+    # '';
   };
 }
 ```

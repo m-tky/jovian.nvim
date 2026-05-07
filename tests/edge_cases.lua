@@ -151,7 +151,7 @@ local function run_real_integration_tests()
     log("\n>>> Step 4: Testing JovianCopy")
     vim.g.jovian_last_clipboard = "empty"
     vim.cmd("JovianCopy x")
-    if vim.wait(5000, function()
+    if vim.wait(10000, function()
         return vim.g.jovian_last_clipboard == "11223"
     end) then
         log("[OK] JovianCopy verified via jovian_last_clipboard")

@@ -17,13 +17,34 @@
       forAllSystems = f: nixpkgs.lib.genAttrs supportedSystems (system: f system);
     in
     {
+      overlays.default = final: prev: {
+        vimPlugins = prev.vimPlugins // {
+          jovian-nvim = final.vimUtils.buildVimPlugin {
+            pname = "jovian-nvim";
+            version = "unstable";
+            src = self;
+            dependencies = [ ];
+          };
+        };
+        # Provide the minimal python environment as a top-level attribute in pkgs
+        jovian-minimal-python = final.python3.withPackages (ps: with ps; [
+          ipython
+          ipykernel
+          jupyter-client
+        ]);
+      };
+
       packages = forAllSystems (
         system:
         let
-          pkgs = import nixpkgs { inherit system; config.allowUnfree = true; };
+          pkgs = import nixpkgs {
+            inherit system;
+            config.allowUnfree = true;
+            overlays = [ self.overlays.default ];
+          };
 
           # Full environment for testing and demoing
-          pythonEnv = pkgs.python3.withPackages (
+          pythonEnvFull = pkgs.python3.withPackages (
             ps: with ps; [
               ipython
               ipykernel
@@ -34,22 +55,6 @@
               tqdm
             ]
           );
-
-          # Bare minimum for the plugin bridge to function
-          pythonEnvMinimal = pkgs.python3.withPackages (
-            ps: with ps; [
-              ipython
-              ipykernel
-              jupyter-client
-            ]
-          );
-
-          jovian-nvim = pkgs.vimUtils.buildVimPlugin {
-            pname = "jovian-nvim";
-            version = "unstable";
-            src = self;
-            dependencies = [ ]; # Keep it lean, let users manage their own dependencies
-          };
 
           initLua = pkgs.writeText "init.lua" ''
             -- Setup image.nvim
@@ -64,11 +69,9 @@
               })
             end
 
-
-
             -- Setup jovian.nvim
             require("jovian").setup({
-              python_interpreter = "${pythonEnv}/bin/python3",
+              python_interpreter = "${pythonEnvFull}/bin/python3",
             })
 
             -- Setup nvim-treesitter
@@ -103,8 +106,7 @@
               customRC = "";
               packages.myVimPackage = {
                 start = [
-                  jovian-nvim
-                  # Explicitly bundle dependencies here for the test/demo environment
+                  pkgs.vimPlugins.jovian-nvim
                   pkgs.vimPlugins.image-nvim
                   pkgs.vimPlugins.jupytext-nvim
                   pkgs.vimPlugins.nvim-lspconfig
@@ -123,7 +125,7 @@
             export XDG_CONFIG_HOME=$(mktemp -d)
             export XDG_DATA_HOME=$(mktemp -d)
             export XDG_STATE_HOME=$(mktemp -d)
-            export JOVIAN_PYTHON="${pythonEnv}/bin/python3"
+            export JOVIAN_PYTHON="${pythonEnvFull}/bin/python3"
             export LD_LIBRARY_PATH="${pkgs.zeromq}/lib:${pkgs.openssl}/lib:$LD_LIBRARY_PATH"
             exec ${neovimWithPlugins}/bin/nvim -u ${initLua} "$@"
           '';
@@ -133,7 +135,7 @@
             export XDG_CONFIG_HOME=$(mktemp -d)
             export XDG_DATA_HOME=$(mktemp -d)
             export XDG_STATE_HOME=$(mktemp -d)
-            export JOVIAN_PYTHON="${pythonEnv}/bin/python3"
+            export JOVIAN_PYTHON="${pythonEnvFull}/bin/python3"
             # Note: No ZMQ or OpenSSL in LD_LIBRARY_PATH here
             exec ${neovimWithPlugins}/bin/nvim -u ${initLua} "$@"
           '';
@@ -165,9 +167,9 @@
           default = nvim-jovian;
           nvim-jovian = nvim-jovian;
           nvim-jovian-fallback = nvim-jovian-fallback;
-          jovian-nvim = jovian-nvim;
-          pythonEnv = pythonEnv;
-          pythonEnvMinimal = pythonEnvMinimal;
+          jovian-nvim = pkgs.vimPlugins.jovian-nvim;
+          pythonEnv = pythonEnvFull;
+          pythonEnvMinimal = pkgs.jovian-minimal-python;
           run-tests = run-tests;
           run-tests-fallback = run-tests-fallback;
         }
@@ -175,7 +177,11 @@
 
       checks = forAllSystems (system:
         let
-          pkgs = import nixpkgs { inherit system; config.allowUnfree = true; };
+          pkgs = import nixpkgs {
+            inherit system;
+            config.allowUnfree = true;
+            overlays = [ self.overlays.default ];
+          };
         in
         {
           integration-test = pkgs.stdenv.mkDerivation {
@@ -226,7 +232,11 @@
       devShells = forAllSystems (
         system:
         let
-          pkgs = import nixpkgs { inherit system; config.allowUnfree = true; };
+          pkgs = import nixpkgs {
+            inherit system;
+            config.allowUnfree = true;
+            overlays = [ self.overlays.default ];
+          };
           pythonEnv = pkgs.python3.withPackages (
             ps: with ps; [
               ipython
