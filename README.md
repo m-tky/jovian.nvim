@@ -115,6 +115,30 @@ If you are using Nix, Jovian provides a standard Neovim plugin package and a pre
 }
 ```
 
+#### Runtime Autocompletion
+
+Jovian provides context-aware autocompletion powered by the Jupyter kernel. This allows you to complete dictionary keys, data columns, and dynamic attributes that static LSP (like Pyright) might miss.
+
+By default, it is set as `omnifunc`. You can trigger it with `<C-x><C-o>`.
+
+**Integration with [blink.cmp](https://github.com/Saghen/blink.cmp):**
+Add the following to your configuration to see Jupyter completions alongside LSP results:
+
+```lua
+require('blink.cmp').setup({
+  sources = {
+    default = { 'lsp', 'path', 'snippets', 'buffer', 'jovian' },
+    providers = {
+      jovian = {
+        name = 'Jovian',
+        module = 'blink.cmp.sources.omnifunc',
+        enabled = true,
+      }
+    }
+  }
+})
+```
+
 ---
 
 ## 🎮 Usage Guide
@@ -122,12 +146,13 @@ If you are using Nix, Jovian provides a standard Neovim plugin package and a pre
 ### Running Code
 
 - Define cells with `# %%`
-- Run with `:JovianRun` — output appears in the Preview Window
+- Run with `:JovianRun` — output appears in the Preview Window (**Native ZMQ execution for zero latency!**)
 - Check virtual text status (`Running`, `Done`) on cell headers
 
 ### Working with Data
 
-- `:JovianVars` — View active variables.
+- `:JovianVars` — View active variables. (**Paging supported for large environments**)
+  - Use `<PageDown>` / `<PageUp>` in the float window to navigate.
 - `:JovianView` — Inspect DataFrames in a floating window (**Paging supported: 50 rows/page**).
   - Use `<PageDown>` / `<PageUp>` to navigate pages.
 - `:JovianSync` — Sync your current local project to the remote server via `rsync`.

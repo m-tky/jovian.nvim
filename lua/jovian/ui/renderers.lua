@@ -87,7 +87,12 @@ function M.render_variables_pane(vars)
     end
 end
 
-function M.show_variables(vars, force_float)
+function M.show_variables(msg, force_float)
+    local vars = msg.variables
+    local total = msg.total_vars or #vars
+    local offset = msg.offset or 0
+    local limit = msg.limit or #vars
+
     if State.win.variables and vim.api.nvim_win_is_valid(State.win.variables) then
         M.render_variables_pane(vars)
         if not force_float then
@@ -96,6 +101,7 @@ function M.show_variables(vars, force_float)
     end
 
     local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_name(buf, "JovianVariables")
     vim.bo[buf].bufhidden = "wipe"
 
     local SEPARATOR = " │ "
@@ -113,7 +119,7 @@ function M.show_variables(vars, force_float)
 
     local max_info_w = 10
     for _, v in ipairs(vars) do
-        max_info_w = math.max(max_info_w, vim.fn.strdisplaywidth(v.info))
+        max_info_w = math.max(max_info_w, vim.fn.strdisplaywidth(v.info or ""))
     end
 
     local sep_len_name = max_name_w + (PADDING * 2)
@@ -128,13 +134,13 @@ function M.show_variables(vars, force_float)
     table.insert(fmt_lines, sep_line)
 
     if #vars == 0 then
-        local msg = State.job_id and "(No variables defined)" or "(Kernel not started)"
+        local empty_msg = State.job_id and "(No variables defined)" or "(Kernel not started)"
         local line = pad_str("", max_name_w, PADDING)
             .. SEPARATOR
             .. pad_str("", max_type_w, PADDING)
             .. SEPARATOR
             .. " "
-            .. msg
+            .. empty_msg
         table.insert(fmt_lines, line)
     else
         for _, v in ipairs(vars) do
@@ -148,39 +154,73 @@ function M.show_variables(vars, force_float)
         end
     end
 
+    -- Add help footer
+    table.insert(fmt_lines, "")
+    table.insert(fmt_lines, "PageUp/Down: Prev/Next | q: Close")
+
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, fmt_lines)
 
     -- Highlight
     vim.api.nvim_buf_add_highlight(buf, -1, "JovianHeader", 0, 0, -1)
     vim.api.nvim_buf_add_highlight(buf, -1, "JovianSeparator", 1, 0, -1)
+    vim.api.nvim_buf_add_highlight(buf, -1, "Comment", #fmt_lines - 1, 0, -1)
 
     local col1_end = sep_len_name
     local col2_end = col1_end + 3 + sep_len_type
 
-    for i = 2, #fmt_lines - 1 do
+    for i = 2, #fmt_lines - 3 do
         if #vars > 0 then
             vim.api.nvim_buf_add_highlight(buf, -1, "JovianVariable", i, 0, col1_end)
             vim.api.nvim_buf_add_highlight(buf, -1, "JovianType", i, col1_end + 3, col2_end)
             vim.api.nvim_buf_add_highlight(buf, -1, "JovianSeparator", i, col1_end, col1_end + 3)
             vim.api.nvim_buf_add_highlight(buf, -1, "JovianSeparator", i, col2_end, col2_end + 3)
-        else
-            vim.api.nvim_buf_add_highlight(buf, -1, "JovianSeparator", i, col1_end, col1_end + 3)
-            vim.api.nvim_buf_add_highlight(buf, -1, "JovianSeparator", i, col2_end, col2_end + 3)
-            vim.api.nvim_buf_add_highlight(buf, -1, "JovianComment", i, col2_end + 3, -1)
         end
     end
 
-    local content_width = 0
-    for _, line in ipairs(fmt_lines) do
-        content_width = math.max(content_width, vim.fn.strdisplaywidth(line))
+    local title = string.format("Jovian Variables [%d-%d / %d]", offset + 1, math.min(offset + limit, total), total)
+
+    -- In-place update check
+    local win
+    for _, w in ipairs(vim.api.nvim_list_wins()) do
+        local b = vim.api.nvim_win_get_buf(w)
+        if vim.api.nvim_buf_get_name(b):match("JovianVariables$") then
+            win = w
+            break
+        end
     end
 
-    local win = Windows.create_float_window(buf, "Jovian Variables", {
-        width = math.min(content_width, math.floor(vim.o.columns * 0.9)),
-        height = math.min(#fmt_lines, math.floor(vim.o.lines * 0.8)),
-    })
-    vim.wo[win].wrap = false
-    vim.wo[win].cursorline = true
+    if not win then
+        local content_width = 0
+        for _, line in ipairs(fmt_lines) do
+            content_width = math.max(content_width, vim.fn.strdisplaywidth(line))
+        end
+
+        win = Windows.create_float_window(buf, title, {
+            width = math.min(content_width, math.floor(vim.o.columns * 0.9)),
+            height = math.min(#fmt_lines, math.floor(vim.o.lines * 0.8)),
+        })
+        vim.wo[win].wrap = false
+        vim.wo[win].cursorline = true
+        State.win.variables = win
+    else
+        vim.api.nvim_win_set_buf(win, buf)
+        vim.api.nvim_win_set_config(win, { title = title, title_pos = "center" })
+    end
+
+    -- Keymaps
+    local kopts = { buffer = buf, nowait = true }
+    local function nav(new_offset)
+        new_offset = math.max(0, math.min(new_offset, total - 1))
+        require("jovian.core").show_variables({ offset = new_offset, limit = limit, force_float = true })
+    end
+
+    vim.keymap.set("n", "<PageDown>", function()
+        nav(offset + limit)
+    end, kopts)
+    vim.keymap.set("n", "<PageUp>", function()
+        nav(offset - limit)
+    end, kopts)
+    vim.keymap.set("n", "q", "<cmd>close<CR>", kopts)
 end
 
 function M.show_profile_stats(text)

@@ -220,9 +220,10 @@ function M.start_kernel(on_ready)
                 end,
             })
 
-            -- Native Lua Messenger (IOPUB)
+            -- Native Lua Messenger (IOPUB & SHELL)
             local function start_lua_messenger()
                 local Messenger = require("jovian.backend.messenger")
+                local Zmq = require("jovian.backend.zmq")
                 local conn_file = Config.options.connection_file
                 if not conn_file then
                     return
@@ -236,34 +237,90 @@ function M.start_kernel(on_ready)
                 end)
 
                 if ok then
-                    State.lua_messenger_stop = Messenger.listen_iopub(content, function(msg)
-                        vim.schedule(function()
-                            -- Handle status
-                            if msg.header.msg_type == "status" then
-                                local exec_state = msg.content.execution_state
-                                local parent = msg.parent_header
-                                if parent and parent.msg_id then
-                                    local cell_id = State.msg_id_cell_map[parent.msg_id]
-                                    if cell_id then
-                                        local bufnr = State.cell_buf_map[cell_id]
-                                        if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
-                                            if exec_state == "busy" then
-                                                UI.set_cell_status(
-                                                    bufnr,
-                                                    cell_id,
-                                                    "running",
-                                                    Config.options.ui_symbols.running
-                                                )
+                    local ctx = Zmq.new_ctx()
+                    local iopub_socket = Zmq.new_socket(ctx, Zmq.SUB)
+                    local shell_socket = Zmq.new_socket(ctx, Zmq.REQ)
+
+                    local iopub_endpoint = string.format("tcp://%s:%d", content.ip, content.iopub_port)
+                    local shell_endpoint = string.format("tcp://%s:%d", content.ip, content.shell_port)
+
+                    Zmq.connect(iopub_socket, iopub_endpoint)
+                    Zmq.connect(shell_socket, shell_endpoint)
+
+                    Zmq.setsockopt(iopub_socket, Zmq.SUBSCRIBE, "", 0)
+
+                    State.lua_shell_socket = shell_socket
+                    State.lua_zmq_key = content.key
+
+                    local timer = vim.loop.new_timer()
+                    local stream_buffer = {}
+                    local flush_timer = vim.loop.new_timer()
+
+                    local function flush_streams()
+                        if #stream_buffer > 0 then
+                            local combined = table.concat(stream_buffer, "")
+                            stream_buffer = {}
+                            vim.schedule(function()
+                                UI.append_to_repl(combined)
+                            end)
+                        end
+                    end
+
+                    flush_timer:start(50, 50, flush_streams)
+
+                    timer:start(
+                        0,
+                        20, -- Faster poll for responsiveness
+                        vim.schedule_wrap(function()
+                            while true do
+                                local msg = Messenger.parse_multipart(iopub_socket)
+                                if not msg then
+                                    break
+                                end
+
+                                if msg.header.msg_type == "status" then
+                                    local exec_state = msg.content.execution_state
+                                    local parent = msg.parent_header
+                                    if parent and parent.msg_id then
+                                        local cell_id = State.msg_id_cell_map[parent.msg_id]
+                                        if cell_id then
+                                            local bufnr = State.cell_buf_map[cell_id]
+                                            if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+                                                if exec_state == "busy" then
+                                                    UI.set_cell_status(
+                                                        bufnr,
+                                                        cell_id,
+                                                        "running",
+                                                        Config.options.ui_symbols.running
+                                                    )
+                                                elseif exec_state == "idle" then
+                                                    UI.set_cell_status(
+                                                        bufnr,
+                                                        cell_id,
+                                                        "done",
+                                                        Config.options.ui_symbols.done
+                                                    )
+                                                end
                                             end
                                         end
                                     end
+                                elseif msg.header.msg_type == "stream" then
+                                    table.insert(stream_buffer, msg.content.text)
                                 end
-                            elseif msg.header.msg_type == "stream" then
-                                -- Instant streaming output!
-                                UI.append_to_repl(msg.content.text, msg.content.name == "stderr" and "ErrorMsg" or nil)
                             end
                         end)
-                    end)
+                    )
+
+                    State.lua_messenger_stop = function()
+                        timer:stop()
+                        timer:close()
+                        flush_timer:stop()
+                        flush_timer:close()
+                        Zmq.zmq_close(iopub_socket)
+                        Zmq.zmq_close(shell_socket)
+                        Zmq.zmq_ctx_destroy(ctx)
+                        State.lua_shell_socket = nil
+                    end
                 end
             end
 
@@ -352,6 +409,26 @@ function M.send_payload(code, cell_id, filename)
     local cache_dir = file_dir .. "/.jovian_cache/" .. filename
     vim.fn.mkdir(cache_dir, "p")
 
+    if State.lua_shell_socket then
+        local Messenger = require("jovian.backend.messenger")
+        local req = Messenger.create_message("execute_request", {
+            code = code,
+            silent = false,
+            store_history = true,
+            user_expressions = {},
+            allow_stdin = true,
+            stop_on_error = true,
+        })
+        local msg_id = Messenger.send_message(State.lua_shell_socket, req, State.lua_zmq_key)
+        State.msg_id_cell_map[msg_id] = cell_id
+        State.cell_hashes[cell_id] = Cell.get_cell_hash(code)
+
+        -- Pre-set status to running for instant feedback
+        local bufnr = vim.api.nvim_get_current_buf()
+        UI.set_cell_status(bufnr, cell_id, "running", Config.options.ui_symbols.running)
+        return
+    end
+
     local payload = {
         command = "execute",
         code = code,
@@ -359,11 +436,6 @@ function M.send_payload(code, cell_id, filename)
         file_dir = cache_dir,
         cwd = not Config.options.ssh_host and file_dir or nil,
     }
-
-    -- Mapping for Lua messenger to know which cell is which
-    -- This will be filled when we get the real msg_id from the Python bridge's response
-    -- OR we can generate the msg_id here if we were sending from Lua.
-    -- For now, let's keep it simple.
 
     -- Store hash for stale detection
     State.cell_hashes[cell_id] = Cell.get_cell_hash(code)
@@ -609,6 +681,7 @@ function M.view_dataframe_page(var_name, offset, limit)
 end
 
 function M.show_variables(opts)
+    opts = opts or {}
     if not State.job_id then
         M.start_kernel(function()
             M.show_variables(opts)
@@ -616,12 +689,17 @@ function M.show_variables(opts)
         return
     end
 
-    if opts and opts.force_float then
+    if opts.force_float then
         State.vars_request_force_float = true
     end
 
-    local msg = vim.json.encode({ command = "get_variables" })
-    -- UI.append_to_repl("[Jovian] Requesting variables...", "Comment")
+    local payload = {
+        command = "get_variables",
+        offset = opts.offset or 0,
+        limit = opts.limit or 100,
+    }
+
+    local msg = vim.json.encode(payload)
     vim.api.nvim_chan_send(State.job_id, msg .. "\n")
 end
 

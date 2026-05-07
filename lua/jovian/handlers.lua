@@ -132,9 +132,8 @@ function M.handle_result_ready(msg)
 end
 
 function M.handle_variable_list(msg)
-    -- vim.notify("Received variables: " .. #msg.variables, vim.log.levels.INFO)
-    UI.show_variables(msg.variables, require("jovian.state").vars_request_force_float)
-    require("jovian.state").vars_request_force_float = false
+    UI.show_variables(msg, State.vars_request_force_float)
+    State.vars_request_force_float = false
 end
 
 function M.handle_dataframe_data(msg)

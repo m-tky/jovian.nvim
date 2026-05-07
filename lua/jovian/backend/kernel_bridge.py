@@ -61,7 +61,9 @@ class KernelBridge:
         name = cmd.get("name")
         script = ""
         if cmd_type == "get_variables":
-            script = """
+            offset = cmd.get("offset", 0)
+            limit = cmd.get("limit", 100)
+            script = f"""
 import json, types
 from IPython import get_ipython
 from IPython.display import display
@@ -69,14 +71,26 @@ def _jovian_vars():
     try:
         shell = get_ipython()
         ns = shell.user_ns if shell else globals()
+        keys = [k for k in ns.keys() if not k.startswith("_")]
+        keys.sort()
+
+        filtered_keys = []
+        for k in keys:
+            val = ns[k]
+            if isinstance(val, (types.ModuleType, types.FunctionType, type)): continue
+            filtered_keys.append(k)
+
+        total_vars = len(filtered_keys)
+        page_keys = filtered_keys[{offset}:{offset} + {limit}]
+
         var_list = []
-        for name, val in list(ns.items()):
-            if name.startswith("_") or isinstance(val, (types.ModuleType, types.FunctionType, type)): continue
+        for name in page_keys:
+            val = ns[name]
             type_name = type(val).__name__
             val_repr = repr(val).replace("\\n", " ")
             info = (val_repr[:97] + "...") if len(val_repr) > 100 else val_repr
-            var_list.append({"name": name, "type": type_name, "info": info})
-        display({"application/vnd.jovian.variables+json": {"variables": var_list}}, raw=True)
+            var_list.append({{"name": name, "type": type_name, "info": info}})
+        display({{"application/vnd.jovian.variables+json": {{"variables": var_list, "total_vars": total_vars, "offset": {offset}, "limit": {limit}}}}}, raw=True)
     except Exception: pass
 _jovian_vars()
 """
@@ -162,7 +176,7 @@ if "{name}" in ns:
         elif msg_type in ("display_data", "execute_result"):
             data = content.get("data", {})
             if "application/vnd.jovian.variables+json" in data:
-                send_json({"type": "variable_list", "variables": data["application/vnd.jovian.variables+json"]["variables"]})
+                send_json({**data["application/vnd.jovian.variables+json"], "type": "variable_list"})
             elif "application/vnd.jovian.dataframe+json" in data:
                 send_json({**data["application/vnd.jovian.dataframe+json"], "type": "dataframe_data"})
             elif "application/vnd.jovian.peek+json" in data:

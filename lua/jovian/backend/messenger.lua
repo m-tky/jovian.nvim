@@ -1,11 +1,49 @@
+local ffi = require("ffi")
 local zmq = require("jovian.backend.zmq")
+
+ffi.cdef([[
+    typedef struct engine_st ENGINE;
+    typedef struct evp_md_st EVP_MD;
+    const EVP_MD *EVP_sha256(void);
+    unsigned char *HMAC(const EVP_MD *evp_md, const void *key, int key_len,
+                        const unsigned char *d, size_t n, unsigned char *md,
+                        unsigned int *md_len);
+]])
+
+local crypto_lib = nil
+local function get_crypto()
+    if crypto_lib then
+        return crypto_lib
+    end
+    local ok, lib = pcall(ffi.load, "crypto")
+    if not ok then
+        error("Jovian: libcrypto not found. Please ensure openssl is installed.")
+    end
+    crypto_lib = lib
+    return crypto_lib
+end
+
+local function hmac_sha256(key, data)
+    if not key or key == "" then
+        return ""
+    end
+    local md = ffi.new("unsigned char[32]")
+    local md_len = ffi.new("unsigned int[1]")
+    get_crypto().HMAC(get_crypto().EVP_sha256(), key, #key, data, #data, md, md_len)
+
+    local hex = ""
+    for i = 0, 31 do
+        hex = hex .. string.format("%02x", md[i])
+    end
+    return hex
+end
 
 local M = {}
 
-function M.parse_multipart(socket)
+function M.parse_multipart(socket, flags)
     local parts = {}
     repeat
-        local part = zmq.recv_msg(socket)
+        local part = zmq.recv_msg(socket, flags)
         if part then
             table.insert(parts, part)
         end
@@ -77,6 +115,43 @@ function M.listen_iopub(config, on_msg)
         zmq.zmq_close(socket)
         zmq.zmq_ctx_destroy(ctx)
     end
+end
+
+function M.create_message(msg_type, content, parent_header, metadata)
+    local header = {
+        msg_id = vim.fn.reltimestr(vim.fn.reltime()):gsub("%.", ""),
+        username = "jovian",
+        session = "jovian-session",
+        msg_type = msg_type,
+        version = "5.3",
+        date = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    }
+    return {
+        header = header,
+        parent_header = parent_header or {},
+        metadata = metadata or {},
+        content = content or {},
+    }
+end
+
+function M.send_message(socket, msg, key)
+    local h = vim.json.encode(msg.header)
+    local p = vim.json.encode(msg.parent_header)
+    local m = vim.json.encode(msg.metadata)
+    local c = vim.json.encode(msg.content)
+
+    local signature_data = h .. p .. m .. c
+    local signature = hmac_sha256(key, signature_data)
+
+    zmq.send(socket, msg.header.msg_id, zmq.SNDMORE)
+    zmq.send(socket, "<IDS|MSG>", zmq.SNDMORE)
+    zmq.send(socket, signature, zmq.SNDMORE)
+    zmq.send(socket, h, zmq.SNDMORE)
+    zmq.send(socket, p, zmq.SNDMORE)
+    zmq.send(socket, m, zmq.SNDMORE)
+    zmq.send(socket, c, 0)
+
+    return msg.header.msg_id
 end
 
 return M

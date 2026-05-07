@@ -36,6 +36,9 @@ function M.setup(opts)
     -- Register Commands
     require("jovian.commands").setup()
 
+    -- Completion
+    M.Complete = require("jovian.complete")
+
     -- Fold (Buffer-local for Python)
     vim.api.nvim_create_autocmd("FileType", {
         pattern = "python",
@@ -43,6 +46,9 @@ function M.setup(opts)
             vim.opt_local.foldmethod = "expr"
             vim.opt_local.foldexpr = "getline(v:lnum)=~'^#\\ %%'?'0':'1'"
             vim.opt_local.foldlevel = 99
+
+            -- Setup Jovian Runtime Completion
+            M.Complete.setup_omnifunc()
         end,
     })
 

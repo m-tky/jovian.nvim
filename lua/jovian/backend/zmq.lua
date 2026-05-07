@@ -12,7 +12,10 @@ local function get_zmq()
         int zmq_close(void *socket);
         int zmq_ctx_destroy(void *context);
         int zmq_msg_init(void *msg);
+        int zmq_msg_send(void *msg, void *socket, int flags);
         int zmq_msg_recv(void *msg, void *socket, int flags);
+        int zmq_send(void *socket, const void *buf, size_t len, int flags);
+        int zmq_recv(void *socket, void *buf, size_t len, int flags);
         void *zmq_msg_data(void *msg);
         size_t zmq_msg_size(void *msg);
         int zmq_msg_close(void *msg);
@@ -30,9 +33,11 @@ end
 local M = {}
 
 M.SUB = 2
+M.REQ = 3
 M.SUBSCRIBE = 6
 M.DONTWAIT = 1
 M.RCVMORE = 13
+M.SNDMORE = 2
 
 function M.new_ctx()
     return get_zmq().zmq_ctx_new()
@@ -68,6 +73,20 @@ end
 
 function M.setsockopt(socket, option, value, len)
     return get_zmq().zmq_setsockopt(socket, option, value, len or #value) == 0
+end
+
+function M.send(socket, data, flags)
+    return get_zmq().zmq_send(socket, data, #data, flags or 0)
+end
+
+function M.recv(socket, len, flags)
+    len = len or 4096
+    local buf = ffi.new("uint8_t[?]", len)
+    local actual_len = get_zmq().zmq_recv(socket, buf, len, flags or 0)
+    if actual_len < 0 then
+        return nil
+    end
+    return ffi.string(buf, actual_len)
 end
 
 return M
