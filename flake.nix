@@ -122,12 +122,15 @@
             exec ${neovimWithPlugins}/bin/nvim -u ${initLua} "$@"
           '';
 
-        in
-        {
-          default = nvim-jovian;
-          nvim-jovian = nvim-jovian;
-          jovian-nvim = jovian-nvim;
-          pythonEnv = pythonEnv;
+          nvim-jovian-fallback = pkgs.writeShellScriptBin "nvim-jovian-fallback" ''
+            export NVIM_APPNAME="nvim-jovian-fallback"
+            export XDG_CONFIG_HOME=$(mktemp -d)
+            export XDG_DATA_HOME=$(mktemp -d)
+            export XDG_STATE_HOME=$(mktemp -d)
+            export JOVIAN_PYTHON="${pythonEnv}/bin/python3"
+            # Note: No ZMQ or OpenSSL in LD_LIBRARY_PATH here
+            exec ${neovimWithPlugins}/bin/nvim -u ${initLua} "$@"
+          '';
 
           run-tests = pkgs.writeShellScriptBin "run-tests" ''
             echo ">>> Running New Feature Integration Tests (Real Kernel)..."
@@ -135,16 +138,31 @@
 
             echo ">>> Running Integration Tests (Real Kernel)..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/edge_cases.lua
-            
+
             echo ">>> Running Command Tests (Mocked)..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_commands.lua
-            
+
             echo ">>> Running Async Flow Tests..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_async_flow.lua
-            
+
             echo ">>> Running UI/Layout Tests..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_resize_layout.lua
           '';
+
+          run-tests-fallback = pkgs.writeShellScriptBin "run-tests-fallback" ''
+            echo ">>> Running Fallback Mode Tests (NO Native ZMQ)..."
+            ${nvim-jovian-fallback}/bin/nvim-jovian-fallback --headless -l tests/test_features.lua
+            ${nvim-jovian-fallback}/bin/nvim-jovian-fallback --headless -l tests/edge_cases.lua
+          '';
+        in
+        {
+          default = nvim-jovian;
+          nvim-jovian = nvim-jovian;
+          nvim-jovian-fallback = nvim-jovian-fallback;
+          jovian-nvim = jovian-nvim;
+          pythonEnv = pythonEnv;
+          run-tests = run-tests;
+          run-tests-fallback = run-tests-fallback;
         }
       );
 
@@ -160,6 +178,17 @@
             buildPhase = ''
               export HOME=$TMPDIR
               ${self.packages.${system}.run-tests}/bin/run-tests
+            '';
+            installPhase = "touch $out";
+          };
+
+          fallback-test = pkgs.stdenv.mkDerivation {
+            name = "jovian-fallback-test";
+            src = self;
+            buildInputs = [ self.packages.${system}.run-tests-fallback ];
+            buildPhase = ''
+              export HOME=$TMPDIR
+              ${self.packages.${system}.run-tests-fallback}/bin/run-tests-fallback
             '';
             installPhase = "touch $out";
           };

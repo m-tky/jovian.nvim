@@ -10,8 +10,33 @@ local function run_real_integration_tests()
     jovian.setup({})
 
     local core = require("jovian.core")
-    local state = require("jovian.state")
     local ui = require("jovian.ui")
+    local state = require("jovian.state")
+
+    -- Mock clipboard for headless CI
+    vim.g.clipboard = {
+        name = "mock",
+        copy = {
+            ["+"] = function(lines)
+                vim.g.mock_clipboard = lines
+            end,
+            ["*"] = function(lines)
+                vim.g.mock_clipboard = lines
+            end,
+        },
+        paste = {
+            ["+"] = function()
+                return vim.g.mock_clipboard or {}
+            end,
+            ["*"] = function()
+                return vim.g.mock_clipboard or {}
+            end,
+        },
+        cache_enabled = 0,
+    }
+
+    -- Also override vim.fn.getreg for consistency if needed,
+    -- but usually vim.g.clipboard is enough for setreg("+", ...)
 
     -- Ensure base windows exist
     pcall(ui.open_windows)
@@ -121,14 +146,21 @@ local function run_real_integration_tests()
 
     -- Step 4: Test Clipboard
     log("\n>>> Step 4: Testing JovianCopy")
-    vim.fn.setreg("+", "")
+    vim.fn.setreg("+", "empty")
     vim.cmd("JovianCopy x")
-    if vim.wait(5000, function()
-        return vim.fn.getreg("+") == "11223"
-    end) then
+    if
+        vim.wait(5000, function()
+            -- Use getreg but be aware it might return a table or string depending on provider
+            local val = vim.fn.getreg("+")
+            if type(val) == "table" then
+                val = table.concat(val, "\n")
+            end
+            return val == "11223"
+        end)
+    then
         log("[OK] JovianCopy verified")
     else
-        log("[FAIL] JovianCopy failed")
+        log("[FAIL] JovianCopy failed. Reg value: " .. vim.inspect(vim.fn.getreg("+")))
         os.exit(1)
     end
 

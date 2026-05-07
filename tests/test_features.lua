@@ -161,7 +161,7 @@ local function run_tests()
 
     -- Test Feature 3: SSH Config Parser
     log("\n>>> Testing Feature 3: SSH Config Parser")
-    local ssh_config_path = "/tmp/jovian_ssh_test"
+    local ssh_config_path = vim.fn.tempname()
     local ssh_content = {
         "Host test-host",
         "  HostName 1.2.3.4",
