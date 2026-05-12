@@ -25,57 +25,42 @@ local function get_zmq()
     return Zmq
 end
 
+local json_decode = vim.json and vim.json.decode or vim.fn.json_decode
+
+local function dispatch_line(line)
+    if line == "" then
+        return
+    end
+    local ok, msg = pcall(json_decode, line)
+    if ok and msg then
+        vim.schedule(function()
+            local handler_name = "handle_" .. (msg.type or "")
+            if Handlers[handler_name] then
+                local h_ok, h_err = pcall(Handlers[handler_name], msg)
+                if not h_ok then
+                    UI.append_to_repl("[Handler Error: " .. tostring(h_err) .. "]", "ErrorMsg")
+                end
+            end
+        end)
+    else
+        vim.schedule(function()
+            UI.append_to_repl(line, "Comment")
+        end)
+    end
+end
+
 local function process_output_data(data, buffer_key)
     if not data or #data == 0 then
         return
     end
 
-    local first = data[1] or ""
-    State[buffer_key] = (State[buffer_key] or "") .. first
+    State[buffer_key] = (State[buffer_key] or "") .. (data[1] or "")
 
     if #data > 1 then
-        local line = State[buffer_key]
-        if line ~= "" then
-            local ok, msg = pcall(vim.json and vim.json.decode or vim.fn.json_decode, line)
-            if ok and msg then
-                vim.schedule(function()
-                    local handler_name = "handle_" .. (msg.type or "")
-                    if Handlers[handler_name] then
-                        local h_ok, h_err = pcall(Handlers[handler_name], msg)
-                        if not h_ok then
-                            UI.append_to_repl("[Handler Error: " .. tostring(h_err) .. "]", "ErrorMsg")
-                        end
-                    end
-                end)
-            else
-                vim.schedule(function()
-                    UI.append_to_repl(line, "Comment")
-                end)
-            end
-        end
-
+        dispatch_line(State[buffer_key])
         for i = 2, #data - 1 do
-            local l = data[i]
-            if l ~= "" then
-                local ok, msg = pcall(vim.json and vim.json.decode or vim.fn.json_decode, l)
-                if ok and msg then
-                    vim.schedule(function()
-                        local handler_name = "handle_" .. (msg.type or "")
-                        if Handlers[handler_name] then
-                            local h_ok, h_err = pcall(Handlers[handler_name], msg)
-                            if not h_ok then
-                                UI.append_to_repl("[Handler Error: " .. tostring(h_err) .. "]", "ErrorMsg")
-                            end
-                        end
-                    end)
-                else
-                    vim.schedule(function()
-                        UI.append_to_repl(l, "Comment")
-                    end)
-                end
-            end
+            dispatch_line(data[i])
         end
-
         State[buffer_key] = data[#data]
     end
 end
@@ -182,6 +167,124 @@ function M.sync_backend(host, backend_dir, on_success, on_error)
     })
 end
 
+function M._start_lua_messenger()
+    if not Config.options.use_lua_native_shell then
+        return
+    end
+
+    local m = get_messenger()
+    if not m.is_available() then
+        if State.is_discovering_zmq then
+            vim.defer_fn(M._start_lua_messenger, 200)
+            return
+        end
+        if not State.has_warned_native_unavailable then
+            vim.schedule(function()
+                vim.notify(
+                    "[Jovian] Performance Mode (Native ZMQ) is unavailable because "
+                        .. "'libzmq' or 'openssl' is missing.\n"
+                        .. "Falling back to Python bridge. For maximum performance, "
+                        .. "please install these system dependencies.",
+                    vim.log.levels.WARN
+                )
+            end)
+            State.has_warned_native_unavailable = true
+        end
+        return
+    end
+
+    local z = get_zmq()
+    local conn_file = Config.options.connection_file
+    if not conn_file then
+        return
+    end
+
+    local ok, content = pcall(function()
+        local f = io.open(conn_file, "r")
+        local res = f:read("*a")
+        f:close()
+        return vim.json.decode(res)
+    end)
+
+    if not ok then
+        return
+    end
+
+    local ctx = z.new_ctx()
+    local iopub_socket = z.new_socket(ctx, z.SUB)
+    local shell_socket = z.new_socket(ctx, z.REQ)
+
+    z.connect(iopub_socket, string.format("tcp://%s:%d", content.ip, content.iopub_port))
+    z.connect(shell_socket, string.format("tcp://%s:%d", content.ip, content.shell_port))
+    z.setsockopt(iopub_socket, z.SUBSCRIBE, "", 0)
+
+    State.lua_shell_socket = shell_socket
+    State.lua_zmq_key = content.key
+
+    local timer = vim.loop.new_timer()
+    local stream_buffer = {}
+    local flush_timer = vim.loop.new_timer()
+
+    flush_timer:start(50, 50, function()
+        if #stream_buffer > 0 then
+            local combined = table.concat(stream_buffer, "")
+            stream_buffer = {}
+            vim.schedule(function()
+                UI.append_to_repl(combined)
+            end)
+        end
+    end)
+
+    timer:start(
+        0,
+        20,
+        vim.schedule_wrap(function()
+            while true do
+                local msg = m.parse_multipart(iopub_socket)
+                if not msg then
+                    break
+                end
+                if msg.header.msg_type == "status" then
+                    local exec_state = msg.content.execution_state
+                    local parent = msg.parent_header
+                    if parent and parent.msg_id then
+                        local cell_id = State.msg_id_cell_map[parent.msg_id]
+                        if cell_id then
+                            local bufnr = State.cell_buf_map[cell_id]
+                            if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+                                if exec_state == "busy" then
+                                    UI.set_cell_status(bufnr, cell_id, "running", Config.options.ui_symbols.running)
+                                elseif exec_state == "idle" then
+                                    UI.set_cell_status(bufnr, cell_id, "done", Config.options.ui_symbols.done)
+                                end
+                            end
+                        end
+                    end
+                elseif msg.header.msg_type == "stream" then
+                    table.insert(stream_buffer, msg.content.text)
+                end
+            end
+            while true do
+                local reply = m.parse_multipart(shell_socket, z.DONTWAIT)
+                if not reply then
+                    break
+                end
+            end
+        end)
+    )
+
+    State.lua_messenger_stop = function()
+        timer:stop()
+        timer:close()
+        flush_timer:stop()
+        flush_timer:close()
+        z.zmq_close(iopub_socket)
+        z.zmq_close(shell_socket)
+        z.zmq_ctx_destroy(ctx)
+        State.lua_shell_socket = nil
+    end
+end
+
 function M.start_kernel(on_ready)
     -- If called from command, on_ready might be a table (args). Ignore it.
     if type(on_ready) ~= "function" then
@@ -236,150 +339,9 @@ function M.start_kernel(on_ready)
                 end,
             })
 
-            -- Native Lua Messenger (IOPUB & SHELL)
-            local function start_lua_messenger()
-                if not Config.options.use_lua_native_shell then
-                    return
-                end
-
-                local m = get_messenger()
-                if not m.is_available() then
-                    if State.is_discovering_zmq then
-                        -- Discovery is still in progress, wait a bit and retry
-                        vim.defer_fn(start_lua_messenger, 200)
-                        return
-                    end
-
-                    if not State.has_warned_native_unavailable then
-                        vim.schedule(function()
-                            vim.notify(
-                                "[Jovian] Performance Mode (Native ZMQ) is unavailable because "
-                                    .. "'libzmq' or 'openssl' is missing.\n"
-                                    .. "Falling back to Python bridge. For maximum performance, "
-                                    .. "please install these system dependencies.",
-                                vim.log.levels.WARN
-                            )
-                        end)
-                        State.has_warned_native_unavailable = true
-                    end
-                    return
-                end
-
-                local z = get_zmq()
-                local conn_file = Config.options.connection_file
-                if not conn_file then
-                    return
-                end
-
-                local ok, content = pcall(function()
-                    local f = io.open(conn_file, "r")
-                    local res = f:read("*a")
-                    f:close()
-                    return vim.json.decode(res)
-                end)
-
-                if ok then
-                    local ctx = z.new_ctx()
-                    local iopub_socket = z.new_socket(ctx, z.SUB)
-                    local shell_socket = z.new_socket(ctx, z.REQ)
-
-                    local iopub_endpoint = string.format("tcp://%s:%d", content.ip, content.iopub_port)
-                    local shell_endpoint = string.format("tcp://%s:%d", content.ip, content.shell_port)
-
-                    z.connect(iopub_socket, iopub_endpoint)
-                    z.connect(shell_socket, shell_endpoint)
-
-                    z.setsockopt(iopub_socket, z.SUBSCRIBE, "", 0)
-
-                    State.lua_shell_socket = shell_socket
-                    State.lua_zmq_key = content.key
-
-                    local timer = vim.loop.new_timer()
-                    local stream_buffer = {}
-                    local flush_timer = vim.loop.new_timer()
-
-                    local function flush_streams()
-                        if #stream_buffer > 0 then
-                            local combined = table.concat(stream_buffer, "")
-                            stream_buffer = {}
-                            vim.schedule(function()
-                                UI.append_to_repl(combined)
-                            end)
-                        end
-                    end
-
-                    flush_timer:start(50, 50, flush_streams)
-
-                    timer:start(
-                        0,
-                        20, -- Faster poll for responsiveness
-                        vim.schedule_wrap(function()
-                            while true do
-                                local msg = m.parse_multipart(iopub_socket)
-                                if not msg then
-                                    break
-                                end
-
-                                if msg.header.msg_type == "status" then
-                                    local exec_state = msg.content.execution_state
-                                    local parent = msg.parent_header
-                                    if parent and parent.msg_id then
-                                        local cell_id = State.msg_id_cell_map[parent.msg_id]
-                                        if cell_id then
-                                            local bufnr = State.cell_buf_map[cell_id]
-                                            if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
-                                                if exec_state == "busy" then
-                                                    UI.set_cell_status(
-                                                        bufnr,
-                                                        cell_id,
-                                                        "running",
-                                                        Config.options.ui_symbols.running
-                                                    )
-                                                elseif exec_state == "idle" then
-                                                    UI.set_cell_status(
-                                                        bufnr,
-                                                        cell_id,
-                                                        "done",
-                                                        Config.options.ui_symbols.done
-                                                    )
-                                                end
-                                            end
-                                        end
-                                    end
-                                elseif msg.header.msg_type == "stream" then
-                                    table.insert(stream_buffer, msg.content.text)
-                                end
-                            end
-
-                            -- Poll Shell Socket for replies to keep REQ/REP state clean
-                            while true do
-                                local reply = m.parse_multipart(shell_socket, z.DONTWAIT)
-                                if not reply then
-                                    break
-                                end
-                                -- We currently don't need to do much with shell replies in background
-                                -- but we could buffer them if needed for async execution tracking.
-                            end
-                        end)
-                    )
-
-                    State.lua_messenger_stop = function()
-                        timer:stop()
-                        timer:close()
-                        flush_timer:stop()
-                        flush_timer:close()
-                        z.zmq_close(iopub_socket)
-                        z.zmq_close(shell_socket)
-                        z.zmq_ctx_destroy(ctx)
-                        State.lua_shell_socket = nil
-                    end
-                end
-            end
-
             if Config.options.connection_file then
-                start_lua_messenger()
+                M._start_lua_messenger()
             end
-            -- UI.append_to_repl("[Jovian Kernel Started]")
             if on_ready then
                 table.insert(State.on_ready_callbacks, on_ready)
             end
@@ -403,13 +365,20 @@ function M.start_kernel(on_ready)
     end)
 end
 
+local function with_kernel(fn)
+    if State.job_id then
+        fn()
+    else
+        M.start_kernel(fn)
+    end
+end
+
 function M.stop_kernel()
     if State.job_id then
         local id = State.job_id
         State.job_id = nil
         vim.fn.jobstop(id)
     end
-    -- Feature 3: Cleanup tunnel
     require("jovian.tunnel").stop()
 end
 
@@ -428,7 +397,7 @@ end
 
 function M.send_payload(code, cell_id, filename)
     if not State.job_id then
-        M.start_kernel(function()
+        with_kernel(function()
             M.send_payload(code, cell_id, filename)
         end)
         return
@@ -495,36 +464,15 @@ function M.send_payload(code, cell_id, filename)
     vim.api.nvim_chan_send(State.job_id, msg .. "\n")
 end
 
--- Add: Profiling
-function M.profile_cell(code, cell_id)
-    if not State.job_id then
-        M.start_kernel(function()
-            M.profile_cell(code, cell_id)
-        end)
-        return
-    end
-    local msg = vim.json.encode({
-        command = "profile",
-        code = code,
-        cell_id = cell_id,
-    })
-    vim.api.nvim_chan_send(State.job_id, msg .. "\n")
-end
-
--- Add: Copy
 function M.copy_variable(args)
-    if not State.job_id then
-        M.start_kernel(function()
-            M.copy_variable(args)
-        end)
-        return
-    end
-    local var_name = args.args
-    if var_name == "" then
-        var_name = vim.fn.expand("<cword>")
-    end
-    local msg = vim.json.encode({ command = "copy_to_clipboard", name = var_name })
-    vim.api.nvim_chan_send(State.job_id, msg .. "\n")
+    with_kernel(function()
+        local var_name = args.args
+        if var_name == "" then
+            var_name = vim.fn.expand("<cword>")
+        end
+        local msg = vim.json.encode({ command = "copy_to_clipboard", name = var_name })
+        vim.api.nvim_chan_send(State.job_id, msg .. "\n")
+    end)
 end
 
 function M.print_backend()
@@ -566,20 +514,6 @@ function M.send_cell()
         fn = "untitled"
     end
     M.send_payload(table.concat(lines, "\n"), id, fn)
-end
-
--- Add: Profile current cell
-function M.run_profile_cell()
-    if not is_window_open() then
-        return vim.notify("Jovian windows are closed.", vim.log.levels.WARN)
-    end
-    local s, e = Cell.get_cell_range()
-    local lines = vim.api.nvim_buf_get_lines(0, s - 1, e, false)
-    if #lines > 0 and lines[1]:match("^# %%%%") then
-        table.remove(lines, 1)
-    end
-    local id = Cell.get_current_cell_id(s, true)
-    M.profile_cell(table.concat(lines, "\n"), id)
 end
 
 function M.send_selection()
@@ -691,55 +625,40 @@ function M.run_all_cells()
     if not is_window_open() then
         return
     end
-    if not State.job_id then
-        M.start_kernel(function()
-            M.run_all_cells()
-        end)
-        return
-    end
-    local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-    M._execute_lines(lines, "RunAll")
+    with_kernel(function()
+        local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+        M._execute_lines(lines, "RunAll")
+    end)
 end
 
 function M.run_cells_above()
     if not is_window_open() then
         return
     end
-    if not State.job_id then
-        M.start_kernel(function()
-            M.run_cells_above()
-        end)
-        return
-    end
-    local cursor_line = vim.fn.line(".")
-    local cur_s, _ = Cell.get_cell_range(cursor_line)
-    local lines = vim.api.nvim_buf_get_lines(0, 0, cur_s - 1, false)
-    M._execute_lines(lines, "RunCellsAbove")
+    with_kernel(function()
+        local cursor_line = vim.fn.line(".")
+        local cur_s, _ = Cell.get_cell_range(cursor_line)
+        local lines = vim.api.nvim_buf_get_lines(0, 0, cur_s - 1, false)
+        M._execute_lines(lines, "RunCellsAbove")
+    end)
 end
 
 function M.view_dataframe(args)
-    if not State.job_id then
-        M.start_kernel(function()
-            M.view_dataframe(args)
-        end)
-        return
-    end
-
-    local var_name = type(args) == "table" and args.args or args
-    if var_name == "" or var_name == nil then
-        var_name = vim.fn.expand("<cword>")
-    end
-
-    local offset = (args and type(args) == "table") and args.offset or 0
-    local limit = (args and type(args) == "table") and args.limit or Config.options.dataframe_page_size
-
-    local msg = vim.json.encode({
-        command = "view_dataframe",
-        name = var_name,
-        offset = offset,
-        limit = limit,
-    })
-    vim.api.nvim_chan_send(State.job_id, msg .. "\n")
+    with_kernel(function()
+        local var_name = type(args) == "table" and args.args or args
+        if var_name == "" or var_name == nil then
+            var_name = vim.fn.expand("<cword>")
+        end
+        local offset = (args and type(args) == "table") and args.offset or 0
+        local limit = (args and type(args) == "table") and args.limit or Config.options.dataframe_page_size
+        local msg = vim.json.encode({
+            command = "view_dataframe",
+            name = var_name,
+            offset = offset,
+            limit = limit,
+        })
+        vim.api.nvim_chan_send(State.job_id, msg .. "\n")
+    end)
 end
 
 function M.view_dataframe_page(var_name, offset, limit)
@@ -748,25 +667,17 @@ end
 
 function M.show_variables(opts)
     opts = opts or {}
-    if not State.job_id then
-        M.start_kernel(function()
-            M.show_variables(opts)
-        end)
-        return
-    end
-
-    if opts.force_float then
-        State.vars_request_force_float = true
-    end
-
-    local payload = {
-        command = "get_variables",
-        offset = opts.offset or 0,
-        limit = opts.limit or 100,
-    }
-
-    local msg = vim.json.encode(payload)
-    vim.api.nvim_chan_send(State.job_id, msg .. "\n")
+    with_kernel(function()
+        if opts.force_float then
+            State.vars_request_force_float = true
+        end
+        local msg = vim.json.encode({
+            command = "get_variables",
+            offset = opts.offset or 0,
+            limit = opts.limit or 100,
+        })
+        vim.api.nvim_chan_send(State.job_id, msg .. "\n")
+    end)
 end
 
 function M.interrupt_kernel()
@@ -791,37 +702,26 @@ function M.interrupt_kernel()
     end
 end
 
--- Add command functions
 function M.inspect_object(args)
-    if not State.job_id then
-        M.start_kernel(function()
-            M.inspect_object(args)
-        end)
-        return
-    end
-    local var_name = args.args
-    if var_name == "" then
-        var_name = vim.fn.expand("<cword>")
-    end
-
-    local msg = vim.json.encode({ command = "inspect", name = var_name })
-    vim.api.nvim_chan_send(State.job_id, msg .. "\n")
+    with_kernel(function()
+        local var_name = args.args
+        if var_name == "" then
+            var_name = vim.fn.expand("<cword>")
+        end
+        local msg = vim.json.encode({ command = "inspect", name = var_name })
+        vim.api.nvim_chan_send(State.job_id, msg .. "\n")
+    end)
 end
 
 function M.peek_symbol(args)
-    if not State.job_id then
-        M.start_kernel(function()
-            M.peek_symbol(args)
-        end)
-        return
-    end
-    local var_name = args.args
-    if var_name == "" then
-        var_name = vim.fn.expand("<cword>")
-    end
-
-    local msg = vim.json.encode({ command = "peek", name = var_name })
-    vim.api.nvim_chan_send(State.job_id, msg .. "\n")
+    with_kernel(function()
+        local var_name = args.args
+        if var_name == "" then
+            var_name = vim.fn.expand("<cword>")
+        end
+        local msg = vim.json.encode({ command = "peek", name = var_name })
+        vim.api.nvim_chan_send(State.job_id, msg .. "\n")
+    end)
 end
 
 -- Initialize
@@ -849,21 +749,13 @@ vim.schedule(function()
 end)
 
 function M.toggle_plot_view()
-    if not State.job_id then
-        M.start_kernel(function()
-            M.toggle_plot_view()
-        end)
-        return
-    end
-
-    local current = Config.options.plot_view_mode
-    local new_mode = current == "inline" and "window" or "inline"
-    Config.options.plot_view_mode = new_mode
-
-    local msg = vim.json.encode({ command = "set_plot_mode", mode = new_mode })
-    vim.api.nvim_chan_send(State.job_id, msg .. "\n")
-
-    vim.notify("Plot View Mode: " .. new_mode, vim.log.levels.INFO)
+    with_kernel(function()
+        local new_mode = Config.options.plot_view_mode == "inline" and "window" or "inline"
+        Config.options.plot_view_mode = new_mode
+        local msg = vim.json.encode({ command = "set_plot_mode", mode = new_mode })
+        vim.api.nvim_chan_send(State.job_id, msg .. "\n")
+        vim.notify("Plot View Mode: " .. new_mode, vim.log.levels.INFO)
+    end)
 end
 function M.show_error_diagnostics(bufnr, cell_id, error_info)
     local start_line = State.cell_start_line[cell_id] or 1
@@ -887,6 +779,63 @@ function M.show_error_diagnostics(bufnr, cell_id, error_info)
             severity = vim.diagnostic.severity.ERROR,
             source = "Jovian",
         },
+    })
+end
+
+function M.open_repl()
+    if not State.job_id then
+        vim.notify("Start the kernel first with :JovianStart", vim.log.levels.WARN)
+        return
+    end
+
+    local function launch_console(conn_file)
+        vim.cmd("belowright split")
+        vim.api.nvim_win_set_height(0, math.floor(vim.o.lines * 0.35))
+
+        if conn_file then
+            vim.fn.termopen({ "jupyter", "console", "--existing", conn_file })
+        else
+            vim.notify(
+                "[Jovian] No connection file — opening standalone IPython (variables not shared with cells)",
+                vim.log.levels.WARN
+            )
+            vim.fn.termopen({ Config.options.python_interpreter, "-m", "IPython" })
+        end
+
+        vim.cmd("startinsert")
+    end
+
+    local conn_file = Config.options.connection_file
+    if conn_file and vim.fn.filereadable(conn_file) == 1 then
+        launch_console(conn_file)
+        return
+    end
+
+    -- Kernel is running but no connection file recorded yet —
+    -- ask Jupyter for the runtime dir and pick the newest kernel file
+    vim.fn.jobstart({ "jupyter", "--runtime-dir" }, {
+        stdout_buffered = true,
+        on_stdout = function(_, data)
+            if not data or not data[1] or data[1] == "" then
+                launch_console(nil)
+                return
+            end
+            local runtime_dir = vim.trim(data[1])
+            local files = vim.fn.glob(runtime_dir .. "/kernel-*.json", false, true)
+            if #files == 0 then
+                launch_console(nil)
+                return
+            end
+            table.sort(files, function(a, b)
+                return vim.fn.getftime(a) > vim.fn.getftime(b)
+            end)
+            launch_console(files[1])
+        end,
+        on_exit = function(_, code)
+            if code ~= 0 then
+                launch_console(nil)
+            end
+        end,
     })
 end
 

@@ -95,6 +95,9 @@ function M.setup()
     vim.api.nvim_create_user_command("JovianSendSelection", Core.send_selection, { range = true })
     vim.api.nvim_create_user_command("JovianRunAll", Core.run_all_cells, {})
     vim.api.nvim_create_user_command("JovianRestart", Core.restart_kernel, {})
+    vim.api.nvim_create_user_command("JovianREPL", Core.open_repl, {
+        desc = "Open interactive IPython REPL connected to the running kernel",
+    })
 
     -- Host Management
     vim.api.nvim_create_user_command("JovianAddHost", function(opts)
@@ -374,7 +377,7 @@ function M.setup()
     end, {})
     vim.api.nvim_create_user_command("JovianView", Core.view_dataframe, { nargs = "?" })
     vim.api.nvim_create_user_command("JovianCopy", Core.copy_variable, { nargs = "?" })
-    vim.api.nvim_create_user_command("JovianProfile", Core.run_profile_cell, {})
+
     vim.api.nvim_create_user_command("JovianBackend", Core.print_backend, {})
 
     -- Navigation
@@ -399,10 +402,11 @@ function M.setup()
         require("jovian.core").toggle_plot_view()
     end, {})
 
-    -- User triggered inline image rendering
-    vim.api.nvim_create_user_command("JovianRenderImages", function()
-        require("jovian.inline_images").render_for_buffer(vim.api.nvim_get_current_buf())
-    end, { desc = "Jovian: Force Render Inline Notebook Images" })
+    if Config.options.inline_images then
+        vim.api.nvim_create_user_command("JovianRenderImages", function()
+            require("jovian.inline_images").render_for_buffer(vim.api.nvim_get_current_buf())
+        end, { desc = "Jovian: Force Render Inline Notebook Images" })
+    end
 
     -- Pinning
     vim.api.nvim_create_user_command("JovianPin", function()
@@ -428,23 +432,18 @@ function M.setup()
         UI.toggle_pin_window()
     end, {})
 
+    local function cell_edit(action)
+        return function()
+            action()
+            require("jovian.session").check_structure_change()
+        end
+    end
+
     -- Cell Editing
-    vim.api.nvim_create_user_command("JovianDeleteCell", function()
-        require("jovian.cell").delete_cell()
-        require("jovian.session").check_structure_change()
-    end, {})
-    vim.api.nvim_create_user_command("JovianMoveCellUp", function()
-        require("jovian.cell").move_cell_up()
-        require("jovian.session").check_structure_change()
-    end, {})
-    vim.api.nvim_create_user_command("JovianMoveCellDown", function()
-        require("jovian.cell").move_cell_down()
-        require("jovian.session").check_structure_change()
-    end, {})
-    vim.api.nvim_create_user_command("JovianSplitCell", function()
-        require("jovian.cell").split_cell()
-        require("jovian.session").check_structure_change()
-    end, {})
+    vim.api.nvim_create_user_command("JovianDeleteCell", cell_edit(Cell.delete_cell), {})
+    vim.api.nvim_create_user_command("JovianMoveCellUp", cell_edit(Cell.move_cell_up), {})
+    vim.api.nvim_create_user_command("JovianMoveCellDown", cell_edit(Cell.move_cell_down), {})
+    vim.api.nvim_create_user_command("JovianSplitCell", cell_edit(Cell.split_cell), {})
 
     -- Execution Control
     vim.api.nvim_create_user_command("JovianRunAndNext", function()

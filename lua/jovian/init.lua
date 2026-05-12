@@ -17,9 +17,6 @@ function M.setup(opts)
         end)
     end
 
-    -- require("jovian.diagnostics").setup()
-    -- vim.opt.rtp:prepend(queries_path)
-
     -- Register custom predicate for magic command highlighting
     pcall(function()
         vim.treesitter.query.add_predicate("same-line?", function(match, _pattern, _bufnr, predicate)
@@ -48,22 +45,17 @@ function M.setup(opts)
     -- Completion
     M.Complete = require("jovian.complete")
 
-    -- Fold (Buffer-local for Python)
     vim.api.nvim_create_autocmd("FileType", {
         pattern = "python",
         callback = function()
-            vim.opt_local.foldmethod = "expr"
-            vim.opt_local.foldexpr = "getline(v:lnum)=~'^#\\ %%'?'0':'1'"
-            vim.opt_local.foldlevel = 99
-
-            -- Setup Jovian Runtime Completion
             M.Complete.setup_omnifunc()
+            if Config.options.folding then
+                vim.opt_local.foldmethod = "expr"
+                vim.opt_local.foldexpr = "getline(v:lnum)=~'^# %%'?'>1':'1'"
+                vim.opt_local.foldlevel = 99
+            end
         end,
     })
-
-    -- Keymaps (Optional, user can define their own)
-    -- Keymaps (Optional, user can define their own)
-
     vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
         pattern = "*",
         callback = function()
@@ -72,24 +64,18 @@ function M.setup(opts)
             end
         end,
     })
-
-    -- Add: Clean stale cache on save, close, and exit
     vim.api.nvim_create_autocmd({ "BufWritePost", "VimLeavePre", "BufUnload", "BufWinEnter" }, {
         pattern = "*.py",
         callback = function(ev)
             Session.clean_stale_cache(ev.buf)
         end,
     })
-
-    -- Add: Debounced structure check on text change
     vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
         pattern = "*.py",
         callback = function()
             Session.schedule_structure_check()
         end,
     })
-
-    -- Add: Clean orphaned caches on open and close
     vim.api.nvim_create_autocmd({ "VimEnter", "VimLeavePre" }, {
         pattern = "*",
         callback = function()
@@ -106,8 +92,6 @@ function M.setup(opts)
             end
         end,
     })
-
-    -- Add: Resize handling
     vim.api.nvim_create_autocmd("VimResized", {
         pattern = "*",
         callback = function()
@@ -115,112 +99,100 @@ function M.setup(opts)
         end,
     })
 
-    -- Add: Highlight cell separators
+    local function setup_cell_highlighting()
+        if vim.bo.filetype ~= "python" then
+            return
+        end
+
+        local mode = Config.options.ui.cell_separator_highlight
+        local ns_id = vim.api.nvim_create_namespace("jovian_cells")
+
+        if vim.b.jovian_highlight_augroup then
+            pcall(vim.api.nvim_del_augroup_by_id, vim.b.jovian_highlight_augroup)
+            vim.b.jovian_highlight_augroup = nil
+        end
+        if vim.w.jovian_cell_match_id then
+            pcall(vim.fn.matchdelete, vim.w.jovian_cell_match_id)
+            vim.w.jovian_cell_match_id = nil
+        end
+        vim.api.nvim_buf_clear_namespace(0, ns_id, 0, -1)
+
+        if mode == "text" then
+            vim.w.jovian_cell_match_id = vim.fn.matchadd("JovianCellMarker", "^# %%\\+.*")
+        elseif mode == "line" then
+            local function update_extmarks()
+                vim.api.nvim_buf_clear_namespace(0, ns_id, 0, -1)
+                for i, line in ipairs(vim.api.nvim_buf_get_lines(0, 0, -1, false)) do
+                    if line:match("^# %%") then
+                        vim.api.nvim_buf_set_extmark(0, ns_id, i - 1, 0, {
+                            line_hl_group = "JovianCellMarker",
+                            priority = 200,
+                        })
+                    end
+                end
+            end
+            update_extmarks()
+            local augroup =
+                vim.api.nvim_create_augroup("JovianCellHighlight_" .. vim.api.nvim_get_current_buf(), { clear = true })
+            vim.b.jovian_highlight_augroup = augroup
+            vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+                group = augroup,
+                buffer = 0,
+                callback = update_extmarks,
+            })
+        end
+    end
+
     vim.api.nvim_create_autocmd({ "BufWinEnter", "FileType" }, {
         pattern = "*",
-        callback = function()
-            if vim.bo.filetype == "python" then
-                local mode = Config.options.ui.cell_separator_highlight
+        callback = setup_cell_highlighting,
+    })
 
-                -- 1. Cleanup existing highlighting (Extmarks & Matchadd)
-
-                -- Cleanup buffer-local autocmds (for extmark updates)
-                if vim.b.jovian_highlight_augroup then
-                    pcall(vim.api.nvim_del_augroup_by_id, vim.b.jovian_highlight_augroup)
-                    vim.b.jovian_highlight_augroup = nil
-                end
-
-                -- Cleanup matchadd (window-local)
-                if vim.w.jovian_cell_match_id then
-                    pcall(vim.fn.matchdelete, vim.w.jovian_cell_match_id)
-                    vim.w.jovian_cell_match_id = nil
-                end
-
-                -- Cleanup extmarks (buffer-local)
-                local ns_id = vim.api.nvim_create_namespace("jovian_cells")
-                vim.api.nvim_buf_clear_namespace(0, ns_id, 0, -1)
-
-                -- 2. Apply new highlighting
-                if mode == "text" then
-                    vim.w.jovian_cell_match_id = vim.fn.matchadd("JovianCellMarker", "^# %%\\+.*")
-                elseif mode == "line" then
-                    local function update_extmarks()
-                        local current_ns = vim.api.nvim_create_namespace("jovian_cells")
-                        vim.api.nvim_buf_clear_namespace(0, current_ns, 0, -1)
-                        local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-                        for i, line in ipairs(lines) do
-                            if line:match("^# %%") then
-                                vim.api.nvim_buf_set_extmark(0, current_ns, i - 1, 0, {
-                                    line_hl_group = "JovianCellMarker",
-                                    priority = 200,
-                                })
-                            end
-                        end
+    if Config.options.inline_images then
+        local inline_render_timer = nil
+        local function schedule_inline_render(bufnr)
+            if inline_render_timer then
+                inline_render_timer:close()
+            end
+            inline_render_timer = uv.new_timer()
+            inline_render_timer:start(
+                Config.options.inline_image_debounce or 500,
+                0,
+                vim.schedule_wrap(function()
+                    require("jovian.inline_images").render_for_buffer(bufnr)
+                    if inline_render_timer then
+                        pcall(inline_render_timer.close, inline_render_timer)
+                        inline_render_timer = nil
                     end
+                end)
+            )
+        end
 
-                    update_extmarks()
-
-                    local augroup = vim.api.nvim_create_augroup(
-                        "JovianCellHighlight_" .. vim.api.nvim_get_current_buf(),
-                        { clear = true }
-                    )
-                    vim.b.jovian_highlight_augroup = augroup
-
-                    vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
-                        group = augroup,
-                        buffer = 0,
-                        callback = update_extmarks,
-                    })
+        vim.api.nvim_create_autocmd("BufWritePre", {
+            pattern = { "*.ipynb", "*.py" },
+            callback = function(ev)
+                if vim.bo[ev.buf].filetype == "python" then
+                    require("jovian.inline_images").restore_buffer_for_save(ev.buf)
                 end
-            end
-        end,
-    })
+            end,
+        })
 
-    -- Add: Inline Notebook Images handling
-    local inline_render_timer = nil
-
-    vim.api.nvim_create_autocmd({ "BufWritePre" }, {
-        pattern = { "*.ipynb", "*.py" },
-        callback = function(ev)
-            if vim.bo[ev.buf].filetype == "python" then
-                require("jovian.inline_images").restore_buffer_for_save(ev.buf)
-            end
-        end,
-    })
-
-    vim.api.nvim_create_autocmd({ "BufWinEnter", "BufWritePost" }, {
-        pattern = { "*.ipynb", "*.py" },
-        callback = function(ev)
-            if vim.bo[ev.buf].filetype == "python" then
-                if inline_render_timer then
-                    inline_render_timer:close()
+        vim.api.nvim_create_autocmd({ "BufWinEnter", "BufWritePost" }, {
+            pattern = { "*.ipynb", "*.py" },
+            callback = function(ev)
+                if vim.bo[ev.buf].filetype == "python" then
+                    schedule_inline_render(ev.buf)
                 end
-                inline_render_timer = uv.new_timer()
-                inline_render_timer:start(
-                    Config.options.inline_image_debounce or 500,
-                    0,
-                    vim.schedule_wrap(function()
-                        require("jovian.inline_images").render_for_buffer(ev.buf)
-                        if inline_render_timer then
-                            pcall(function()
-                                inline_render_timer:close()
-                            end)
-                            inline_render_timer = nil
-                        end
-                    end)
-                )
-            end
-        end,
-    })
+            end,
+        })
 
-    vim.api.nvim_create_autocmd("BufUnload", {
-        pattern = { "*.ipynb", "*.py" },
-        callback = function(ev)
-            require("jovian.inline_images").clear_for_buffer(ev.buf)
-        end,
-    })
-
-    -- Add: Explicitly stop kernel on exit
+        vim.api.nvim_create_autocmd("BufUnload", {
+            pattern = { "*.ipynb", "*.py" },
+            callback = function(ev)
+                require("jovian.inline_images").clear_for_buffer(ev.buf)
+            end,
+        })
+    end
     vim.api.nvim_create_autocmd("VimLeavePre", {
         pattern = "*",
         callback = function()

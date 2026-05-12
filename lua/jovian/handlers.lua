@@ -26,9 +26,14 @@ function M.handle_kernel_log(msg)
     UI.append_to_repl("[Kernel " .. msg.stream .. "]: " .. msg.msg, hl)
 end
 
-function M.handle_ready(_msg)
+function M.handle_ready(msg)
     State.is_starting_kernel = false
-    -- Execute all registered callbacks
+
+    -- Bridge may report its connection file on startup
+    if msg and msg.connection_file and not Config.options.connection_file then
+        Config.options.connection_file = msg.connection_file
+    end
+
     for _, callback in ipairs(State.on_ready_callbacks) do
         callback()
     end
@@ -148,10 +153,6 @@ function M.handle_dataframe_data(msg)
         columns = msg.columns,
     }
     UI.show_dataframe(msg)
-end
-
-function M.handle_profile_stats(msg)
-    UI.show_profile_stats(msg.text)
 end
 
 function M.handle_inspection_data(msg)
