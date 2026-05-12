@@ -22,7 +22,7 @@ M.toggle_pin_window = Layout.toggle_pin_window
 
 M.render_variables_pane = Renderers.render_variables_pane
 M.show_variables = Renderers.show_variables
-M.show_profile_stats = Renderers.show_profile_stats
+
 M.show_dataframe = Renderers.show_dataframe
 M.show_inspection = Renderers.show_inspection
 M.show_peek = Renderers.show_peek

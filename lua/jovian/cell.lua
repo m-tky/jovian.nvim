@@ -132,8 +132,6 @@ function M.get_current_cell_id(lnum, create)
     return "scratchpad"
 end
 
--- Cell Editing Features
-
 function M.delete_cell()
     local s, e = M.get_cell_range()
     local total = vim.api.nvim_buf_line_count(0)
@@ -170,17 +168,9 @@ function M.move_cell_up()
     UI.clear_status_extmarks(0, s, s)
     UI.clear_status_extmarks(0, prev_s, prev_s)
 
-    -- Swap using single atomic set_lines to fix undo
-    -- Range to replace: prev_s to e (inclusive 1-based) -> prev_s-1 to e (exclusive 0-based)
-    -- New content: curr_lines + prev_lines
     local new_lines = {}
-    for _, line in ipairs(curr_lines) do
-        table.insert(new_lines, line)
-    end
-    for _, line in ipairs(prev_lines) do
-        table.insert(new_lines, line)
-    end
-
+    vim.list_extend(new_lines, curr_lines)
+    vim.list_extend(new_lines, prev_lines)
     vim.api.nvim_buf_set_lines(0, prev_s - 1, e, false, new_lines)
 
     -- Move cursor to new position of moved cell
@@ -206,17 +196,9 @@ function M.move_cell_down()
     UI.clear_status_extmarks(0, s, s)
     UI.clear_status_extmarks(0, next_s, next_s)
 
-    -- Swap using single atomic set_lines to fix undo
-    -- Range to replace: s to next_e (inclusive 1-based) -> s-1 to next_e (exclusive 0-based)
-    -- New content: next_lines + curr_lines
     local new_lines = {}
-    for _, line in ipairs(next_lines) do
-        table.insert(new_lines, line)
-    end
-    for _, line in ipairs(curr_lines) do
-        table.insert(new_lines, line)
-    end
-
+    vim.list_extend(new_lines, next_lines)
+    vim.list_extend(new_lines, curr_lines)
     vim.api.nvim_buf_set_lines(0, s - 1, next_e, false, new_lines)
 
     -- Move cursor

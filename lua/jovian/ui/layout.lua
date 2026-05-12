@@ -52,6 +52,14 @@ end
 -- Window Elements Definitions
 -- These define how to open and setup specific UI components
 
+local function create_variables_buf()
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_name(buf, "JovianVariables")
+    vim.bo[buf].buftype = "nofile"
+    vim.bo[buf].filetype = "jovian_vars"
+    return buf
+end
+
 local Elements = {
     preview = {
         open = function()
@@ -80,10 +88,7 @@ local Elements = {
     variables = {
         open = function()
             if not State.buf.variables or not vim.api.nvim_buf_is_valid(State.buf.variables) then
-                State.buf.variables = vim.api.nvim_create_buf(false, true)
-                vim.api.nvim_buf_set_name(State.buf.variables, "JovianVariables")
-                vim.api.nvim_buf_set_option(State.buf.variables, "buftype", "nofile")
-                vim.api.nvim_buf_set_option(State.buf.variables, "filetype", "jovian_vars")
+                State.buf.variables = create_variables_buf()
             end
             return State.buf.variables
         end,
@@ -102,11 +107,7 @@ local Elements = {
                 end
                 return buf
             else
-                local buf = vim.api.nvim_create_buf(false, true)
-                vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "No pinned content" })
-                vim.api.nvim_buf_set_option(buf, "buftype", "nofile")
-                vim.api.nvim_buf_set_option(buf, "modifiable", false)
-                return buf
+                return Windows.placeholder_buf()
             end
         end,
         setup = function(win)
@@ -419,12 +420,7 @@ function M.open_pin_window()
     if State.current_pin_file then
         Windows.pin_cell(State.current_pin_file)
     else
-        local buf = vim.api.nvim_create_buf(false, true)
-        vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "No pinned content" })
-        vim.api.nvim_buf_set_option(buf, "buftype", "nofile")
-        vim.api.nvim_buf_set_option(buf, "modifiable", false)
-        vim.api.nvim_win_set_buf(State.win.pin, buf)
-
+        vim.api.nvim_win_set_buf(State.win.pin, Windows.placeholder_buf())
         Windows.apply_window_options(State.win.pin, { wrap = true })
     end
 end
@@ -449,17 +445,13 @@ function M.toggle_variables_pane()
     vim.cmd("rightbelow vsplit")
     State.win.variables = vim.api.nvim_get_current_win()
 
-    -- Check for existing buffer and wipe it to avoid name conflict
+    -- Wipe stale buffer to avoid name conflict
     local existing = vim.fn.bufnr("JovianVariables")
     if existing ~= -1 then
         vim.api.nvim_buf_delete(existing, { force = true })
     end
 
-    -- Create buffer
-    State.buf.variables = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_name(State.buf.variables, "JovianVariables")
-    vim.api.nvim_buf_set_option(State.buf.variables, "buftype", "nofile")
-    vim.api.nvim_buf_set_option(State.buf.variables, "filetype", "jovian_vars")
+    State.buf.variables = create_variables_buf()
     vim.api.nvim_win_set_buf(State.win.variables, State.buf.variables)
 
     -- Set width (default 25%)

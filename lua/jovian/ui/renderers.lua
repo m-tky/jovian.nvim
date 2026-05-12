@@ -220,18 +220,6 @@ function M.show_variables(msg, force_float)
     vim.keymap.set("n", "q", "<cmd>close<CR>", kopts)
 end
 
-function M.show_profile_stats(text)
-    local buf = vim.api.nvim_create_buf(false, true)
-    vim.bo[buf].bufhidden = "wipe"
-    local lines = vim.split(text, "\n")
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-
-    Windows.create_float_window(buf, "cProfile Stats", {
-        width = math.floor(vim.o.columns * 0.8),
-        height = math.floor(vim.o.lines * 0.8),
-    })
-end
-
 function M.show_dataframe(data)
     local headers = { "" }
     for _, c in ipairs(data.columns) do

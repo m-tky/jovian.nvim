@@ -40,18 +40,21 @@ M.running_cells = {} -- { [cell_id] = true }
 M.stdout_buffer = ""
 M.stderr_buffer = ""
 
--- Feature 2: Virtual Text Toggle (Buffer-local)
 M.virt_text_hidden_bufs = {} -- { [bufnr] = true }
 M.cell_status_cache = {} -- { [cell_id] = { status, msg, bufnr } }
 
--- Feature 1: DataFrame Lazy Pagination
 M.dataframe_sessions = {} -- { [var_name] = { total, offset, limit, columns } }
 
--- Feature 3: SSH Auto-tunneling & Lifecycle Management
 M.tunnel_job_id = nil
 M.tunnel_host = nil
 M.remote_kernel_pid = nil
 M.has_warned_native_unavailable = false
+
+M.last_completion_results = nil
+M.last_stream_type = nil
+M.last_stream_tail = nil
+M.vars_request_force_float = false
+M.current_pin_file = nil
 
 -- Native ZMQ / Lua Messenger state
 M.is_discovering_zmq = false

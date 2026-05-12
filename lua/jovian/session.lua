@@ -90,7 +90,7 @@ function M.clear_current_cell_cache()
         return
     end
     M.clear_cache({ id })
-    UI.set_cell_status(0, id, nil, nil) -- Clear status
+    UI.set_cell_status(0, id, "idle", "")
     vim.notify("Cleared cache for cell " .. id, vim.log.levels.INFO)
 end
 
@@ -302,41 +302,49 @@ function M.save_execution_result(msg, on_complete)
         if filename == "" then
             filename = "scratchpad"
         end
-        local file_dir = vim.fn.expand("%:p:h")
-        local cache_dir = file_dir .. "/.jovian_cache/" .. filename
+        local cache_dir = vim.fn.expand("%:p:h") .. "/.jovian_cache/" .. filename
         vim.fn.mkdir(cache_dir, "p")
 
-        local images_to_process = {}
-        for img_name, b64 in pairs(msg.images) do
-            table.insert(images_to_process, { name = img_name, data = b64 })
-        end
-
-        local function process_next_image(idx)
-            if idx > #images_to_process then
-                finish()
-                return
+        if vim.base64 then
+            for img_name, b64 in pairs(msg.images) do
+                local decoded = vim.base64.decode(b64)
+                local f = io.open(cache_dir .. "/" .. img_name, "wb")
+                if f then
+                    f:write(decoded)
+                    f:close()
+                end
             end
-
-            local item = images_to_process[idx]
-            local img_path = cache_dir .. "/" .. item.name
-            local write_script = string.format(
-                "import base64, sys; open('%s', 'wb').write(base64.b64decode(sys.stdin.read()))",
-                img_path
-            )
-
-            local job_id = vim.fn.jobstart({ Config.options.python_interpreter, "-c", write_script }, {
-                on_exit = function()
-                    process_next_image(idx + 1)
-                end,
-                rpc = false,
-            })
-            if job_id > 0 then
-                vim.fn.chansend(job_id, item.data)
-                vim.fn.chanclose(job_id, "stdin")
+            finish()
+        else
+            -- Fallback for Neovim < 0.9: spawn Python per image
+            local queue = {}
+            for img_name, b64 in pairs(msg.images) do
+                table.insert(queue, { name = img_name, data = b64 })
             end
+            local function process_next(idx)
+                if idx > #queue then
+                    finish()
+                    return
+                end
+                local item = queue[idx]
+                local img_path = cache_dir .. "/" .. item.name
+                local script = string.format(
+                    "import base64,sys; open('%s','wb').write(base64.b64decode(sys.stdin.read()))",
+                    img_path
+                )
+                local job_id = vim.fn.jobstart({ Config.options.python_interpreter, "-c", script }, {
+                    on_exit = function()
+                        process_next(idx + 1)
+                    end,
+                    rpc = false,
+                })
+                if job_id > 0 then
+                    vim.fn.chansend(job_id, item.data)
+                    vim.fn.chanclose(job_id, "stdin")
+                end
+            end
+            process_next(1)
         end
-
-        process_next_image(1)
     end
 
     if Config.options.ssh_host then

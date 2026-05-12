@@ -12,27 +12,27 @@ function M.get_or_create_buf(name)
     vim.bo[buf].buftype = "nofile"
     vim.bo[buf].modifiable = false
 
-    -- Open as terminal mode here and save channel ID
     State.term_chan = vim.api.nvim_open_term(buf, {})
 
     return buf
 end
 
--- Helper to cleanup old buffer if not used elsewhere
+function M.placeholder_buf()
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "No pinned content" })
+    vim.bo[buf].buftype = "nofile"
+    vim.bo[buf].modifiable = false
+    return buf
+end
+
 local function cleanup_buffer(old_buf, current_buf)
     if old_buf and old_buf ~= current_buf and vim.api.nvim_buf_is_valid(old_buf) then
-        -- Safety Check 1: Do not delete modified buffers
         if vim.api.nvim_buf_get_option(old_buf, "modified") then
             return
         end
 
-        -- Safety Check 2: Only delete Jovian-managed buffers
         local buf_name = vim.api.nvim_buf_get_name(old_buf)
-        -- Check if it's a file in .jovian_cache
         local is_jovian_cache = buf_name:find(".jovian_cache", 1, true)
-
-        -- Check if it's a special buffer (like placeholder or terminal)
-        -- We allow deleting nofile/terminal buffers as they are usually ephemeral
         local buftype = vim.bo[old_buf].buftype
         local is_ephemeral = (buftype == "nofile" or buftype == "terminal")
 
@@ -47,8 +47,6 @@ local function cleanup_buffer(old_buf, current_buf)
     end
 end
 
--- Helper to apply standard window options
--- Helper to apply standard window options
 function M.apply_window_options(win, opts)
     if not vim.api.nvim_win_is_valid(win) then
         return
@@ -70,10 +68,32 @@ function M.apply_window_options(win, opts)
     end
 end
 
--- Legacy open_windows removed
+local function load_markdown_into_window(win, filepath)
+    local old_buf = vim.api.nvim_win_get_buf(win)
+    local abs_path = vim.fn.fnamemodify(filepath, ":p")
+
+    local buf = vim.fn.bufadd(abs_path)
+    if buf == 0 then
+        return nil
+    end
+
+    if not vim.api.nvim_buf_is_loaded(buf) then
+        vim.fn.bufload(buf)
+    else
+        vim.cmd("checktime " .. buf)
+    end
+
+    vim.api.nvim_win_set_buf(win, buf)
+    vim.bo[buf].filetype = "markdown"
+    vim.bo[buf].buftype = ""
+    vim.bo[buf].modifiable = false
+    vim.bo[buf].readonly = true
+    M.apply_window_options(win, { wrap = true })
+    cleanup_buffer(old_buf, buf)
+    return abs_path
+end
 
 function M.close_windows()
-    -- Close all known windows
     local wins = { State.win.preview, State.win.output, State.win.variables, State.win.pin }
     for _, win in pairs(wins) do
         if win and vim.api.nvim_win_is_valid(win) then
@@ -91,95 +111,24 @@ function M.open_markdown_preview(filepath)
     if not (State.win.preview and vim.api.nvim_win_is_valid(State.win.preview)) then
         return
     end
-
-    -- Capture the old buffer *before* switching
-    local old_buf = vim.api.nvim_win_get_buf(State.win.preview)
-
-    local abs_filepath = vim.fn.fnamemodify(filepath, ":p")
-    State.current_preview_file = abs_filepath
-
-    -- Use bufadd to create/get buffer without switching windows
-    local buf = vim.fn.bufadd(abs_filepath)
-    if buf == 0 then
-        return
-    end -- Failed
-
-    -- Load the buffer if not loaded
-    if not vim.api.nvim_buf_is_loaded(buf) then
-        vim.fn.bufload(buf)
-    else
-        -- Force reload from disk to pick up changes
-        vim.cmd("checktime " .. buf)
-    end
-
-    -- Set buffer to preview window
-    vim.api.nvim_win_set_buf(State.win.preview, buf)
-
-    -- Set read-only and non-modifiable
-    vim.api.nvim_buf_set_option(buf, "filetype", "markdown")
-    -- Keep buftype empty (normal file) but set readonly
-    vim.api.nvim_buf_set_option(buf, "buftype", "")
-    vim.api.nvim_buf_set_option(buf, "modifiable", false)
-    vim.api.nvim_buf_set_option(buf, "readonly", true)
-
-    M.apply_window_options(State.win.preview, { wrap = true })
-
-    -- Cleanup old buffer
-    cleanup_buffer(old_buf, buf)
+    State.current_preview_file = load_markdown_into_window(State.win.preview, filepath)
 end
 
 function M.pin_cell(filepath)
-    local abs_filepath = vim.fn.fnamemodify(filepath, ":p")
-    State.current_pin_file = abs_filepath
-
-    -- Only update buffer if window is ALREADY open
-    if not (State.win.pin and vim.api.nvim_win_is_valid(State.win.pin)) then
-        return
+    State.current_pin_file = vim.fn.fnamemodify(filepath, ":p")
+    if State.win.pin and vim.api.nvim_win_is_valid(State.win.pin) then
+        load_markdown_into_window(State.win.pin, filepath)
     end
-
-    -- Capture old buffer
-    local old_buf = vim.api.nvim_win_get_buf(State.win.pin)
-
-    -- Create/Get buffer
-    local buf = vim.fn.bufadd(abs_filepath)
-    if buf == 0 then
-        return
-    end
-
-    if not vim.api.nvim_buf_is_loaded(buf) then
-        vim.fn.bufload(buf)
-    else
-        vim.cmd("checktime " .. buf)
-    end
-
-    vim.api.nvim_win_set_buf(State.win.pin, buf)
-
-    vim.api.nvim_buf_set_option(buf, "filetype", "markdown")
-    vim.api.nvim_buf_set_option(buf, "buftype", "")
-    vim.api.nvim_buf_set_option(buf, "modifiable", false)
-    vim.api.nvim_buf_set_option(buf, "readonly", true)
-
-    -- Cleanup old buffer
-    cleanup_buffer(old_buf, buf)
 end
 
 function M.unpin()
     State.current_pin_file = nil
 
     if State.win.pin and vim.api.nvim_win_is_valid(State.win.pin) then
-        -- Capture old buffer
         local old_buf = vim.api.nvim_win_get_buf(State.win.pin)
-
-        -- Show placeholder
-        local buf = vim.api.nvim_create_buf(false, true)
-        vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "No pinned content" })
-        vim.api.nvim_buf_set_option(buf, "buftype", "nofile")
-        vim.api.nvim_buf_set_option(buf, "modifiable", false)
+        local buf = M.placeholder_buf()
         vim.api.nvim_win_set_buf(State.win.pin, buf)
-
         M.apply_window_options(State.win.pin, { wrap = true })
-
-        -- Cleanup old buffer
         cleanup_buffer(old_buf, buf)
     end
 end
