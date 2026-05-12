@@ -156,6 +156,9 @@
             echo ">>> Running Command Tests (Mocked)..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_commands.lua
 
+            echo ">>> Running Cell Unit Tests..."
+            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_cell.lua
+
             echo ">>> Running Async Flow Tests..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_async_flow.lua
 
