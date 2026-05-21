@@ -2,9 +2,12 @@ import argparse
 import json
 import os
 import queue
+import re
 import signal
 import sys
 import threading
+
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 try:
     from jupyter_client.blocking.client import BlockingKernelClient
@@ -214,7 +217,8 @@ if shell:
                     "type": "stream", "text": error_text, "stream": "stderr", "cell_id": cid
                 })
                 if cid:
-                    ctx["outputs"].append("\\n### Error\\n" + error_text)
+                    plain = _ANSI_ESCAPE.sub("", error_text)
+                    ctx["outputs"].append("\n### Error\n```\n" + plain + "\n```")
             send_json({
                 "type": "result_ready", "cell_id": cid, "status": "error", "error": content
             })
