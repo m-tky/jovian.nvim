@@ -230,41 +230,106 @@ local function find_pipe_positions(content)
     return out
 end
 
-local function style_table_row(buf, lnum, content, offset, header)
-    -- Replace each ASCII `|` with the box-drawing vertical `│`, so the
-    -- table visually reads as "drawn" rather than "pseudo-ascii". The
-    -- conceal kicks in when conceallevel >= 1.
-    for _, p in ipairs(find_pipe_positions(content)) do
-        conceal_replace(buf, lnum, offset + p - 1, "│", HL.TableDivider)
-    end
-    if header then
-        hl_range(buf, lnum, offset, offset + #content, HL.TableHeader)
-    end
-end
+-- A table block is a sequence of consecutive table rows. Rendering them
+-- together lets us compute per-column max widths and pad each cell with
+-- inline virt_text so columns line up — independently of the user's
+-- whitespace in the source. The buffer text is never edited.
+local function render_table_block(buf, rows)
+    if #rows == 0 then return end
 
-local function style_separator_row(buf, lnum, content, offset)
-    local pipes = find_pipe_positions(content)
-    for i, p in ipairs(pipes) do
-        local glyph
-        if i == 1 then
-            glyph = "├"
-        elseif i == #pipes then
-            glyph = "┤"
-        else
-            glyph = "┼"
+    -- Parse: for each row, find pipe positions and per-cell width.
+    local parsed = {}
+    local n_cols = 0
+    for _, info in ipairs(rows) do
+        local pipes = find_pipe_positions(info.content)
+        local cells = {}
+        for c = 1, #pipes - 1 do
+            local from = pipes[c] + 1     -- byte pos after the | (1-indexed)
+            local to = pipes[c + 1] - 1   -- byte pos before next | (1-indexed)
+            local width = to - from + 1
+            if width < 0 then width = 0 end
+            cells[c] = { from = from, to = to, width = width }
         end
-        conceal_replace(buf, lnum, offset + p - 1, glyph, HL.TableDivider)
+        table.insert(parsed, {
+            info = info,
+            pipes = pipes,
+            cells = cells,
+            is_sep = is_separator_row(info.content),
+        })
+        if #cells > n_cols then n_cols = #cells end
     end
-    -- Replace each `-` between the pipes with `─` so the row reads as a
-    -- continuous horizontal rule. Colons (for alignment hints) and
-    -- whitespace stay as-is — concealing them would shift cell widths
-    -- and break the visual column alignment with surrounding rows.
-    local s = 1
-    while true do
-        local p = content:find("-", s, true)
-        if not p then break end
-        conceal_replace(buf, lnum, offset + p - 1, "─", HL.TableDivider)
-        s = p + 1
+
+    -- Per-column max width across all rows.
+    local max_widths = {}
+    for c = 1, n_cols do max_widths[c] = 0 end
+    for _, r in ipairs(parsed) do
+        for c, cell in ipairs(r.cells) do
+            if cell.width > max_widths[c] then
+                max_widths[c] = cell.width
+            end
+        end
+    end
+
+    for ri, r in ipairs(parsed) do
+        local info = r.info
+        local is_header = false
+        if not r.is_sep then
+            local next_r = parsed[ri + 1]
+            is_header = next_r ~= nil and next_r.is_sep
+        end
+
+        -- Conceal-replace pipes with box-drawing chars.
+        for pi, p in ipairs(r.pipes) do
+            local glyph
+            if r.is_sep then
+                if pi == 1 then
+                    glyph = "├"
+                elseif pi == #r.pipes then
+                    glyph = "┤"
+                else
+                    glyph = "┼"
+                end
+            else
+                glyph = "│"
+            end
+            conceal_replace(buf, info.ln, info.offset + p - 1, glyph, HL.TableDivider)
+        end
+
+        -- For separator rows: replace every non-pipe byte with `─` so the
+        -- rule is continuous (no gaps around the junctions).
+        if r.is_sep then
+            local pipe_set = {}
+            for _, p in ipairs(r.pipes) do pipe_set[p] = true end
+            for col = 1, #info.content do
+                if not pipe_set[col] then
+                    conceal_replace(buf, info.ln, info.offset + col - 1, "─", HL.TableDivider)
+                end
+            end
+        end
+
+        -- Pad each cell to the column's max width with inline virt_text.
+        -- The padding lands BEFORE the closing pipe so the pipe still
+        -- ends the cell visually.
+        for c, cell in ipairs(r.cells) do
+            local pad = (max_widths[c] or 0) - cell.width
+            if pad > 0 then
+                local fill_char = r.is_sep and "─" or " "
+                local fill = string.rep(fill_char, pad)
+                local closing_pipe_pos = r.pipes[c + 1] -- 1-indexed
+                -- 0-indexed buffer column of the closing pipe byte:
+                local target_col = info.offset + closing_pipe_pos - 1
+                pcall(vim.api.nvim_buf_set_extmark, buf, NS, info.ln, target_col, {
+                    virt_text = { { fill, HL.TableDivider } },
+                    virt_text_pos = "inline",
+                    hl_mode = "combine",
+                    priority = 199,
+                })
+            end
+        end
+
+        if is_header then
+            hl_range(buf, info.ln, info.offset, info.offset + #info.content, HL.TableHeader)
+        end
     end
 end
 
@@ -339,21 +404,32 @@ function M.render(bufnr)
                 end
             end
 
-            for i, info in ipairs(cell_lines) do
-                -- Conceal the Python `#` prefix so the line looks like real
-                -- markdown. The buffer text is untouched (still valid Python).
+            -- Conceal the Python `#` prefix on every line up front. The
+            -- buffer text is untouched (still valid Python).
+            for _, info in ipairs(cell_lines) do
                 conceal_range(bufnr, info.ln, 0, info.offset)
-                if info.content ~= "" then
-                    if is_table_row(info.content) then
-                        if is_separator_row(info.content) then
-                            style_separator_row(bufnr, info.ln, info.content, info.offset)
-                        else
-                            local next_info = cell_lines[i + 1]
-                            local header_row = next_info ~= nil
-                                and is_separator_row(next_info.content)
-                            style_table_row(bufnr, info.ln, info.content, info.offset, header_row)
-                        end
-                    else
+            end
+
+            -- Walk lines, grouping consecutive table rows so we can align
+            -- their columns to a shared max-width.
+            local i = 1
+            while i <= #cell_lines do
+                local info = cell_lines[i]
+                if info.content ~= "" and is_table_row(info.content) then
+                    local block_end = i
+                    while block_end + 1 <= #cell_lines
+                        and is_table_row(cell_lines[block_end + 1].content)
+                    do
+                        block_end = block_end + 1
+                    end
+                    local block = {}
+                    for j = i, block_end do
+                        table.insert(block, cell_lines[j])
+                    end
+                    render_table_block(bufnr, block)
+                    i = block_end + 1
+                else
+                    if info.content ~= "" then
                         if not style_heading(bufnr, info.ln, info.content, info.offset)
                             and not style_quote(bufnr, info.ln, info.content, info.offset)
                         then
@@ -361,6 +437,7 @@ function M.render(bufnr)
                         end
                         style_inline(bufnr, info.ln, info.content, info.offset)
                     end
+                    i = i + 1
                 end
             end
         end
