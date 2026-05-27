@@ -49,8 +49,12 @@ end
 
 local function set_default_hl()
     local user_hl = (Config.options.highlights) or {}
+    -- Both default to Comment so the entire frame reads as one continuous
+    -- subdued outline. Users who want the label text inside the top border
+    -- to stand out set `highlights.cell_header = "Function"` (or any other
+    -- group / attrs table) in setup().
     apply_hl(HL_BORDER, user_hl.cell_border, "Comment")
-    apply_hl(HL_HEADER, user_hl.cell_header, "Function")
+    apply_hl(HL_HEADER, user_hl.cell_header, "Comment")
 end
 
 local function dw(s)
@@ -62,10 +66,23 @@ local function repeat_dash(n)
     return string.rep("─", n)
 end
 
-local function top_border(width, label)
-    local main = "┌─ " .. label .. " "
-    local pad = width - dw(main) - 1
-    return main .. repeat_dash(pad) .. "┐"
+-- Build the top border as a virt_text chunk list, so we can colour the
+-- frame dashes with HL_BORDER and the label text with HL_HEADER. The two
+-- groups default to the same colour (Comment) for a uniform frame; users
+-- who want the label to pop set `highlights.cell_header = "Function"` or
+-- similar in setup().
+local function top_border_chunks(width, label)
+    local prefix = "┌─ "
+    local label_text = label .. " "
+    local prefix_w = dw(prefix)
+    local label_w = dw(label_text)
+    local pad = width - prefix_w - label_w - 1 -- 1 for the closing "┐"
+    local suffix = repeat_dash(math.max(pad, 0)) .. "┐"
+    return {
+        { prefix, HL_BORDER },
+        { label_text, HL_HEADER },
+        { suffix, HL_BORDER },
+    }
 end
 
 local function bottom_border(width)
@@ -167,7 +184,7 @@ function M.render(bufnr, winid)
         --    sticks out past the overlay (rare unless the source header is
         --    longer than the window).
         vim.api.nvim_buf_set_extmark(bufnr, NS, h.line, 0, {
-            virt_text = { { top_border(width, label), HL_HEADER } },
+            virt_text = top_border_chunks(width, label),
             virt_text_pos = "overlay",
             hl_mode = "combine",
             priority = 199,
@@ -251,7 +268,7 @@ end
 -- Public for tests.
 M._parse_cells = parse_cells
 M._namespace = NS
-M._top_border = top_border
+M._top_border_chunks = top_border_chunks
 M._bottom_border = bottom_border
 
 return M
