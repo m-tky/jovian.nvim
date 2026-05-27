@@ -108,9 +108,10 @@
               -- their own setup() call.
               cell_frame = true,
               markdown_cell_style = true,
-              -- Set to true to route the kernel through jovian-core (Rust).
-              -- Phase 1 only covers run/stream/status; variable inspection,
-              -- DataFrame view, clipboard etc. still need the Python bridge.
+              -- Stays on the legacy (Python bridge) path so the existing
+              -- test suite (which exercises :JovianCopy / :JovianView /
+              -- etc.) keeps passing. For the Rust-backend preview with
+              -- inline cell outputs use `nix run .#nvim-jovian-rust`.
               use_rust_core = false,
             })
 
@@ -170,6 +171,64 @@
             exec ${neovimWithPlugins}/bin/nvim -u ${initLua} "$@"
           '';
 
+          # Rust-backend preview: same demo but with use_rust_core +
+          # inline_outputs flipped on. :JovianVars / :JovianView etc.
+          # warn-and-noop on this path until Phase 5 lands those features.
+          initLuaRust = pkgs.writeText "init.lua" ''
+            local image_ok, image = pcall(require, "image")
+            if image_ok then
+              image.setup({
+                backend = "kitty",
+                processor = "magick_cli",
+                max_width_window_percentage = 100,
+                max_height_window_percentage = 100,
+                window_overlap_clear_enabled = true,
+              })
+            end
+
+            require("jovian").setup({
+              python_interpreter = "${pythonEnvFull}/bin/python3",
+              cell_frame = true,
+              markdown_cell_style = true,
+              use_rust_core = true,
+              inline_outputs = true,
+            })
+
+            local ts_ok, ts_configs = pcall(require, "nvim-treesitter.configs")
+            if ts_ok then
+                ts_configs.setup({
+                    highlight = {
+                        enable = true,
+                        additional_vim_regex_highlighting = false,
+                    },
+                })
+            end
+
+            vim.opt.number = true
+            vim.opt.termguicolors = true
+            vim.cmd("colorscheme habamax")
+
+            vim.diagnostic.config({
+              virtual_text = true,
+              signs = true,
+              underline = true,
+              update_in_insert = false,
+            })
+            vim.lsp.config("pyright", {})
+            vim.lsp.config("ruff", {})
+            vim.lsp.enable("pyright")
+            vim.lsp.enable("ruff")
+          '';
+
+          nvim-jovian-rust = pkgs.writeShellScriptBin "nvim-jovian-rust" ''
+            export NVIM_APPNAME="nvim-jovian-rust"
+            export XDG_CONFIG_HOME=$(mktemp -d)
+            export XDG_DATA_HOME=$(mktemp -d)
+            export XDG_STATE_HOME=$(mktemp -d)
+            export JOVIAN_PYTHON="${pythonEnvFull}/bin/python3"
+            exec ${neovimWithPlugins}/bin/nvim -u ${initLuaRust} "$@"
+          '';
+
           nvim-jovian-fallback = pkgs.writeShellScriptBin "nvim-jovian-fallback" ''
             export NVIM_APPNAME="nvim-jovian-fallback"
             export XDG_CONFIG_HOME=$(mktemp -d)
@@ -219,6 +278,7 @@
           default = nvim-jovian;
           nvim-jovian = nvim-jovian;
           nvim-jovian-fallback = nvim-jovian-fallback;
+          nvim-jovian-rust = nvim-jovian-rust;
           jovian-nvim = pkgs.vimPlugins.jovian-nvim;
           jovian-core = pkgs.jovian-core;
           pythonEnv = pythonEnvFull;
