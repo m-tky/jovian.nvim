@@ -99,23 +99,17 @@ local function text_area_width(winid)
         return 80
     end
     local total = vim.api.nvim_win_get_width(winid)
-    -- signcolumn / numbercolumn / foldcolumn reduce the text area. We
-    -- under-estimate slightly (capping at 100) because right_align extmarks
-    -- already adapt to the actual edge; the dashes in the top/bottom
-    -- borders just need to be wide enough that they don't look stubby.
-    local nu_w = 0
-    if vim.api.nvim_get_option_value("number", { win = winid })
-        or vim.api.nvim_get_option_value("relativenumber", { win = winid })
-    then
-        nu_w = vim.api.nvim_get_option_value("numberwidth", { win = winid })
-    end
-    local sc = vim.api.nvim_get_option_value("signcolumn", { win = winid })
-    local sc_w = (sc == "no" or sc == "") and 0 or 2
-    local fc_raw = vim.api.nvim_get_option_value("foldcolumn", { win = winid })
-    local fc_w = tonumber(fc_raw) or 0
-    local w = total - nu_w - sc_w - fc_w
+    -- `textoff` is the authoritative answer for "how many columns are
+    -- consumed by the gutter (signcolumn + foldcolumn + number column,
+    -- including its auto-growth based on buffer line count)". Computing
+    -- this from individual options misses the auto-growth case.
+    local info = vim.fn.getwininfo(winid)[1] or {}
+    local textoff = info.textoff or 0
+    local w = total - textoff
     if w < 20 then w = 20 end
-    if w > 100 then w = 100 end
+    -- No upper cap: the right_align side bar lives at the actual text-area
+    -- edge, so the top/bottom dashes must reach there too — otherwise
+    -- the frame looks like ┌──── ─┐  │  with a visible gap on wide windows.
     return w
 end
 
@@ -171,16 +165,21 @@ function M.render(bufnr, winid)
         })
 
         -- 3. Left + right bars on each source line of the cell.
+        --    `virt_text_repeat_linebreak = true` keeps the bars visible on
+        --    every wrapped continuation row (Neovim 0.10+). On older
+        --    versions the option is silently ignored.
         for ln = h.line + 1, last_src do
-            vim.api.nvim_buf_set_extmark(bufnr, NS, ln, 0, {
+            pcall(vim.api.nvim_buf_set_extmark, bufnr, NS, ln, 0, {
                 virt_text = { { "│ ", HL_BORDER } },
                 virt_text_pos = "inline",
+                virt_text_repeat_linebreak = true,
                 hl_mode = "combine",
                 priority = 100,
             })
-            vim.api.nvim_buf_set_extmark(bufnr, NS, ln, 0, {
+            pcall(vim.api.nvim_buf_set_extmark, bufnr, NS, ln, 0, {
                 virt_text = { { "│", HL_BORDER } },
                 virt_text_pos = "right_align",
+                virt_text_repeat_linebreak = true,
                 hl_mode = "combine",
                 priority = 100,
             })
