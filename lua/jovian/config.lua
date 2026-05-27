@@ -106,8 +106,12 @@ M.defaults = {
     -- get their theme's heading colors for free, while still being able to
     -- override any group surgically.
     highlights = {
-        cell_border = nil, -- defaults to link Comment
-        cell_header = nil, -- defaults to link Function
+        -- Cell card outline. Two groups so code vs markdown cells are
+        -- visually distinct at a glance. Defaults link to subdued/colored
+        -- stdlib groups; users can override either with a string (link)
+        -- or table (nvim_set_hl attrs).
+        cell_border_code = nil,     -- defaults to link Comment
+        cell_border_markdown = nil, -- defaults to link Special
         md_h1 = nil,
         md_h2 = nil,
         md_h3 = nil,

@@ -24,8 +24,13 @@ local Config = require("jovian.config")
 
 local NS = vim.api.nvim_create_namespace("JovianCellFrame")
 
-local HL_BORDER = "JovianCellBorder"
-local HL_HEADER = "JovianCellHeader"
+local HL_BORDER_CODE = "JovianCellBorderCode"
+local HL_BORDER_MARKDOWN = "JovianCellBorderMarkdown"
+
+local function frame_hl_for(kind)
+    if kind == "Markdown" then return HL_BORDER_MARKDOWN end
+    return HL_BORDER_CODE
+end
 
 -- Anything matching this is treated as a cell header line. Mirrors
 -- cell.lua's regex (which uses Vim's pattern syntax; the Lua form is
@@ -49,12 +54,11 @@ end
 
 local function set_default_hl()
     local user_hl = (Config.options.highlights) or {}
-    -- Both default to Comment so the entire frame reads as one continuous
-    -- subdued outline. Users who want the label text inside the top border
-    -- to stand out set `highlights.cell_header = "Function"` (or any other
-    -- group / attrs table) in setup().
-    apply_hl(HL_BORDER, user_hl.cell_border, "Comment")
-    apply_hl(HL_HEADER, user_hl.cell_header, "Comment")
+    -- Code cells get a subdued Comment-coloured outline; markdown cells
+    -- get Special so they read as "rich text" at a glance even before
+    -- the user reads the cell-type label inside the top border.
+    apply_hl(HL_BORDER_CODE, user_hl.cell_border_code, "Comment")
+    apply_hl(HL_BORDER_MARKDOWN, user_hl.cell_border_markdown, "Special")
 end
 
 local function dw(s)
@@ -66,23 +70,13 @@ local function repeat_dash(n)
     return string.rep("─", n)
 end
 
--- Build the top border as a virt_text chunk list, so we can colour the
--- frame dashes with HL_BORDER and the label text with HL_HEADER. The two
--- groups default to the same colour (Comment) for a uniform frame; users
--- who want the label to pop set `highlights.cell_header = "Function"` or
--- similar in setup().
-local function top_border_chunks(width, label)
-    local prefix = "┌─ "
-    local label_text = label .. " "
-    local prefix_w = dw(prefix)
-    local label_w = dw(label_text)
-    local pad = width - prefix_w - label_w - 1 -- 1 for the closing "┐"
-    local suffix = repeat_dash(math.max(pad, 0)) .. "┐"
-    return {
-        { prefix, HL_BORDER },
-        { label_text, HL_HEADER },
-        { suffix, HL_BORDER },
-    }
+-- Build the top border as a single colored string. The label inherits
+-- the same highlight as the frame so the whole outline reads as one
+-- coherent box (no contrast band at the top edge).
+local function top_border(width, label)
+    local main = "┌─ " .. label .. " "
+    local pad = width - dw(main) - 1 -- 1 for the closing "┐"
+    return main .. repeat_dash(math.max(pad, 0)) .. "┐"
 end
 
 local function bottom_border(width)
@@ -166,6 +160,7 @@ function M.render(bufnr, winid)
             -- Truncate IDs to keep the header tidy; full id stays in source
             label = label .. " [" .. h.id:sub(1, 8) .. "]"
         end
+        local hl = frame_hl_for(h.kind)
 
         -- 1. Conceal the header source chars. The plain-conceal approach
         --    (without a virt_text overlay below) hides the line entirely
@@ -184,7 +179,7 @@ function M.render(bufnr, winid)
         --    sticks out past the overlay (rare unless the source header is
         --    longer than the window).
         vim.api.nvim_buf_set_extmark(bufnr, NS, h.line, 0, {
-            virt_text = top_border_chunks(width, label),
+            virt_text = { { top_border(width, label), hl } },
             virt_text_pos = "overlay",
             hl_mode = "combine",
             priority = 199,
@@ -196,14 +191,14 @@ function M.render(bufnr, winid)
         --    versions the option is silently ignored.
         for ln = h.line + 1, last_src do
             pcall(vim.api.nvim_buf_set_extmark, bufnr, NS, ln, 0, {
-                virt_text = { { "│ ", HL_BORDER } },
+                virt_text = { { "│ ", hl } },
                 virt_text_pos = "inline",
                 virt_text_repeat_linebreak = true,
                 hl_mode = "combine",
                 priority = 100,
             })
             pcall(vim.api.nvim_buf_set_extmark, bufnr, NS, ln, 0, {
-                virt_text = { { "│", HL_BORDER } },
+                virt_text = { { "│", hl } },
                 virt_text_pos = "right_align",
                 virt_text_repeat_linebreak = true,
                 hl_mode = "combine",
@@ -213,7 +208,7 @@ function M.render(bufnr, winid)
 
         -- 4. Bottom border on the last source line via virt_lines.
         vim.api.nvim_buf_set_extmark(bufnr, NS, last_src, 0, {
-            virt_lines = { { { bottom_border(width), HL_BORDER } } },
+            virt_lines = { { { bottom_border(width), hl } } },
         })
     end
 end
@@ -268,7 +263,7 @@ end
 -- Public for tests.
 M._parse_cells = parse_cells
 M._namespace = NS
-M._top_border_chunks = top_border_chunks
+M._top_border = top_border
 M._bottom_border = bottom_border
 
 return M
