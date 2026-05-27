@@ -123,9 +123,11 @@ M.defaults = {
         md_h6 = nil,
         md_bold = nil,
         md_em = nil,
-        md_code = nil,   -- defaults to link String
-        md_bullet = nil, -- defaults to link Special
-        md_quote = nil,  -- defaults to link Comment
+        md_code = nil,          -- defaults to link String
+        md_bullet = nil,        -- defaults to link Special
+        md_quote = nil,         -- defaults to link Comment
+        md_table_divider = nil, -- defaults to link Special
+        md_table_header = nil,  -- defaults to bold = true
     },
 }
 

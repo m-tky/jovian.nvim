@@ -53,6 +53,9 @@ local lines = {
     '# # Heading',
     '# plain **bold** text',
     '# - item',
+    '# | Name | Age |',
+    '# |------|-----|',
+    '# | Alice | 30 |',
     '',
     '# %% id="code2"',
     'y = 2',
@@ -113,7 +116,7 @@ end
 
 assert_true(has_overlay_on(0), "code1 header has top-border overlay")
 assert_true(has_overlay_on(4), "md1 header has top-border overlay")
-assert_true(has_overlay_on(9), "code2 header has top-border overlay")
+assert_true(has_overlay_on(12), "code2 header has top-border overlay")
 
 local l1, r1 = has_side_bars_on(1)
 assert_true(l1 and r1, "code1 source line 1 has both side bars")
@@ -121,11 +124,12 @@ local l2, r2 = has_side_bars_on(2)
 assert_true(l2 and r2, "code1 source line 2 has both side bars")
 
 -- The bottom border lives on the LAST source line of each cell.
--- code1: header=0, last source = 3 (the blank line). md1: header=4, last = 8.
--- code2: header=9, last = 10.
+-- code1: header=0, last source = 3 (the blank line).
+-- md1: header=4, last source = 11 (blank line after the table).
+-- code2: header=12, last source = 13.
 assert_true(has_virt_lines_on(3), "code1 has bottom virt_lines on last src line")
-assert_true(has_virt_lines_on(8), "md1 has bottom virt_lines on last src line")
-assert_true(has_virt_lines_on(10), "code2 has bottom virt_lines on last src line")
+assert_true(has_virt_lines_on(11), "md1 has bottom virt_lines on last src line")
+assert_true(has_virt_lines_on(13), "code2 has bottom virt_lines on last src line")
 
 -- Header lines should NOT have side bars (only overlay)
 local l0, r0 = has_side_bars_on(0)
@@ -149,7 +153,7 @@ assert_true(md_lines[6], "bold line has markdown extmark")
 assert_true(md_lines[7], "bullet line has markdown extmark")
 assert_eq(md_lines[1] or false, false, "code cell line 1 has no markdown extmark")
 assert_eq(md_lines[2] or false, false, "code cell line 2 has no markdown extmark")
-assert_eq(md_lines[10] or false, false, "code cell line 10 has no markdown extmark")
+assert_eq(md_lines[13] or false, false, "code cell line 13 has no markdown extmark")
 
 -- Each markdown line should have at least one extmark concealing the
 -- Python `# ` prefix at columns 0..1 (so visually the line starts with
@@ -172,6 +176,26 @@ end
 assert_true(has_prefix_conceal(5), "heading line conceals python `# ` prefix")
 assert_true(has_prefix_conceal(6), "bold line conceals python `# ` prefix")
 assert_true(has_prefix_conceal(7), "bullet line conceals python `# ` prefix")
+
+-- Table styling: the header (line 8), separator (line 9), and data
+-- row (line 10) each get extmarks. Detect by checking md_marks for
+-- a TableDivider-coloured hl extmark with end_col covering a `|` byte.
+local function has_table_extmarks(ln)
+    for _, m in ipairs(md_marks) do
+        if m[2] == ln then
+            local det = m[4]
+            if det.hl_group == "JovianMdTableDivider"
+                or det.hl_group == "JovianMdTableHeader"
+            then
+                return true
+            end
+        end
+    end
+    return false
+end
+assert_true(has_table_extmarks(8), "table header row has divider/header extmarks")
+assert_true(has_table_extmarks(9), "separator row has divider extmark")
+assert_true(has_table_extmarks(10), "table data row has divider extmarks")
 
 -- ---------------------------- clear ----------------------------
 print("\n-- clear --")

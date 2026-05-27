@@ -30,6 +30,8 @@ local HL = {
     Code = "JovianMdCode",
     Bullet = "JovianMdBullet",
     Quote = "JovianMdQuote",
+    TableDivider = "JovianMdTableDivider",
+    TableHeader = "JovianMdTableHeader",
 }
 
 -- For each heading level, try Tree-sitter markdown groups first
@@ -92,6 +94,8 @@ local function set_default_hl()
     apply_hl(HL.Code, user_hl.md_code, "String")
     apply_hl(HL.Bullet, user_hl.md_bullet, "Special")
     apply_hl(HL.Quote, user_hl.md_quote, "Comment")
+    apply_hl(HL.TableDivider, user_hl.md_table_divider, "Special")
+    apply_hl(HL.TableHeader, user_hl.md_table_header, { bold = true })
 end
 
 -- Visual badge inserted before each heading body so the eye picks up the
@@ -178,6 +182,51 @@ local function style_quote(buf, lnum, content, offset)
     return true
 end
 
+-- A row is a pipe-table line if it starts with `|` and has at least two
+-- pipes. We don't require trailing `|` since GFM tolerates an open-ended
+-- right side, and pipes inside code spans are rare enough to ignore for
+-- now (no escape handling).
+local function is_table_row(content)
+    if content:sub(1, 1) ~= "|" then return false end
+    local count = 0
+    for _ in content:gmatch("|") do
+        count = count + 1
+        if count >= 2 then return true end
+    end
+    return false
+end
+
+-- Separator rows look like `|---|---|`, `|:--|:-:|--:|`, optionally with
+-- spaces around the dashes. They contain only pipes, dashes, colons and
+-- whitespace — no letters or digits.
+local function is_separator_row(content)
+    if content:sub(1, 1) ~= "|" then return false end
+    if not content:match("|[%s%-:]+|") then return false end
+    return content:match("[%w]") == nil
+end
+
+local function style_table_row(buf, lnum, content, offset, header)
+    -- Highlight every `|` divider in the row.
+    local s = 1
+    while true do
+        local p = content:find("|", s)
+        if not p then break end
+        hl_range(buf, lnum, offset + p - 1, offset + p, HL.TableDivider)
+        s = p + 1
+    end
+    if header then
+        -- Bold the cell contents between pipes (everything except the
+        -- pipes themselves stays styled as the column heading).
+        hl_range(buf, lnum, offset, offset + #content, HL.TableHeader)
+    end
+end
+
+local function style_separator_row(buf, lnum, content, offset)
+    -- Style the whole row as a divider so it visually reads as a thin
+    -- horizontal rule between header and body rows.
+    hl_range(buf, lnum, offset, offset + #content, HL.TableDivider)
+end
+
 local function style_inline(buf, lnum, content, offset)
     -- Bold **text** — concealed pairs, inner bolded
     local s = 1
@@ -231,23 +280,45 @@ function M.render(bufnr)
         local next_line = headers[idx + 1] and headers[idx + 1].line or #lines
         local hdr_line = lines[h.line + 1] or ""
         if is_markdown_header(hdr_line) then
+            -- First pass: collect prefix-stripped content for every line.
+            -- The second pass needs neighbor info (table header detection
+            -- looks ahead one line for the separator row).
+            local cell_lines = {}
             for ln = h.line + 1, next_line - 1 do
                 local line = lines[ln + 1] or ""
                 if line ~= "" then
                     local prefix_len, content = strip_py_md_prefix(line)
                     if prefix_len then
-                        -- Conceal the Python comment prefix so the line looks
-                        -- like real markdown. The actual `# ` stays in the
-                        -- buffer (so the file remains valid Python on disk).
-                        conceal_range(bufnr, ln, 0, prefix_len)
-                        if content ~= "" then
-                            if not style_heading(bufnr, ln, content, prefix_len)
-                                and not style_quote(bufnr, ln, content, prefix_len)
-                            then
-                                style_bullet(bufnr, ln, content, prefix_len)
-                            end
-                            style_inline(bufnr, ln, content, prefix_len)
+                        table.insert(cell_lines, {
+                            ln = ln,
+                            content = content,
+                            offset = prefix_len,
+                        })
+                    end
+                end
+            end
+
+            for i, info in ipairs(cell_lines) do
+                -- Conceal the Python `#` prefix so the line looks like real
+                -- markdown. The buffer text is untouched (still valid Python).
+                conceal_range(bufnr, info.ln, 0, info.offset)
+                if info.content ~= "" then
+                    if is_table_row(info.content) then
+                        if is_separator_row(info.content) then
+                            style_separator_row(bufnr, info.ln, info.content, info.offset)
+                        else
+                            local next_info = cell_lines[i + 1]
+                            local header_row = next_info ~= nil
+                                and is_separator_row(next_info.content)
+                            style_table_row(bufnr, info.ln, info.content, info.offset, header_row)
                         end
+                    else
+                        if not style_heading(bufnr, info.ln, info.content, info.offset)
+                            and not style_quote(bufnr, info.ln, info.content, info.offset)
+                        then
+                            style_bullet(bufnr, info.ln, info.content, info.offset)
+                        end
+                        style_inline(bufnr, info.ln, info.content, info.offset)
                     end
                 end
             end
