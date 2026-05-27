@@ -52,17 +52,37 @@ local function apply_hl(target, user_val, fallback)
     end
 end
 
+-- For each cell type, walk a fallback chain of standard / Tree-sitter
+-- highlight groups and pick the first one the active colorscheme actually
+-- defines. This way the frame color follows the user's theme: themes that
+-- give `WarningMsg` an orange-ish fg get orange markdown borders, themes
+-- that give `Function` a blue-ish fg get blue code borders, etc.
+local CODE_BORDER_FALLBACKS = {
+    "Function", "@function", "Identifier", "DiagnosticInfo", "Type", "Comment",
+}
+local MD_BORDER_FALLBACKS = {
+    "WarningMsg", "DiagnosticWarn", "@number", "Number", "Constant", "Special",
+}
+
+local function group_has_styling(name)
+    local h = vim.api.nvim_get_hl(0, { name = name, link = false })
+    if not h then return false end
+    return h.fg ~= nil or h.bg ~= nil or h.bold or h.italic or h.underline
+end
+
+local function pick_existing(candidates)
+    for _, name in ipairs(candidates) do
+        if group_has_styling(name) then return name end
+    end
+    return candidates[#candidates]
+end
+
 local function set_default_hl()
     local user_hl = (Config.options.highlights) or {}
-    -- Markdown cells get a warm amber/orange outline; code cells get a
-    -- calm sky blue. Complementary colors so the two cell types are
-    -- easy to tell apart at a glance, while neither is so saturated it
-    -- competes with syntax highlighting inside the cell. Hex values
-    -- (rather than colorscheme links) because most themes only define
-    -- yellow/cyan diagnostic groups, not the specific orange/blue
-    -- contrast the user asked for. Override via setup({ highlights = ... }).
-    apply_hl(HL_BORDER_CODE, user_hl.cell_border_code, { fg = "#7aa2f7" })
-    apply_hl(HL_BORDER_MARKDOWN, user_hl.cell_border_markdown, { fg = "#e0af68" })
+    -- Pull from the active colorscheme so the outline tracks the theme.
+    -- User overrides (string link / table attrs) still win.
+    apply_hl(HL_BORDER_CODE, user_hl.cell_border_code, pick_existing(CODE_BORDER_FALLBACKS))
+    apply_hl(HL_BORDER_MARKDOWN, user_hl.cell_border_markdown, pick_existing(MD_BORDER_FALLBACKS))
 end
 
 local function dw(s)

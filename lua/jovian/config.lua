@@ -107,10 +107,12 @@ M.defaults = {
     -- override any group surgically.
     highlights = {
         -- Cell card outline. Two groups so code vs markdown cells are
-        -- visually distinct at a glance. Defaults: code = sky blue
-        -- (#7aa2f7), markdown = warm amber (#e0af68) — complementary
-        -- colors that pair well without competing with syntax inside
-        -- the cell. Override via string (link) or table (attrs).
+        -- visually distinct at a glance. Defaults follow the active
+        -- colorscheme by linking to whichever group from a fallback chain
+        -- exists:
+        --   code     → Function / @function / Identifier / DiagnosticInfo / ...
+        --   markdown → WarningMsg / DiagnosticWarn / @number / Number / Constant / ...
+        -- Override via string (link) or table (attrs) per group.
         cell_border_code = nil,
         cell_border_markdown = nil,
         md_h1 = nil,
