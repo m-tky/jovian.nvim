@@ -107,11 +107,12 @@ M.defaults = {
     -- override any group surgically.
     highlights = {
         -- Cell card outline. Two groups so code vs markdown cells are
-        -- visually distinct at a glance. Defaults link to subdued/colored
-        -- stdlib groups; users can override either with a string (link)
-        -- or table (nvim_set_hl attrs).
-        cell_border_code = nil,     -- defaults to link Comment
-        cell_border_markdown = nil, -- defaults to link Special
+        -- visually distinct at a glance. Defaults: code = sky blue
+        -- (#7aa2f7), markdown = warm amber (#e0af68) — complementary
+        -- colors that pair well without competing with syntax inside
+        -- the cell. Override via string (link) or table (attrs).
+        cell_border_code = nil,
+        cell_border_markdown = nil,
         md_h1 = nil,
         md_h2 = nil,
         md_h3 = nil,

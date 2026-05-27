@@ -54,11 +54,15 @@ end
 
 local function set_default_hl()
     local user_hl = (Config.options.highlights) or {}
-    -- Code cells get a subdued Comment-coloured outline; markdown cells
-    -- get Special so they read as "rich text" at a glance even before
-    -- the user reads the cell-type label inside the top border.
-    apply_hl(HL_BORDER_CODE, user_hl.cell_border_code, "Comment")
-    apply_hl(HL_BORDER_MARKDOWN, user_hl.cell_border_markdown, "Special")
+    -- Markdown cells get a warm amber/orange outline; code cells get a
+    -- calm sky blue. Complementary colors so the two cell types are
+    -- easy to tell apart at a glance, while neither is so saturated it
+    -- competes with syntax highlighting inside the cell. Hex values
+    -- (rather than colorscheme links) because most themes only define
+    -- yellow/cyan diagnostic groups, not the specific orange/blue
+    -- contrast the user asked for. Override via setup({ highlights = ... }).
+    apply_hl(HL_BORDER_CODE, user_hl.cell_border_code, { fg = "#7aa2f7" })
+    apply_hl(HL_BORDER_MARKDOWN, user_hl.cell_border_markdown, { fg = "#e0af68" })
 end
 
 local function dw(s)
