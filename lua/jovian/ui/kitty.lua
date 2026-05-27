@@ -162,6 +162,20 @@ function M.ensure_transmitted(b64, cb)
     client:request("kitty_transmit", { png_b64 = b64 }, function(err, result)
         if err or not result or not result.image_id then
             _transmits[key] = nil
+            -- Surface the first failure so users know inline images aren't
+            -- silently no-op'ing. Subsequent failures stay quiet (we already
+            -- told them once); flip M._warned back to false to re-arm.
+            if err and not M._warned then
+                M._warned = true
+                vim.schedule(function()
+                    vim.notify(
+                        "jovian: kitty_transmit failed (" .. err .. "). "
+                        .. "Inline images will not render until this is fixed. "
+                        .. "Run `:checkhealth jovian` to diagnose.",
+                        vim.log.levels.WARN
+                    )
+                end)
+            end
             local cbs = _pending_cbs[key] or {}
             _pending_cbs[key] = nil
             for _, c in ipairs(cbs) do pcall(c, nil) end

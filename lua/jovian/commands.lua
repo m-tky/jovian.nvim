@@ -450,6 +450,37 @@ function M.setup()
     -- Kernel Control
     vim.api.nvim_create_user_command("JovianInterrupt", Core.interrupt_kernel, {})
 
+    -- Diagnostic: probe the Kitty image pipeline by transmitting a 1x1
+    -- PNG and reporting whether the round-trip succeeds. Surfaces the
+    -- exact RPC error so users can see "kitty_attach not called" vs a
+    -- terminal that just doesn't support graphics.
+    vim.api.nvim_create_user_command("JovianDebugImages", function()
+        local Core = require("jovian.backend.core")
+        local client = Core.client() or Core.ensure()
+        -- 1x1 transparent PNG, base64-encoded
+        local one_px = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgAAIAAAUAAeImBZsAAAAASUVORK5CYII="
+        vim.notify("jovian: probing kitty_transmit...", vim.log.levels.INFO)
+        client:request("kitty_transmit", { png_b64 = one_px }, function(err, result)
+            vim.schedule(function()
+                if err then
+                    vim.notify(
+                        "jovian image pipeline FAILED: " .. err
+                        .. "\n  TERM=" .. (vim.env.TERM or "?")
+                        .. " TERM_PROGRAM=" .. (vim.env.TERM_PROGRAM or "?")
+                        .. " TMUX=" .. (vim.env.TMUX and "set" or "unset"),
+                        vim.log.levels.ERROR
+                    )
+                else
+                    vim.notify(
+                        "jovian image pipeline OK (image_id="
+                        .. tostring(result and result.image_id) .. ")",
+                        vim.log.levels.INFO
+                    )
+                end
+            end)
+        end)
+    end, { desc = "Jovian: probe the Kitty image transmit RPC" })
+
     -- Pinning
     vim.api.nvim_create_user_command("JovianPin", function()
         local id = Cell.get_current_cell_id(nil, false)

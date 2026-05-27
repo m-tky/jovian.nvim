@@ -78,10 +78,27 @@ function M.ensure(opts)
     end)
 
     -- Hand the controlling tty to core so it can write Kitty graphics escapes
-    -- directly (bypassing Neovim's TUI mux). Best-effort: tty resolution can
-    -- fail in CI or headless contexts; image features just won't work then.
+    -- directly (bypassing Neovim's TUI mux). Use a request (not notify) so a
+    -- failure to open /dev/tty surfaces visibly — otherwise every subsequent
+    -- kitty_transmit just errors silently and users see blank image areas.
+    M._kitty_attached = false
+    M._kitty_attach_error = nil
     local tty = vim.env.JOVIAN_TTY or "/dev/tty"
-    _client:notify("kitty_attach", { tty = tty })
+    _client:request("kitty_attach", { tty = tty }, function(err, _)
+        if err then
+            M._kitty_attach_error = err
+            vim.schedule(function()
+                vim.notify(
+                    "jovian: kitty_attach failed (" .. err .. "). "
+                    .. "Inline images will not render. "
+                    .. "Run `:checkhealth jovian` to diagnose.",
+                    vim.log.levels.WARN
+                )
+            end)
+        else
+            M._kitty_attached = true
+        end
+    end)
 
     return _client
 end
