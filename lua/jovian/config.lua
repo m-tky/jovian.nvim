@@ -15,8 +15,6 @@ M.defaults = {
     notify_threshold = 10,
     notify_mode = "all", -- "all", "error", "none"
     show_execution_time = true,
-    inline_image_debounce = 500, -- mmilliseconds to wait before rendering images after write
-    inline_images = false, -- set to true to enable inline image rendering (requires image.nvim)
     folding = false, -- set to true to enable cell-based folding for Python files
     dataframe_page_size = 50,
     remote_cwd = ".",
@@ -95,13 +93,20 @@ M.defaults = {
     markdown_cell_style = false,
 
     -- Render the kernel's outputs (stdout/stderr/text result/error
-    -- traceback) below each cell as virt_lines, jupynvim-style. Reads
-    -- from the nbformat-style JSON sidecar that jovian-core (the Rust
-    -- backend) writes at `.jovian_cache/<filename>/outputs.json`.
-    -- Requires `cell_frame = true` (the outputs are rendered inside
-    -- the cell's bottom virt_lines block). Image/HTML support comes
-    -- in Phase 3; for now only text-mime outputs render.
+    -- traceback, PNG/GIF/JPEG images) below each cell as virt_lines,
+    -- jupynvim-style. Reads from the nbformat-style JSON sidecar that
+    -- jovian-core (the Rust backend) writes at
+    -- `.jovian_cache/<filename>/outputs.json`. Requires
+    -- `cell_frame = true`. Images are transmitted via the Kitty graphics
+    -- protocol (Unicode placeholder mode) and only render on terminals
+    -- that support it (Kitty, Ghostty 1.3+, recent WezTerm). On other
+    -- terminals the placeholder unicode glyphs are visible but harmless.
     inline_outputs = false,
+
+    -- Placement dimensions for images in the inline output block, in
+    -- terminal cells. Tweak to match your typical plot aspect ratio.
+    image_rows = 14,
+    image_cols = 56,
 
     -- Per-level highlight overrides for Phase 2 visuals. Each value can be
     -- either a string (treated as a link target — typically a colorscheme's

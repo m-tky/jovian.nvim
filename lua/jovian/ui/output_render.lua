@@ -112,6 +112,33 @@ local function divider_line(label, width)
     return main .. string.rep("─", math.max(pad, 0)) .. "┤"
 end
 
+-- Pick the first image MIME present in a display_data / execute_result's
+-- mime bundle. Order matters: PNG is the highest fidelity Jupyter normally
+-- emits; GIF is preferred over JPEG for animated payloads.
+local IMAGE_MIMES = { "image/png", "image/gif", "image/jpeg" }
+local function find_image_b64(data)
+    if type(data) ~= "table" then return nil end
+    for _, m in ipairs(IMAGE_MIMES) do
+        local v = data[m]
+        if type(v) == "table" then v = table.concat(v, "") end
+        if type(v) == "string" and v ~= "" then return v end
+    end
+    return nil
+end
+
+-- Wrap a Kitty placeholder row (already chunked by jovian.ui.kitty into
+-- one chunk per cell column) with the box-drawing side bars + right-pad
+-- so it sits inside the cell frame at `inner_w` wide.
+local function image_row_with_sides(placeholder_chunks, cols, inner_w, border_hl)
+    local pad = math.max(inner_w - cols, 0)
+    local out = { { "│ ", border_hl } }
+    for _, c in ipairs(placeholder_chunks) do
+        table.insert(out, c)
+    end
+    table.insert(out, { string.rep(" ", pad) .. " │", border_hl })
+    return out
+end
+
 --- Build the virt_lines for a cell's outputs.
 --- Returns an empty list when the cell has no outputs.
 ---
@@ -119,8 +146,10 @@ end
 --- @param execution_count number|nil for the Out[N] label
 --- @param width number total cell width (including the side bars)
 --- @param border_hl string the cell_frame border highlight group
+--- @param refresh_cb function|nil called when an async image transmit
+---   completes, so the cell_frame caller can re-render with the image
 --- @return table list of virt_line chunk arrays
-function M.build_virt_lines(outputs, execution_count, width, border_hl)
+function M.build_virt_lines(outputs, execution_count, width, border_hl, refresh_cb)
     if not outputs or #outputs == 0 then return {} end
     local inner_w = width - 4 -- "│ " + content + " │"
     if inner_w < 1 then inner_w = 1 end
@@ -128,6 +157,11 @@ function M.build_virt_lines(outputs, execution_count, width, border_hl)
     local rows = {}
     local exec_label = execution_count and tostring(execution_count) or " "
     table.insert(rows, { { divider_line("Out[" .. exec_label .. "]", width), HL.Divider } })
+
+    -- Lazy-require Config so build_virt_lines stays usable in tests that
+    -- haven't called setup().
+    local Config = require("jovian.config")
+    local Kitty -- lazily required only when an image output appears
 
     for _, o in ipairs(outputs) do
         local kind = o.output_type
@@ -144,7 +178,19 @@ function M.build_virt_lines(outputs, execution_count, width, border_hl)
             end
         elseif kind == "execute_result" or kind == "display_data" then
             local data = o.data or {}
+            local img_b64 = find_image_b64(data)
             local tp = as_str(data["text/plain"])
+            local has_img = img_b64 ~= nil
+            -- Matplotlib emits "<Figure size NxM with K Axes>" as the
+            -- text/plain alongside the PNG. Suppressing it keeps the
+            -- output area tidy when the image is the real content.
+            if has_img and (tp == ""
+                or tp:match("^<Figure ")
+                or tp:match("^<[%w._]+ object>$")
+                or tp:match("^<[%w._]+ object at 0x[%x]+>$"))
+            then
+                tp = ""
+            end
             if tp ~= "" then
                 tp = strip_ansi(tp):gsub("\n$", "")
                 for _, line in ipairs(vim.split(tp, "\n", { plain = true })) do
@@ -153,8 +199,25 @@ function M.build_virt_lines(outputs, execution_count, width, border_hl)
                     end
                 end
             end
-            -- Phase 3 will add image/png + image/gif rendering here via
-            -- the Rust core's Kitty graphics protocol.
+            if has_img then
+                Kitty = Kitty or require("jovian.ui.kitty")
+                local image_rows = Config.options.image_rows or 14
+                local image_cols = math.min(Config.options.image_cols or 56, inner_w)
+                local id = Kitty.ensure_transmitted(img_b64, refresh_cb)
+                if id then
+                    local placement = Kitty.build_virt_lines(id, image_rows, image_cols)
+                    for _, prow in ipairs(placement) do
+                        table.insert(rows, image_row_with_sides(prow, image_cols, inner_w, border_hl))
+                    end
+                else
+                    -- Reserve blank space while the transmit is in flight;
+                    -- the refresh_cb will re-trigger render with the real
+                    -- placeholders once the image_id arrives.
+                    for _ = 1, image_rows do
+                        table.insert(rows, side_wrap("", HL.Result, inner_w, border_hl))
+                    end
+                end
+            end
         elseif kind == "error" then
             local head = as_str(o.ename) .. ": " .. as_str(o.evalue)
             if head == ": " then head = "Error" end

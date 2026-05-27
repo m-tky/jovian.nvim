@@ -88,18 +88,6 @@
           );
 
           initLua = pkgs.writeText "init.lua" ''
-            -- Setup image.nvim
-            local image_ok, image = pcall(require, "image")
-            if image_ok then
-              image.setup({
-                backend = "kitty",
-                processor = "magick_cli",
-                max_width_window_percentage = 100,
-                max_height_window_percentage = 100,
-                window_overlap_clear_enabled = true,
-              })
-            end
-
             -- Setup jovian.nvim
             require("jovian").setup({
               python_interpreter = "${pythonEnvFull}/bin/python3",
@@ -148,7 +136,6 @@
               packages.myVimPackage = {
                 start = [
                   pkgs.vimPlugins.jovian-nvim
-                  pkgs.vimPlugins.image-nvim
                   pkgs.vimPlugins.jupytext-nvim
                   pkgs.vimPlugins.nvim-lspconfig
                   (pkgs.vimPlugins.nvim-treesitter.withPlugins (p: [
@@ -175,17 +162,6 @@
           # inline_outputs flipped on. :JovianVars / :JovianView etc.
           # warn-and-noop on this path until Phase 5 lands those features.
           initLuaRust = pkgs.writeText "init.lua" ''
-            local image_ok, image = pcall(require, "image")
-            if image_ok then
-              image.setup({
-                backend = "kitty",
-                processor = "magick_cli",
-                max_width_window_percentage = 100,
-                max_height_window_percentage = 100,
-                window_overlap_clear_enabled = true,
-              })
-            end
-
             require("jovian").setup({
               python_interpreter = "${pythonEnvFull}/bin/python3",
               cell_frame = true,
@@ -263,6 +239,9 @@
 
             echo ">>> Running Inline Output Rendering Tests..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_inline_outputs.lua
+
+            echo ">>> Running Kitty Image Placeholder Tests..."
+            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_kitty_images.lua
 
             echo ">>> Running Rust Backend Phase 1 Smoke Test (Real Kernel)..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_rust_phase1.lua

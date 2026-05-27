@@ -244,11 +244,19 @@ function M.render(bufnr, winid)
             local src_path = vim.api.nvim_buf_get_name(bufnr)
             local co = OutRender.cell_outputs(src_path, h.id)
             if co and co.outputs and #co.outputs > 0 then
+                -- Pass a refresh callback so async Kitty image transmits
+                -- can trigger a re-render once they land.
+                local refresh = function()
+                    if vim.api.nvim_buf_is_valid(bufnr) then
+                        M.schedule(bufnr)
+                    end
+                end
                 local out_rows = OutRender.build_virt_lines(
                     co.outputs,
                     co.execution_count,
                     width,
-                    hl
+                    hl,
+                    refresh
                 )
                 for _, row in ipairs(out_rows) do
                     table.insert(lines_below, row)

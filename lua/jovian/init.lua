@@ -233,51 +233,6 @@ function M.setup(opts)
         })
     end
 
-    if Config.options.inline_images then
-        local inline_render_timer = nil
-        local function schedule_inline_render(bufnr)
-            if inline_render_timer then
-                inline_render_timer:close()
-            end
-            inline_render_timer = uv.new_timer()
-            inline_render_timer:start(
-                Config.options.inline_image_debounce or 500,
-                0,
-                vim.schedule_wrap(function()
-                    require("jovian.inline_images").render_for_buffer(bufnr)
-                    if inline_render_timer then
-                        pcall(inline_render_timer.close, inline_render_timer)
-                        inline_render_timer = nil
-                    end
-                end)
-            )
-        end
-
-        vim.api.nvim_create_autocmd("BufWritePre", {
-            pattern = { "*.ipynb", "*.py" },
-            callback = function(ev)
-                if vim.bo[ev.buf].filetype == "python" then
-                    require("jovian.inline_images").restore_buffer_for_save(ev.buf)
-                end
-            end,
-        })
-
-        vim.api.nvim_create_autocmd({ "BufWinEnter", "BufWritePost" }, {
-            pattern = { "*.ipynb", "*.py" },
-            callback = function(ev)
-                if vim.bo[ev.buf].filetype == "python" then
-                    schedule_inline_render(ev.buf)
-                end
-            end,
-        })
-
-        vim.api.nvim_create_autocmd("BufUnload", {
-            pattern = { "*.ipynb", "*.py" },
-            callback = function(ev)
-                require("jovian.inline_images").clear_for_buffer(ev.buf)
-            end,
-        })
-    end
     vim.api.nvim_create_autocmd("VimLeavePre", {
         pattern = "*",
         callback = function()

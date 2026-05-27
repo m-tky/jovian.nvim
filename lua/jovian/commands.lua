@@ -450,12 +450,6 @@ function M.setup()
     -- Kernel Control
     vim.api.nvim_create_user_command("JovianInterrupt", Core.interrupt_kernel, {})
 
-    if Config.options.inline_images then
-        vim.api.nvim_create_user_command("JovianRenderImages", function()
-            require("jovian.inline_images").render_for_buffer(vim.api.nvim_get_current_buf())
-        end, { desc = "Jovian: Force Render Inline Notebook Images" })
-    end
-
     -- Pinning
     vim.api.nvim_create_user_command("JovianPin", function()
         local id = Cell.get_current_cell_id(nil, false)
