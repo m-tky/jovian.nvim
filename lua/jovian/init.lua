@@ -148,6 +148,51 @@ function M.setup(opts)
         callback = setup_cell_highlighting,
     })
 
+    -- Phase 2: cell card frame + markdown styling. Both are opt-in; if
+    -- neither flag is set the autocmds are not registered at all.
+    if Config.options.cell_frame or Config.options.markdown_cell_style then
+        local CellFrame = require("jovian.ui.cell_frame")
+        local MarkdownCell = require("jovian.ui.markdown_cell")
+
+        local function refresh_buffer(bufnr, winid)
+            if vim.bo[bufnr].filetype ~= "python" then return end
+            if Config.options.cell_frame then
+                CellFrame.schedule(bufnr, winid)
+            end
+            if Config.options.markdown_cell_style then
+                MarkdownCell.schedule(bufnr)
+            end
+        end
+
+        vim.api.nvim_create_autocmd({ "BufWinEnter", "FileType" }, {
+            pattern = "*",
+            callback = function(ev)
+                if vim.bo[ev.buf].filetype == "python" then
+                    refresh_buffer(ev.buf, vim.api.nvim_get_current_win())
+                end
+            end,
+        })
+
+        vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+            pattern = "*.py",
+            callback = function(ev)
+                refresh_buffer(ev.buf)
+            end,
+        })
+
+        -- WinResized: re-render so the top/bottom border dashes match the
+        -- new text-area width and the right_align bars sit at the new edge.
+        vim.api.nvim_create_autocmd({ "WinResized", "VimResized" }, {
+            pattern = "*",
+            callback = function()
+                local buf = vim.api.nvim_get_current_buf()
+                if vim.bo[buf].filetype == "python" then
+                    refresh_buffer(buf, vim.api.nvim_get_current_win())
+                end
+            end,
+        })
+    end
+
     if Config.options.inline_images then
         local inline_render_timer = nil
         local function schedule_inline_render(bufnr)

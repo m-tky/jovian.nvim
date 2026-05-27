@@ -77,6 +77,23 @@ M.defaults = {
     -- on this path — they still require the Python bridge. Leave this
     -- false unless you're actively testing the migration.
     use_rust_core = false,
+
+    -- Render each `# %%` cell as a bordered card via extmarks:
+    --   ┌─ [3] Code ────┐
+    --   │ print("hi")   │
+    --   └───────────────┘
+    -- Opt-in because it shifts the right edge of cell lines and overlays
+    -- the `# %%` header line — both meaningful visual changes a long-time
+    -- user shouldn't get without asking.
+    cell_frame = false,
+
+    -- Conceal markdown punctuation (**bold**, *italic*, `code`, `#`
+    -- heading markers) inside `# %% [markdown]` cells and replace them
+    -- with styled virt_text. Independent of cell_frame; either can be
+    -- enabled on its own. Off by default since concealing source bytes
+    -- can surprise users mid-edit (we re-show the source while the
+    -- cursor is on that line, but the rest of the cell stays styled).
+    markdown_cell_style = false,
 }
 
 M.options = vim.deepcopy(M.defaults)
