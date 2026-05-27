@@ -79,11 +79,10 @@ function M.ensure(opts)
 
     -- Hand the controlling tty to core so it can write Kitty graphics escapes
     -- directly (bypassing Neovim's TUI mux). Use a request (not notify) so a
-    -- failure to open /dev/tty surfaces visibly. Anyone needing the attach
-    -- state (notably kitty_transmit callers) waits via M.on_kitty_ready —
-    -- the Rust core dispatches RPC requests concurrently via tokio::spawn,
-    -- so without this gate kitty_transmit can land before kitty_attach has
-    -- opened /dev/tty and returns "kitty_attach not called".
+    -- failure surfaces visibly. Anyone needing the attach state (notably
+    -- kitty_transmit callers) waits via M.on_kitty_ready — the Rust core
+    -- dispatches RPC requests concurrently via tokio::spawn, so without this
+    -- gate kitty_transmit can land before kitty_attach has opened the tty.
     M._kitty_attached = false
     M._kitty_attach_error = nil
     M._kitty_ready_cbs = {}
@@ -95,7 +94,24 @@ function M.ensure(opts)
         end
     end
 
-    local tty = vim.env.JOVIAN_TTY or "/dev/tty"
+    -- Resolve the actual pts device (e.g. /dev/pts/3) BEFORE forking.
+    -- The jovian-core child process is spawned via vim.uv.spawn, which on
+    -- many systems doesn't propagate a controlling tty — opening "/dev/tty"
+    -- inside the child then fails with ENXIO. Running `tty` in the parent
+    -- (we still have ours) and passing the resolved absolute path lets the
+    -- child open it directly.
+    local tty = vim.env.JOVIAN_TTY
+    if not tty or tty == "" then
+        local out = vim.fn.system("tty 2>/dev/null"):gsub("%s+$", "")
+        if out ~= ""
+            and not out:match("^not a tty")
+            and not out:match("^tty:")
+        then
+            tty = out
+        else
+            tty = "/dev/tty" -- fallback; will fail visibly with a useful error
+        end
+    end
     _client:request("kitty_attach", { tty = tty }, function(err, _)
         if err then
             M._kitty_attach_error = err
