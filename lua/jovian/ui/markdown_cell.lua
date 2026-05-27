@@ -205,26 +205,67 @@ local function is_separator_row(content)
     return content:match("[%w]") == nil
 end
 
-local function style_table_row(buf, lnum, content, offset, header)
-    -- Highlight every `|` divider in the row.
+-- Replace a single buffer byte with the supplied glyph via a conceal
+-- extmark. Requires `conceallevel >= 1` to actually hide; we set that
+-- per-window in init.lua when markdown_cell_style is on.
+local function conceal_replace(buf, lnum, col, glyph, hl)
+    pcall(vim.api.nvim_buf_set_extmark, buf, NS, lnum, col, {
+        end_col = col + 1,
+        conceal = glyph,
+        hl_group = hl,
+        hl_mode = "combine",
+        priority = 200,
+    })
+end
+
+local function find_pipe_positions(content)
+    local out = {}
     local s = 1
     while true do
         local p = content:find("|", s)
         if not p then break end
-        hl_range(buf, lnum, offset + p - 1, offset + p, HL.TableDivider)
+        table.insert(out, p)
         s = p + 1
     end
+    return out
+end
+
+local function style_table_row(buf, lnum, content, offset, header)
+    -- Replace each ASCII `|` with the box-drawing vertical `│`, so the
+    -- table visually reads as "drawn" rather than "pseudo-ascii". The
+    -- conceal kicks in when conceallevel >= 1.
+    for _, p in ipairs(find_pipe_positions(content)) do
+        conceal_replace(buf, lnum, offset + p - 1, "│", HL.TableDivider)
+    end
     if header then
-        -- Bold the cell contents between pipes (everything except the
-        -- pipes themselves stays styled as the column heading).
         hl_range(buf, lnum, offset, offset + #content, HL.TableHeader)
     end
 end
 
 local function style_separator_row(buf, lnum, content, offset)
-    -- Style the whole row as a divider so it visually reads as a thin
-    -- horizontal rule between header and body rows.
-    hl_range(buf, lnum, offset, offset + #content, HL.TableDivider)
+    local pipes = find_pipe_positions(content)
+    for i, p in ipairs(pipes) do
+        local glyph
+        if i == 1 then
+            glyph = "├"
+        elseif i == #pipes then
+            glyph = "┤"
+        else
+            glyph = "┼"
+        end
+        conceal_replace(buf, lnum, offset + p - 1, glyph, HL.TableDivider)
+    end
+    -- Replace each `-` between the pipes with `─` so the row reads as a
+    -- continuous horizontal rule. Colons (for alignment hints) and
+    -- whitespace stay as-is — concealing them would shift cell widths
+    -- and break the visual column alignment with surrounding rows.
+    local s = 1
+    while true do
+        local p = content:find("-", s, true)
+        if not p then break end
+        conceal_replace(buf, lnum, offset + p - 1, "─", HL.TableDivider)
+        s = p + 1
+    end
 end
 
 local function style_inline(buf, lnum, content, offset)
