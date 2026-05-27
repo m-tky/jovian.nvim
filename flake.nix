@@ -18,6 +18,24 @@
     in
     {
       overlays.default = final: prev: {
+        # Native Rust backend. Built once, shared between the standalone
+        # `jovian-core` package and the bundled-in-plugin postPatch below.
+        # buildAndTestSubdir keeps cargo scoped to core/ so the flake's other
+        # files don't trigger spurious rebuilds.
+        jovian-core = final.rustPlatform.buildRustPackage {
+          pname = "jovian-core";
+          version = "0.1.0";
+          # Only the core/ subtree is needed for the Rust build; using a
+          # narrower src avoids invalidating the cargoSetupHook every time an
+          # unrelated lua/ or test file changes.
+          src = "${self}/core";
+          cargoLock.lockFile = "${self}/core/Cargo.lock";
+          # Pure-rust zmq crate — no C deps, no system libzmq required. We
+          # still need a C linker (provided by buildRustPackage's default
+          # stdenv) for the final link step.
+          doCheck = false;
+        };
+
         vimPlugins = prev.vimPlugins // {
           jovian-nvim = final.vimUtils.buildVimPlugin {
             pname = "jovian-nvim";
@@ -29,6 +47,13 @@
                 --replace 'ffi.load, "zmq"' 'ffi.load, "${final.zeromq}/lib/libzmq${final.stdenv.hostPlatform.extensions.sharedLibrary}"'
               substituteInPlace lua/jovian/backend/messenger.lua \
                 --replace 'ffi.load, "crypto"' 'ffi.load, "${final.openssl.out}/lib/libcrypto${final.stdenv.hostPlatform.extensions.sharedLibrary}"'
+
+              # Drop the prebuilt jovian-core binary where lua/jovian/backend/core.lua
+              # looks for it (`<plugin_dir>/core/target/release/jovian-core`).
+              # This makes the plugin work out of the box under nix without the
+              # lazy.nvim build hook ever running install.lua.
+              mkdir -p core/target/release
+              install -m755 ${final.jovian-core}/bin/jovian-core core/target/release/jovian-core
             '';
           };
         };
@@ -177,6 +202,7 @@
           nvim-jovian = nvim-jovian;
           nvim-jovian-fallback = nvim-jovian-fallback;
           jovian-nvim = pkgs.vimPlugins.jovian-nvim;
+          jovian-core = pkgs.jovian-core;
           pythonEnv = pythonEnvFull;
           pythonEnvMinimal = pkgs.jovian-minimal-python;
           run-tests = run-tests;
@@ -274,6 +300,16 @@
               pkgs.zeromq
               pkgs.openssl
               pythonEnv
+
+              # Rust toolchain for building jovian-core (the native backend).
+              # Pure-rust zmq crate so libzmq/openssl are NOT linked into the
+              # binary; they remain only for the legacy lua/jovian/backend/zmq.lua
+              # FFI path during the Phase 0..4 migration.
+              pkgs.cargo
+              pkgs.rustc
+              pkgs.rustfmt
+              pkgs.clippy
+              pkgs.pkg-config
             ];
 
             shellHook = ''
@@ -283,6 +319,12 @@
                 echo "Copying demo_jovian.py to current directory..."
                 cp ${self}/examples/demo_jovian.py .
                 chmod +w demo_jovian.py
+              fi
+
+              if [ -d core ] && [ ! -f core/target/release/jovian-core ]; then
+                echo "🦀 Building jovian-core (first-time native backend build)..."
+                (cd core && cargo build --release) || \
+                  echo "  ⚠ cargo build failed; run 'cd core && cargo build --release' manually."
               fi
 
               echo "Run 'nvim-jovian demo_jovian.py' to try the plugin."

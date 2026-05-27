@@ -1,0 +1,95 @@
+-- Download a prebuilt jovian-core binary from GitHub releases, or fall back
+-- to `cargo build --release` if the host platform isn't covered.
+--
+-- Used by the lazy.nvim `build` hook so users don't need a Rust toolchain
+-- on supported platforms. Nix users bypass this entirely — the flake's
+-- vimPlugin derivation drops the prebuilt binary at the expected path
+-- during postPatch, and the Lua locator finds it there.
+
+local M = {}
+
+local REPO = "m-tky/jovian.nvim"
+
+local function detect_target()
+    local u = (vim.uv or vim.loop).os_uname()
+    local sys, mach = u.sysname, u.machine
+    if sys == "Darwin" then
+        if mach == "arm64" then return "aarch64-apple-darwin" end
+        if mach == "x86_64" then return "x86_64-apple-darwin" end
+    elseif sys == "Linux" then
+        if mach == "x86_64" then return "x86_64-unknown-linux-gnu" end
+        if mach == "aarch64" then return "aarch64-unknown-linux-gnu" end
+    end
+    return nil
+end
+
+local function detect_tag(plugin_dir)
+    local out = vim.fn.system({ "git", "-C", plugin_dir, "describe", "--tags", "--exact-match" })
+    if vim.v.shell_error == 0 then return vim.trim(out) end
+    out = vim.fn.system({ "git", "-C", plugin_dir, "describe", "--tags", "--abbrev=0" })
+    if vim.v.shell_error == 0 then return vim.trim(out) end
+    return nil
+end
+
+local function build_from_source(plugin_dir)
+    local manifest = plugin_dir .. "/core/Cargo.toml"
+    if vim.fn.executable("cargo") == 0 then
+        error(
+            "jovian: cargo not found in PATH.\n"
+                .. "Install Rust (https://rustup.rs) or use a supported prebuilt platform."
+        )
+    end
+    vim.notify("jovian: building jovian-core from source via cargo...", vim.log.levels.INFO)
+    local out = vim.fn.system({ "cargo", "build", "--release", "--manifest-path", manifest })
+    if vim.v.shell_error ~= 0 then
+        error(("jovian: cargo build failed: %s"):format(out))
+    end
+end
+
+function M.run(plugin)
+    local plugin_dir = (plugin and plugin.dir)
+        or vim.fn.expand("~/.local/share/nvim/lazy/jovian.nvim")
+
+    local target = detect_target()
+    local tag = target and detect_tag(plugin_dir)
+    if not target or not tag then
+        build_from_source(plugin_dir)
+        return false
+    end
+
+    local url = string.format(
+        "https://github.com/%s/releases/download/%s/jovian-core-%s",
+        REPO,
+        tag,
+        target
+    )
+    local dest_dir = plugin_dir .. "/core/target/release"
+    vim.fn.mkdir(dest_dir, "p")
+    local dest = dest_dir .. "/jovian-core"
+
+    vim.notify(("jovian: downloading prebuilt %s..."):format(tag), vim.log.levels.INFO)
+    local out = vim.fn.system({
+        "curl", "-fsSL", "--retry", "3", "--retry-delay", "2",
+        "-o", dest, url,
+    })
+    if vim.v.shell_error ~= 0 then
+        vim.notify(
+            ("jovian: download failed (%s), falling back to cargo"):format(out),
+            vim.log.levels.WARN
+        )
+        build_from_source(plugin_dir)
+        return false
+    end
+
+    vim.fn.system({ "chmod", "+x", dest })
+    if (vim.uv or vim.loop).os_uname().sysname == "Darwin" then
+        vim.fn.system({ "xattr", "-cr", dest })
+    end
+    vim.notify(("jovian: installed prebuilt %s"):format(target), vim.log.levels.INFO)
+    return true
+end
+
+M._detect_target = detect_target
+M._detect_tag = detect_tag
+
+return M

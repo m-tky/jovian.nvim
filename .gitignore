@@ -4,3 +4,6 @@
 .ruff_cache/
 *.log
 cell_*.md
+core/target/
+/result
+/result-*
