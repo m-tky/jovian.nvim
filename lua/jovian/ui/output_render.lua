@@ -303,7 +303,7 @@ end
 
 local PREVIEW_NS = vim.api.nvim_create_namespace("jovian_preview_outputs")
 
-local function outputs_to_preview_lines(outputs)
+local function outputs_to_preview_lines(outputs, refresh_cb)
     local lines, hls = {}, {}
     local function push(text, hl)
         for _, line in ipairs(vim.split(text, "\n", { plain = true })) do
@@ -311,6 +311,8 @@ local function outputs_to_preview_lines(outputs)
             table.insert(hls, hl)
         end
     end
+    local Config = require("jovian.config")
+    local Kitty -- lazily required only when an image appears
     for _, o in ipairs(outputs) do
         local kind = o.output_type
         if kind == "stream" then
@@ -319,9 +321,48 @@ local function outputs_to_preview_lines(outputs)
             if text ~= "" then push(text, hl) end
         elseif kind == "execute_result" or kind == "display_data" then
             local data = o.data or {}
+            local img_b64 = find_image_b64(data)
             local tp = as_str(data["text/plain"])
+            local has_img = img_b64 ~= nil
+            if has_img and tp ~= ""
+                and (tp:match("^<Figure ")
+                    or tp:match("^<[%w._]+ object>$")
+                    or tp:match("^<[%w._]+ object at 0x[%x]+>$"))
+            then
+                tp = ""
+            end
             if tp ~= "" then
                 push(strip_ansi(tp):gsub("\n$", ""), HL.Result)
+            end
+            if has_img then
+                Kitty = Kitty or require("jovian.ui.kitty")
+                local rows = Config.options.image_rows or 14
+                local cols = Config.options.image_cols or 56
+                local id = Kitty.ensure_transmitted(img_b64, refresh_cb, cols, rows)
+                if id then
+                    -- Each row of the placement is a list of per-cell chunks
+                    -- (all sharing the same JovianKittyImg_<id> hl). For the
+                    -- preview buffer we concatenate them into one string per
+                    -- line — kitty intercepts the placeholders the same way
+                    -- whether they came from virt_text or real buffer bytes.
+                    local placement = Kitty.build_virt_lines(id, rows, cols)
+                    for _, row_chunks in ipairs(placement) do
+                        local parts = {}
+                        for _, chunk in ipairs(row_chunks) do
+                            table.insert(parts, chunk[1])
+                        end
+                        table.insert(lines, table.concat(parts))
+                        table.insert(hls, row_chunks[1][2])
+                    end
+                else
+                    -- Reserve blank rows while the transmit is in flight;
+                    -- the refresh_cb re-runs render_to_buffer once the
+                    -- image_id arrives.
+                    for _ = 1, rows do
+                        table.insert(lines, "")
+                        table.insert(hls, HL.Result)
+                    end
+                end
             end
         elseif kind == "error" then
             local head = as_str(o.ename) .. ": " .. as_str(o.evalue)
@@ -343,10 +384,20 @@ function M.render_to_buffer(buf, win, source_path, cell_id, execution_count_hint
 
     local co = M.cell_outputs(source_path, cell_id)
     local exec
+    -- Async Kitty image transmits arrive after render returns; re-call
+    -- ourselves when they land so the preview swaps reserved blank rows
+    -- for the actual placeholder chars.
+    local refresh_cb = function()
+        if vim.api.nvim_buf_is_valid(buf) then
+            vim.schedule(function()
+                M.render_to_buffer(buf, win, source_path, cell_id, execution_count_hint)
+            end)
+        end
+    end
     local body_lines, body_hls = {}, {}
     if co then
         exec = co.execution_count
-        body_lines, body_hls = outputs_to_preview_lines(co.outputs or {})
+        body_lines, body_hls = outputs_to_preview_lines(co.outputs or {}, refresh_cb)
     end
     if exec == nil then exec = execution_count_hint end
 
