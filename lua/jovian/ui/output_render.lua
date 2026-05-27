@@ -303,7 +303,7 @@ end
 
 local PREVIEW_NS = vim.api.nvim_create_namespace("jovian_preview_outputs")
 
-local function outputs_to_preview_lines(outputs, refresh_cb)
+local function outputs_to_preview_lines(outputs, refresh_cb, img_cols, img_rows)
     local lines, hls = {}, {}
     local function push(text, hl)
         for _, line in ipairs(vim.split(text, "\n", { plain = true })) do
@@ -311,7 +311,6 @@ local function outputs_to_preview_lines(outputs, refresh_cb)
             table.insert(hls, hl)
         end
     end
-    local Config = require("jovian.config")
     local Kitty -- lazily required only when an image appears
     for _, o in ipairs(outputs) do
         local kind = o.output_type
@@ -336,8 +335,8 @@ local function outputs_to_preview_lines(outputs, refresh_cb)
             end
             if has_img then
                 Kitty = Kitty or require("jovian.ui.kitty")
-                local rows = Config.options.image_rows or 14
-                local cols = Config.options.image_cols or 56
+                local rows = img_rows or 14
+                local cols = img_cols or 56
                 local id = Kitty.ensure_transmitted(img_b64, refresh_cb, cols, rows)
                 if id then
                     -- Each row of the placement is a list of per-cell chunks
@@ -378,9 +377,46 @@ end
 --- Render a cell's outputs into a buffer (the side preview pane or a pin).
 --- Writes text lines + applies highlight extmarks per line. Safe to call
 --- on every cursor move; cheap because we don't allocate per-row chunks.
+-- Pick image dimensions that fit the preview window without clipping
+-- either axis, preserving the configured cell aspect ratio.
+local function preview_image_dims(win)
+    local Config = require("jovian.config")
+    local aspect = Config.options.preview_image_aspect or 2.0
+    local max_cols = Config.options.preview_image_max_cols
+    local max_rows = Config.options.preview_image_max_rows
+
+    local win_w, win_h
+    if win and vim.api.nvim_win_is_valid(win) then
+        local info = vim.fn.getwininfo(win)[1] or {}
+        local textoff = info.textoff or 0
+        win_w = vim.api.nvim_win_get_width(win) - textoff
+        win_h = vim.api.nvim_win_get_height(win)
+    end
+
+    -- 4 rows reserved at the top for the Out[N] header + underline, plus
+    -- a row of breathing room at the bottom. 2 col margin on the sides.
+    local avail_w = math.max((max_cols or win_w or 80) - 2, 10)
+    local avail_h = math.max((max_rows or win_h or 24) - 4, 5)
+
+    -- Try cols-limited first; if rows overflow, switch to rows-limited.
+    local cols, rows
+    local rows_for_cols = math.floor(avail_w / aspect)
+    if rows_for_cols <= avail_h then
+        cols, rows = avail_w, rows_for_cols
+    else
+        rows = avail_h
+        cols = math.floor(avail_h * aspect)
+    end
+    if cols < 4 then cols = 4 end
+    if rows < 2 then rows = 2 end
+    return cols, rows
+end
+
 function M.render_to_buffer(buf, win, source_path, cell_id, execution_count_hint)
     if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
     M.setup_hl(nil)
+
+    local img_cols, img_rows = preview_image_dims(win)
 
     local co = M.cell_outputs(source_path, cell_id)
     local exec
@@ -397,7 +433,9 @@ function M.render_to_buffer(buf, win, source_path, cell_id, execution_count_hint
     local body_lines, body_hls = {}, {}
     if co then
         exec = co.execution_count
-        body_lines, body_hls = outputs_to_preview_lines(co.outputs or {}, refresh_cb)
+        body_lines, body_hls = outputs_to_preview_lines(
+            co.outputs or {}, refresh_cb, img_cols, img_rows
+        )
     end
     if exec == nil then exec = execution_count_hint end
 

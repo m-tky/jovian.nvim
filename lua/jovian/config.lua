@@ -108,6 +108,16 @@ M.defaults = {
     image_rows = 14,
     image_cols = 56,
 
+    -- Preview-pane image sizing. The preview window has its own
+    -- geometry so we scale the picture to fit. Pixel-to-cell ratio of
+    -- matplotlib's default 6.4x4.8 figure on an 8x16 cell font lands
+    -- near 2.0 (wider than tall in cells), so that's our default.
+    preview_image_aspect = 2.0,
+    -- Upper bounds. nil = "fill the preview window's text area" — the
+    -- renderer picks whichever fits both axes without clipping.
+    preview_image_max_cols = nil,
+    preview_image_max_rows = nil,
+
     -- Per-level highlight overrides for Phase 2 visuals. Each value can be
     -- either a string (treated as a link target — typically a colorscheme's
     -- own heading group like "@markup.heading.1.markdown") or a table of

@@ -213,6 +213,30 @@ function M.setup(opts)
                         refresh_buffer(buf, win)
                     end
                 end
+                -- Re-render the preview too so its image rescales to the
+                -- new geometry. Find a python window to know which file's
+                -- sidecar to read from.
+                local State = require("jovian.state")
+                if State.current_preview_cell_id
+                    and State.buf.preview
+                    and vim.api.nvim_buf_is_valid(State.buf.preview)
+                then
+                    for _, w in ipairs(vim.api.nvim_list_wins()) do
+                        local b = vim.api.nvim_win_get_buf(w)
+                        if vim.bo[b].filetype == "python" then
+                            local src = vim.api.nvim_buf_get_name(b)
+                            if src ~= "" then
+                                require("jovian.ui.output_render").render_to_buffer(
+                                    State.buf.preview,
+                                    State.win.preview,
+                                    src,
+                                    State.current_preview_cell_id
+                                )
+                                break
+                            end
+                        end
+                    end
+                end
             end,
         })
 
