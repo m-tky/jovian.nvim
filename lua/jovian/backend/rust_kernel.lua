@@ -59,6 +59,18 @@ local function set_final(cell_id, errored)
     _cell_had_error[cell_id] = nil
 end
 
+-- Trigger a debounced cell_frame re-render whenever an output-bearing
+-- event arrives, so the inline output block grows in near-real-time as
+-- the kernel streams. Cheap because cell_frame.schedule itself debounces.
+local function refresh_inline_outputs(cell_id)
+    if not Config.options.inline_outputs or not Config.options.cell_frame then return end
+    local buf = State.cell_buf_map[cell_id]
+    if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+    local OutRender = require("jovian.ui.output_render")
+    OutRender.invalidate(vim.api.nvim_buf_get_name(buf))
+    require("jovian.ui.cell_frame").schedule(buf)
+end
+
 local function on_cell_event(params)
     local cell_id = params and params.cell_id
     if not cell_id then return end
@@ -79,13 +91,15 @@ local function on_cell_event(params)
         set_busy(cell_id)
     elseif kind == "stream" then
         UI.append_stream_text(ev.text or "", ev.name or "stdout")
+        refresh_inline_outputs(cell_id)
     elseif kind == "execute_result" or kind == "display_data" then
         local data = ev.data or {}
         local tp = data["text/plain"]
         if type(tp) == "string" and tp ~= "" then
             UI.append_to_repl(vim.split(tp, "\n"), "Identifier")
         end
-        -- Phase 4 will render images/HTML; for now we only echo text/plain.
+        refresh_inline_outputs(cell_id)
+        -- Phase 3 will add image/HTML support to inline outputs.
     elseif kind == "error" then
         _cell_had_error[cell_id] = true
         local head = (ev.ename or "Error") .. ": " .. (ev.evalue or "")
@@ -95,8 +109,10 @@ local function on_cell_event(params)
                 UI.append_to_repl(line, "ErrorMsg")
             end
         end
+        refresh_inline_outputs(cell_id)
     elseif kind == "execute_reply" then
         set_final(cell_id, ev.status == "error" or _cell_had_error[cell_id])
+        refresh_inline_outputs(cell_id)
     end
     -- status (busy/idle), update_display_data, kernel_info, clear_output: no-op for Phase 1
 end

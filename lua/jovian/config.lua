@@ -95,6 +95,15 @@ M.defaults = {
     -- cursor is on that line, but the rest of the cell stays styled).
     markdown_cell_style = false,
 
+    -- Render the kernel's outputs (stdout/stderr/text result/error
+    -- traceback) below each cell as virt_lines, jupynvim-style. Reads
+    -- from the nbformat-style JSON sidecar that jovian-core (the Rust
+    -- backend) writes at `.jovian_cache/<filename>/outputs.json`.
+    -- Requires `cell_frame = true` (the outputs are rendered inside
+    -- the cell's bottom virt_lines block). Image/HTML support comes
+    -- in Phase 3; for now only text-mime outputs render.
+    inline_outputs = false,
+
     -- Per-level highlight overrides for Phase 2 visuals. Each value can be
     -- either a string (treated as a link target — typically a colorscheme's
     -- own heading group like "@markup.heading.1.markdown") or a table of
@@ -128,6 +137,14 @@ M.defaults = {
         md_quote = nil,         -- defaults to link Comment
         md_table_divider = nil, -- defaults to link Special
         md_table_header = nil,  -- defaults to bold = true
+        -- Inline cell output rendering. JovianOutDivider styles the
+        -- `├─ Out[N] ─┤` separator; JovianOutStdout / JovianOutStderr
+        -- / JovianOutResult / JovianOutError tint the body lines.
+        out_divider = nil, -- defaults to link the cell border color
+        out_stdout = nil,  -- defaults to link Normal
+        out_stderr = nil,  -- defaults to link WarningMsg
+        out_result = nil,  -- defaults to link Identifier
+        out_error = nil,   -- defaults to link ErrorMsg
     },
 }
 

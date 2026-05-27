@@ -202,6 +202,9 @@
             echo ">>> Running Cell Frame + Markdown Styling Tests..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_cell_frame.lua
 
+            echo ">>> Running Inline Output Rendering Tests..."
+            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_inline_outputs.lua
+
             echo ">>> Running Rust Backend Phase 1 Smoke Test (Real Kernel)..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_rust_phase1.lua
           '';

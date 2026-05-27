@@ -230,9 +230,34 @@ function M.render(bufnr, winid)
             })
         end
 
-        -- 4. Bottom border on the last source line via virt_lines.
+        -- 4. Bottom block on the last source line via virt_lines. When
+        --    inline_outputs is on and the sidecar JSON has anything for
+        --    this cell, the block is:
+        --       ├─ Out[N] ────────────┤
+        --       │ ...output lines...  │
+        --       └─────────────────────┘
+        --    Otherwise it's just the closing border.
+        local lines_below = {}
+        if Config.options.inline_outputs and h.kind == "Code" then
+            local OutRender = require("jovian.ui.output_render")
+            OutRender.setup_hl(hl)
+            local src_path = vim.api.nvim_buf_get_name(bufnr)
+            local co = OutRender.cell_outputs(src_path, h.id)
+            if co and co.outputs and #co.outputs > 0 then
+                local out_rows = OutRender.build_virt_lines(
+                    co.outputs,
+                    co.execution_count,
+                    width,
+                    hl
+                )
+                for _, row in ipairs(out_rows) do
+                    table.insert(lines_below, row)
+                end
+            end
+        end
+        table.insert(lines_below, { { bottom_border(width), hl } })
         vim.api.nvim_buf_set_extmark(bufnr, NS, last_src, 0, {
-            virt_lines = { { { bottom_border(width), hl } } },
+            virt_lines = lines_below,
         })
     end
 end

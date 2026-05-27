@@ -1,0 +1,158 @@
+-- Phase 4 unit test: write a synthetic sidecar JSON with stream / result
+-- / error outputs, render the cell_frame for a `# %%` cell with the
+-- matching id, assert that the cell's virt_lines include the divider
+-- (├─ Out[N] ─┤), each stream line, and the error traceback.
+
+vim.opt.rtp:prepend(vim.fn.getcwd())
+
+local pass, fail = 0, 0
+local function assert_eq(actual, expected, msg)
+    if actual == expected then
+        pass = pass + 1
+        print("  PASS " .. msg)
+    else
+        fail = fail + 1
+        print(string.format("  FAIL %s — expected %s, got %s",
+            msg, tostring(expected), tostring(actual)))
+    end
+end
+local function assert_true(cond, msg)
+    if cond then
+        pass = pass + 1
+        print("  PASS " .. msg)
+    else
+        fail = fail + 1
+        print("  FAIL " .. msg)
+    end
+end
+
+require("jovian").setup({
+    cell_frame = true,
+    inline_outputs = true,
+    use_lua_native_shell = false,
+})
+
+local CellFrame = require("jovian.ui.cell_frame")
+local OutRender = require("jovian.ui.output_render")
+
+-- Synthetic source file with a single code cell
+local src_path = vim.fn.tempname() .. "/scratch.py"
+local src_dir = vim.fn.fnamemodify(src_path, ":h")
+vim.fn.mkdir(src_dir, "p")
+
+vim.cmd("edit " .. src_path)
+local buf = vim.api.nvim_get_current_buf()
+vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+    '# %% id="probe1"',
+    'print("hello")',
+})
+vim.cmd("write")
+
+-- Write the sidecar JSON the cell_frame will pick up
+local sidecar_dir = src_dir .. "/.jovian_cache/" .. vim.fn.fnamemodify(src_path, ":t")
+vim.fn.mkdir(sidecar_dir, "p")
+local sidecar = {
+    version = 1,
+    cells = {
+        probe1 = {
+            execution_count = 7,
+            outputs = {
+                {
+                    output_type = "stream",
+                    name = "stdout",
+                    text = "hello\nworld\n",
+                },
+                {
+                    output_type = "execute_result",
+                    execution_count = 7,
+                    data = { ["text/plain"] = "42" },
+                    metadata = {},
+                },
+                {
+                    output_type = "error",
+                    ename = "ValueError",
+                    evalue = "no good",
+                    traceback = { "Traceback (most recent call last):", "  ...", "ValueError: no good" },
+                },
+            },
+        },
+    },
+}
+local fh = io.open(sidecar_dir .. "/outputs.json", "w")
+fh:write(vim.json.encode(sidecar))
+fh:close()
+-- Drop cached read so the renderer picks up the fresh file
+OutRender.invalidate(src_path)
+
+CellFrame.render(buf, vim.api.nvim_get_current_win())
+
+-- Find the cell_frame's virt_lines extmark on the last source line (= line 1, 0-indexed)
+local marks = vim.api.nvim_buf_get_extmarks(buf, CellFrame._namespace, 0, -1, { details = true })
+local virt_lines = nil
+for _, m in ipairs(marks) do
+    local det = m[4]
+    if det.virt_lines and #det.virt_lines > 0 and m[2] == 1 then
+        virt_lines = det.virt_lines
+        break
+    end
+end
+assert_true(virt_lines ~= nil, "cell has a virt_lines extmark on its last source line")
+assert_true(#virt_lines >= 6, "virt_lines includes divider + 2 stream + 1 result + 3 traceback + bottom (got " .. tostring(#virt_lines) .. ")")
+
+local function joined_line(line_idx)
+    if not virt_lines[line_idx] then return nil end
+    local parts = {}
+    for _, chunk in ipairs(virt_lines[line_idx]) do
+        table.insert(parts, chunk[1])
+    end
+    return table.concat(parts, "")
+end
+
+local divider = joined_line(1)
+assert_true(divider and divider:match("├") and divider:match("Out%[7%]"),
+    "first virt_line is the Out[7] divider")
+
+-- Lookup the highlight group on the stream/result/error rows.
+local function row_has_hl(line_idx, hl_name)
+    if not virt_lines[line_idx] then return false end
+    for _, chunk in ipairs(virt_lines[line_idx]) do
+        if chunk[2] == hl_name then return true end
+    end
+    return false
+end
+
+assert_true(row_has_hl(2, "JovianOutStdout"), "stream rows tagged JovianOutStdout")
+-- result row position: divider + 2 stream lines = 3 → result at index 4
+local result_row = joined_line(4)
+assert_true(result_row and result_row:find("42", 1, true), "result row contains text/plain payload")
+assert_true(row_has_hl(4, "JovianOutResult"), "result row tagged JovianOutResult")
+
+-- Error rows: ename:evalue header + 3 traceback lines → indices 5..8
+local err_head = joined_line(5)
+assert_true(err_head and err_head:find("ValueError: no good", 1, true),
+    "error header has ename: evalue")
+assert_true(row_has_hl(5, "JovianOutError"), "error row tagged JovianOutError")
+
+-- The final virt_line is the bottom border
+local last = joined_line(#virt_lines)
+assert_true(last and last:match("└"), "last virt_line is the bottom border")
+
+-- Toggling inline_outputs off should drop the output block but keep the
+-- bottom border alone.
+require("jovian.config").options.inline_outputs = false
+CellFrame.render(buf, vim.api.nvim_get_current_win())
+marks = vim.api.nvim_buf_get_extmarks(buf, CellFrame._namespace, 0, -1, { details = true })
+local off_lines = nil
+for _, m in ipairs(marks) do
+    local det = m[4]
+    if det.virt_lines and #det.virt_lines > 0 and m[2] == 1 then
+        off_lines = det.virt_lines
+        break
+    end
+end
+assert_eq(#(off_lines or {}), 1, "with inline_outputs=false the virt_lines is just the bottom border")
+
+vim.fn.delete(src_dir, "rf")
+
+print(string.format("\n%d passed, %d failed", pass, fail))
+os.exit(fail == 0 and 0 or 1)
