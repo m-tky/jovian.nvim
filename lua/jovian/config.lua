@@ -69,6 +69,14 @@ M.defaults = {
         magic_command_highlight = true,
     },
     use_lua_native_shell = true,
+
+    -- Route kernel I/O through the jovian-core Rust backend instead of
+    -- kernel_bridge.py + libzmq FFI. Phase 1 milestone: spawn + execute
+    -- + REPL streaming + cell status work. Variable inspection, DataFrame
+    -- view, clipboard, image saving, SSH/tunnel kernels DO NOT YET work
+    -- on this path — they still require the Python bridge. Leave this
+    -- false unless you're actively testing the migration.
+    use_rust_core = false,
 }
 
 M.options = vim.deepcopy(M.defaults)

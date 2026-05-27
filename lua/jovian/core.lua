@@ -14,6 +14,7 @@ local Hosts = require("jovian.hosts")
 local Handlers = require("jovian.handlers")
 local Messenger = nil
 local Zmq = nil
+local RustKernel = nil
 
 local function get_messenger()
     Messenger = Messenger or require("jovian.backend.messenger")
@@ -23,6 +24,11 @@ end
 local function get_zmq()
     Zmq = Zmq or require("jovian.backend.zmq")
     return Zmq
+end
+
+local function get_rust_kernel()
+    RustKernel = RustKernel or require("jovian.backend.rust_kernel")
+    return RustKernel
 end
 
 local json_decode = vim.json and vim.json.decode or vim.fn.json_decode
@@ -310,6 +316,14 @@ function M.start_kernel(on_ready)
     -- Ensure IDs are unique before starting
     Cell.fix_duplicate_ids(0)
 
+    if Config.options.use_rust_core then
+        if on_ready then
+            table.insert(State.on_ready_callbacks, on_ready)
+        end
+        get_rust_kernel().start()
+        return
+    end
+
     -- Async Validation and Start
     Hosts.validate_connection(nil, function()
         -- Success callback
@@ -374,6 +388,11 @@ local function with_kernel(fn)
 end
 
 function M.stop_kernel()
+    if State.rust_active then
+        get_rust_kernel().stop()
+        require("jovian.tunnel").stop()
+        return
+    end
     if State.job_id then
         local id = State.job_id
         State.job_id = nil
@@ -383,15 +402,17 @@ function M.stop_kernel()
 end
 
 function M.restart_kernel()
+    UI.append_to_repl("[Kernel Restarting...]", "WarningMsg")
+    UI.clear_status_extmarks(0)
+
+    if State.rust_active or Config.options.use_rust_core then
+        get_rust_kernel().restart()
+        return
+    end
     if State.job_id then
         vim.fn.jobstop(State.job_id)
         State.job_id = nil
     end
-    UI.append_to_repl("[Kernel Restarting...]", "WarningMsg")
-
-    -- Clear all status marks as kernel state is lost
-    UI.clear_status_extmarks(0)
-
     M.start_kernel()
 end
 
@@ -421,6 +442,14 @@ function M.send_payload(code, cell_id, filename)
     vim.api.nvim_buf_clear_namespace(current_buf, State.diag_ns, 0, -1)
 
     UI.set_cell_status(current_buf, cell_id, "running", Config.options.ui_symbols.running)
+
+    if State.rust_active then
+        -- Rust core owns sidecar JSON I/O; no markdown cache directory needed
+        -- on this path. The kernel_bridge cache dir is still created on the
+        -- legacy path below for compatibility with existing fixtures.
+        get_rust_kernel().execute(code, cell_id)
+        return
+    end
 
     filename = filename or vim.fn.expand("%:t")
     if filename == "" then
@@ -464,7 +493,24 @@ function M.send_payload(code, cell_id, filename)
     vim.api.nvim_chan_send(State.job_id, msg .. "\n")
 end
 
+-- Phase 1 of the Rust core migration: kernel_bridge.py is still the only
+-- backend that implements variable inspection / DataFrames / clipboard /
+-- image saving / docstring inspection. When the user has flipped
+-- use_rust_core=true these all fail with a clear message instead of
+-- silently no-op'ing on a `chan_send` to the sentinel job_id.
+local function require_python_bridge(label)
+    if State.rust_active then
+        vim.notify(
+            ("Jovian: %s is not yet supported under use_rust_core=true (Phase 5)"):format(label),
+            vim.log.levels.WARN
+        )
+        return false
+    end
+    return true
+end
+
 function M.copy_variable(args)
+    if not require_python_bridge("copy_variable") then return end
     with_kernel(function()
         local var_name = args.args
         if var_name == "" then
@@ -476,6 +522,7 @@ function M.copy_variable(args)
 end
 
 function M.print_backend()
+    if not require_python_bridge("print_backend") then return end
     if not State.job_id then
         return vim.notify("Kernel not started", vim.log.levels.WARN)
     end
@@ -644,6 +691,7 @@ function M.run_cells_above()
 end
 
 function M.view_dataframe(args)
+    if not require_python_bridge("view_dataframe") then return end
     with_kernel(function()
         local var_name = type(args) == "table" and args.args or args
         if var_name == "" or var_name == nil then
@@ -666,6 +714,7 @@ function M.view_dataframe_page(var_name, offset, limit)
 end
 
 function M.show_variables(opts)
+    if not require_python_bridge("show_variables") then return end
     opts = opts or {}
     with_kernel(function()
         if opts.force_float then
@@ -683,6 +732,11 @@ end
 function M.interrupt_kernel()
     if not State.job_id then
         return vim.notify("Kernel not running", vim.log.levels.WARN)
+    end
+
+    if State.rust_active then
+        get_rust_kernel().interrupt()
+        return
     end
 
     -- Get PID from job_id and send SIGINT (Ctrl+C equivalent)
@@ -703,6 +757,7 @@ function M.interrupt_kernel()
 end
 
 function M.inspect_object(args)
+    if not require_python_bridge("inspect_object") then return end
     with_kernel(function()
         local var_name = args.args
         if var_name == "" then
@@ -714,6 +769,7 @@ function M.inspect_object(args)
 end
 
 function M.peek_symbol(args)
+    if not require_python_bridge("peek_symbol") then return end
     with_kernel(function()
         local var_name = args.args
         if var_name == "" then
@@ -749,6 +805,7 @@ vim.schedule(function()
 end)
 
 function M.toggle_plot_view()
+    if not require_python_bridge("toggle_plot_view") then return end
     with_kernel(function()
         local new_mode = Config.options.plot_view_mode == "inline" and "window" or "inline"
         Config.options.plot_view_mode = new_mode

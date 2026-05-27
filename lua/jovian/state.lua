@@ -62,4 +62,11 @@ M.lua_shell_socket = nil
 M.lua_zmq_key = nil
 M.lua_messenger_stop = nil
 
+-- Rust core (jovian-core) state. Only populated when use_rust_core=true.
+-- `job_id` is set to the sentinel string "rust" so legacy `if State.job_id`
+-- checks still gate execution, but vim.fn.jobstop / jobpid must NOT be
+-- called on it — branch on `rust_active` first.
+M.rust_active = false
+M.rust_session_id = nil
+
 return M
