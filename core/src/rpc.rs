@@ -580,6 +580,12 @@ impl Server {
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("png_b64 required"))?;
         let id_hint = p.get("image_id").and_then(|v| v.as_u64()).map(|n| n as u32);
+        // The Unicode-placeholder protocol needs the placement grid up
+        // front so Kitty knows how to scale the image when placeholders
+        // reference it. Defaults pick the same shape jupynvim uses; the
+        // caller (Lua) typically passes its render dimensions.
+        let cols = p.get("cols").and_then(|v| v.as_u64()).unwrap_or(56) as u32;
+        let rows = p.get("rows").and_then(|v| v.as_u64()).unwrap_or(14) as u32;
         let kitty_lock = self.kitty.lock().await;
         let kitty = kitty_lock
             .as_ref()
@@ -588,10 +594,10 @@ impl Server {
             .map_err(|e| anyhow!("base64 decode: {e}"))?;
         let id = match id_hint {
             Some(i) => {
-                kitty.transmit_png_with_id(i, &png)?;
+                kitty.transmit_png_with_id(i, &png, cols, rows)?;
                 i
             }
-            None => kitty.transmit_png(&png)?,
+            None => kitty.transmit_png(&png, cols, rows)?,
         };
         Ok(json!({ "image_id": id }))
     }

@@ -141,9 +141,13 @@ local _pending_cbs = {}
 --- Ensure a base64 PNG is transmitted to the terminal. Returns the image_id
 --- synchronously if cached, otherwise nil; in the not-cached case `cb` is
 --- invoked (vim.schedule'd) once the transmission completes.
-function M.ensure_transmitted(b64, cb)
+--- `cols` / `rows` describe the placement grid (cells), required by the
+--- Kitty Unicode-placeholder protocol so the image can be scaled.
+function M.ensure_transmitted(b64, cb, cols, rows)
     if not b64 or b64 == "" then return nil end
-    local key = quick_hash(b64)
+    cols = cols or 56
+    rows = rows or 14
+    local key = quick_hash(b64) .. ":" .. cols .. "x" .. rows
     local entry = _transmits[key]
     if type(entry) == "number" then
         return entry
@@ -174,7 +178,9 @@ function M.ensure_transmitted(b64, cb)
             -- from core.lua; don't double-notify here.
             return
         end
-        client:request("kitty_transmit", { png_b64 = b64 }, function(err, result)
+        client:request("kitty_transmit",
+            { png_b64 = b64, cols = cols, rows = rows },
+            function(err, result)
             if err or not result or not result.image_id then
                 _transmits[key] = nil
                 if err and not M._warned then

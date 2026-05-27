@@ -72,13 +72,25 @@ impl KittyTty {
         Ok(())
     }
 
-    pub fn transmit_png(&self, png: &[u8]) -> Result<u32> {
+    pub fn transmit_png(&self, png: &[u8], cols: u32, rows: u32) -> Result<u32> {
         let id = alloc_id();
-        self.transmit_png_with_id(id, png)?;
+        self.transmit_png_with_id(id, png, cols, rows)?;
         Ok(id)
     }
 
-    pub fn transmit_png_with_id(&self, id: u32, png: &[u8]) -> Result<()> {
+    /// Transmit a PNG and register a VIRTUAL placement so subsequent
+    /// Unicode placeholder characters anchor to it. The `cols × rows`
+    /// values are the grid the image will be scaled to fit; Kitty
+    /// needs these up front — `a=t,U=1` alone (transmit only) is not
+    /// enough to make placeholders renderable. We use `a=T,U=1,c=N,r=N`
+    /// (capital T = transmit AND create placement) just like jupynvim.
+    pub fn transmit_png_with_id(
+        &self,
+        id: u32,
+        png: &[u8],
+        cols: u32,
+        rows: u32,
+    ) -> Result<()> {
         let b64 = base64::engine::general_purpose::STANDARD.encode(png);
         let chunk = 4096;
         let mut pos = 0;
@@ -92,8 +104,8 @@ impl KittyTty {
             buf.clear();
             if first {
                 buf.push_str(&format!(
-                    "\x1b_Ga=t,f=100,i={},U=1,q=2,m={};{}\x1b\\",
-                    id, more, part
+                    "\x1b_Ga=T,U=1,f=100,i={},c={},r={},q=2,m={};{}\x1b\\",
+                    id, cols, rows, more, part
                 ));
                 first = false;
             } else {

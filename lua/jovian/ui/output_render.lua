@@ -203,7 +203,7 @@ function M.build_virt_lines(outputs, execution_count, width, border_hl, refresh_
                 Kitty = Kitty or require("jovian.ui.kitty")
                 local image_rows = Config.options.image_rows or 14
                 local image_cols = math.min(Config.options.image_cols or 56, inner_w)
-                local id = Kitty.ensure_transmitted(img_b64, refresh_cb)
+                local id = Kitty.ensure_transmitted(img_b64, refresh_cb, image_cols, image_rows)
                 if id then
                     local placement = Kitty.build_virt_lines(id, image_rows, image_cols)
                     for _, prow in ipairs(placement) do
