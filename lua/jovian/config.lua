@@ -15,7 +15,6 @@ M.defaults = {
     notify_threshold = 10,
     notify_mode = "all", -- "all", "error", "none"
     show_execution_time = true,
-    plot_view_mode = "inline", -- "inline", "window"
     inline_image_debounce = 500, -- mmilliseconds to wait before rendering images after write
     inline_images = false, -- set to true to enable inline image rendering (requires image.nvim)
     folding = false, -- set to true to enable cell-based folding for Python files

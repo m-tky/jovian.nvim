@@ -453,21 +453,9 @@ State.job_id = 123
 run("JovianVars")
 ok("JovianVars sends get_variables", has_payload("command=get_variables"))
 
-run("JovianCopy", "my_var")
-ok("JovianCopy sends copy_to_clipboard", has_payload("command=copy_to_clipboard"))
-ok("JovianCopy includes variable name", has_payload("name=my_var"))
-
 run("JovianView", "my_df")
 ok("JovianView sends view_dataframe", has_payload("command=view_dataframe"))
 ok("JovianView includes variable name", has_payload("name=my_df"))
-
-run("JovianDoc", "np")
-ok("JovianDoc sends inspect command", has_payload("command=inspect"))
-ok("JovianDoc includes name", has_payload("name=np"))
-
-run("JovianPeek", "np")
-ok("JovianPeek sends peek command", has_payload("command=peek"))
-ok("JovianPeek includes name", has_payload("name=np"))
 
 section("Cache")
 

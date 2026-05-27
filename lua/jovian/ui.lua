@@ -24,8 +24,6 @@ M.render_variables_pane = Renderers.render_variables_pane
 M.show_variables = Renderers.show_variables
 
 M.show_dataframe = Renderers.show_dataframe
-M.show_inspection = Renderers.show_inspection
-M.show_peek = Renderers.show_peek
 
 M.flash_range = VirtualText.flash_range
 M.set_cell_status = VirtualText.set_cell_status

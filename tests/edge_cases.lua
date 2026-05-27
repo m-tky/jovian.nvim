@@ -137,29 +137,6 @@ local function run_real_integration_tests()
         os.exit(1)
     end
 
-    vim.cmd("JovianPeek x")
-    if vim.wait(5000, function()
-        return find_text_in_all_buffers("11223")
-    end) then
-        log("[OK] JovianPeek verified")
-    else
-        log("[FAIL] JovianPeek missing")
-        os.exit(1)
-    end
-
-    -- Step 4: Test Clipboard
-    log("\n>>> Step 4: Testing JovianCopy")
-    vim.g.jovian_last_clipboard = "empty"
-    vim.cmd("JovianCopy x")
-    if vim.wait(10000, function()
-        return vim.g.jovian_last_clipboard == "11223"
-    end) then
-        log("[OK] JovianCopy verified via jovian_last_clipboard")
-    else
-        log("[FAIL] JovianCopy failed. Last clipboard: " .. vim.inspect(vim.g.jovian_last_clipboard))
-        os.exit(1)
-    end
-
     log("\n>>> ALL ENHANCED REAL INTEGRATION TESTS PASSED!")
     os.exit(0)
 end

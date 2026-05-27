@@ -494,49 +494,18 @@ function M.send_payload(code, cell_id, filename)
 end
 
 -- Phase 1 of the Rust core migration: kernel_bridge.py is still the only
--- backend that implements variable inspection / DataFrames / clipboard /
--- image saving / docstring inspection. When the user has flipped
--- use_rust_core=true these all fail with a clear message instead of
--- silently no-op'ing on a `chan_send` to the sentinel job_id.
+-- backend that implements variable inspection / DataFrames. When the user
+-- has flipped use_rust_core=true these warn instead of silently no-op'ing
+-- on a `chan_send` to the sentinel job_id.
 local function require_python_bridge(label)
     if State.rust_active then
         vim.notify(
-            ("Jovian: %s is not yet supported under use_rust_core=true (Phase 5)"):format(label),
+            ("Jovian: %s is not yet supported under use_rust_core=true"):format(label),
             vim.log.levels.WARN
         )
         return false
     end
     return true
-end
-
-function M.copy_variable(args)
-    if not require_python_bridge("copy_variable") then return end
-    with_kernel(function()
-        local var_name = args.args
-        if var_name == "" then
-            var_name = vim.fn.expand("<cword>")
-        end
-        local msg = vim.json.encode({ command = "copy_to_clipboard", name = var_name })
-        vim.api.nvim_chan_send(State.job_id, msg .. "\n")
-    end)
-end
-
-function M.print_backend()
-    if not require_python_bridge("print_backend") then return end
-    if not State.job_id then
-        return vim.notify("Kernel not started", vim.log.levels.WARN)
-    end
-    -- We use a hidden execution to print the backend
-    local code = "import matplotlib; print(f'[Jovian] Current Backend: {matplotlib.get_backend()}')"
-    local payload = {
-        command = "execute",
-        code = code,
-        cell_id = "backend_check",
-        file_dir = vim.fn.expand("%:p:h"),
-        cwd = vim.fn.expand("%:p:h"),
-    }
-    local msg = vim.json.encode(payload)
-    vim.api.nvim_chan_send(State.job_id, msg .. "\n")
 end
 
 function M.send_cell()
@@ -756,30 +725,6 @@ function M.interrupt_kernel()
     end
 end
 
-function M.inspect_object(args)
-    if not require_python_bridge("inspect_object") then return end
-    with_kernel(function()
-        local var_name = args.args
-        if var_name == "" then
-            var_name = vim.fn.expand("<cword>")
-        end
-        local msg = vim.json.encode({ command = "inspect", name = var_name })
-        vim.api.nvim_chan_send(State.job_id, msg .. "\n")
-    end)
-end
-
-function M.peek_symbol(args)
-    if not require_python_bridge("peek_symbol") then return end
-    with_kernel(function()
-        local var_name = args.args
-        if var_name == "" then
-            var_name = vim.fn.expand("<cword>")
-        end
-        local msg = vim.json.encode({ command = "peek", name = var_name })
-        vim.api.nvim_chan_send(State.job_id, msg .. "\n")
-    end)
-end
-
 -- Initialize
 vim.schedule(function()
     local ok, data = pcall(Hosts.load_hosts)
@@ -804,16 +749,6 @@ vim.schedule(function()
     end
 end)
 
-function M.toggle_plot_view()
-    if not require_python_bridge("toggle_plot_view") then return end
-    with_kernel(function()
-        local new_mode = Config.options.plot_view_mode == "inline" and "window" or "inline"
-        Config.options.plot_view_mode = new_mode
-        local msg = vim.json.encode({ command = "set_plot_mode", mode = new_mode })
-        vim.api.nvim_chan_send(State.job_id, msg .. "\n")
-        vim.notify("Plot View Mode: " .. new_mode, vim.log.levels.INFO)
-    end)
-end
 function M.show_error_diagnostics(bufnr, cell_id, error_info)
     local start_line = State.cell_start_line[cell_id] or 1
     local err_line = error_info.line or 1

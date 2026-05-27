@@ -430,14 +430,14 @@ function M.setup()
         )
     end, { desc = "Jovian: Toggle markdown cell styling" })
 
-    -- Data & Tools
+    -- Data & Tools — only Vars + View are kept. Doc/Peek (LSP duplicates),
+    -- Backend (one-line workaround), TogglePlot (Phase 3 makes inline the
+    -- only mode), and Copy (low-value niche) were deleted; pylsp / pyright
+    -- hover and `:JovianRun` on a one-off cell cover those needs.
     vim.api.nvim_create_user_command("JovianVars", function()
         Core.show_variables({ force_float = true })
     end, {})
     vim.api.nvim_create_user_command("JovianView", Core.view_dataframe, { nargs = "?" })
-    vim.api.nvim_create_user_command("JovianCopy", Core.copy_variable, { nargs = "?" })
-
-    vim.api.nvim_create_user_command("JovianBackend", Core.print_backend, {})
 
     -- Navigation
     vim.api.nvim_create_user_command("JovianNextCell", goto_next_cell, {})
@@ -449,17 +449,6 @@ function M.setup()
 
     -- Kernel Control
     vim.api.nvim_create_user_command("JovianInterrupt", Core.interrupt_kernel, {})
-
-    -- Plotting
-    vim.api.nvim_create_user_command("JovianDoc", function(opts)
-        require("jovian.core").inspect_object(opts)
-    end, { nargs = "?" })
-    vim.api.nvim_create_user_command("JovianPeek", function(opts)
-        require("jovian.core").peek_symbol(opts)
-    end, { nargs = "?" })
-    vim.api.nvim_create_user_command("JovianTogglePlot", function()
-        require("jovian.core").toggle_plot_view()
-    end, {})
 
     if Config.options.inline_images then
         vim.api.nvim_create_user_command("JovianRenderImages", function()

@@ -118,29 +118,6 @@ if "{name}" in ns:
         }}
         display({{"application/vnd.jovian.dataframe+json": data}}, raw=True)
 """
-        elif cmd_type == "peek":
-            script = f"""
-from IPython import get_ipython; from IPython.display import display
-shell = get_ipython(); ns = shell.user_ns if shell else globals()
-if "{name}" in ns:
-    val = ns["{name}"]
-    display({{"application/vnd.jovian.peek+json": {{"name": "{name}", "type": type(val).__name__, "repr": repr(val).replace("\\n", " ")[:200]}}}}, raw=True)
-"""
-        elif cmd_type == "inspect":
-            script = f"""
-from IPython import get_ipython; from IPython.display import display
-shell = get_ipython(); ns = shell.user_ns if shell else globals()
-if "{name}" in ns:
-    val = ns["{name}"]
-    display({{"application/vnd.jovian.inspection+json": {{"name": "{name}", "docstring": val.__doc__ or "No docstring"}}}}, raw=True)
-"""
-        elif cmd_type == "copy_to_clipboard":
-            script = f"""
-from IPython import get_ipython; from IPython.display import display
-shell = get_ipython(); ns = shell.user_ns if shell else globals()
-if "{name}" in ns:
-    display({{"application/vnd.jovian.clipboard+json": {{"content": str(ns["{name}"])}}}}, raw=True)
-"""
         if cmd_type == "complete":
             code = cmd.get("code", "")
             cursor_pos = cmd.get("cursor_pos", 0)
@@ -196,14 +173,8 @@ if shell:
                 send_json({**data["application/vnd.jovian.variables+json"], "type": "variable_list"})
             elif "application/vnd.jovian.dataframe+json" in data:
                 send_json({**data["application/vnd.jovian.dataframe+json"], "type": "dataframe_data"})
-            elif "application/vnd.jovian.peek+json" in data:
-                send_json({"type": "peek_data", "data": data["application/vnd.jovian.peek+json"]})
-            elif "application/vnd.jovian.inspection+json" in data:
-                send_json({"type": "inspection_data", "data": data["application/vnd.jovian.inspection+json"]})
             elif "application/vnd.jovian.complete+json" in data:
                 send_json({"type": "complete_data", "matches": data["application/vnd.jovian.complete+json"]["matches"]})
-            elif "application/vnd.jovian.clipboard+json" in data:
-                send_json({"type": "clipboard_data", "content": data["application/vnd.jovian.clipboard+json"]["content"]})
             elif "image/png" in data:
                 send_json({"type": "image", "data": data["image/png"], "cell_id": cid})
             elif "text/plain" in data:
@@ -255,7 +226,7 @@ def main():
             c = cmd.get("command")
             if c == "execute":
                 bridge.execute_code(cmd["code"], cmd["cell_id"], cmd.get("cwd"))
-            elif c in ("get_variables", "view_dataframe", "peek", "inspect", "copy_to_clipboard"):
+            elif c in ("get_variables", "view_dataframe"):
                 bridge.run_command(cmd)
         except (KeyboardInterrupt, Exception):
             continue

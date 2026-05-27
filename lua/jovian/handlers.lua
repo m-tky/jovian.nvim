@@ -44,11 +44,6 @@ function M.handle_ready(msg)
     if State.win.variables and vim.api.nvim_win_is_valid(State.win.variables) then
         require("jovian.core").show_variables()
     end
-
-    if Config.options.plot_view_mode and type(State.job_id) == "number" then
-        local init_msg = vim.json.encode({ command = "set_plot_mode", mode = Config.options.plot_view_mode })
-        vim.api.nvim_chan_send(State.job_id, init_msg .. "\n")
-    end
 end
 
 function M.handle_execution_started(msg)
@@ -155,25 +150,8 @@ function M.handle_dataframe_data(msg)
     UI.show_dataframe(msg)
 end
 
-function M.handle_inspection_data(msg)
-    UI.show_inspection(msg.data)
-end
-
-function M.handle_peek_data(msg)
-    UI.show_peek(msg.data or msg)
-end
-
 function M.handle_complete_data(msg)
     State.last_completion_results = msg.matches
-end
-
-function M.handle_clipboard_data(msg)
-    vim.fn.setreg("+", msg.content)
-    vim.notify("Copied to system clipboard!", vim.log.levels.INFO)
-    -- Debug for tests
-    if vim.g.jovian_test_mode then
-        vim.g.jovian_last_clipboard = msg.content
-    end
 end
 
 function M.handle_input_request(msg)
