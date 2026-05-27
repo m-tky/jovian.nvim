@@ -94,6 +94,32 @@ M.defaults = {
     -- can surprise users mid-edit (we re-show the source while the
     -- cursor is on that line, but the rest of the cell stays styled).
     markdown_cell_style = false,
+
+    -- Per-level highlight overrides for Phase 2 visuals. Each value can be
+    -- either a string (treated as a link target — typically a colorscheme's
+    -- own heading group like "@markup.heading.1.markdown") or a table of
+    -- nvim_set_hl attrs (e.g. { fg = "#ff0000", bold = true }).
+    -- Leave a key nil to let jovian pick from a fallback chain:
+    --   @markup.heading.<n>.markdown  →  @markup.heading.<n>
+    --   →  markdownH<n>  →  Title/Function/Type/Constant/Statement/Identifier
+    -- That way users on tokyonight, catppuccin, gruvbox, habamax etc. all
+    -- get their theme's heading colors for free, while still being able to
+    -- override any group surgically.
+    highlights = {
+        cell_border = nil, -- defaults to link Comment
+        cell_header = nil, -- defaults to link Function
+        md_h1 = nil,
+        md_h2 = nil,
+        md_h3 = nil,
+        md_h4 = nil,
+        md_h5 = nil,
+        md_h6 = nil,
+        md_bold = nil,
+        md_em = nil,
+        md_code = nil,   -- defaults to link String
+        md_bullet = nil, -- defaults to link Special
+        md_quote = nil,  -- defaults to link Comment
+    },
 }
 
 M.options = vim.deepcopy(M.defaults)

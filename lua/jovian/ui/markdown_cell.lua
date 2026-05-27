@@ -32,26 +32,66 @@ local HL = {
     Quote = "JovianMdQuote",
 }
 
-local function set_default_hl()
-    -- Distinct saturated colors per heading level so they're immediately
-    -- recognizable at a glance, instead of "all bold, vaguely similar".
-    -- Uses explicit fg colors (tokyonight-ish palette) under default=true
-    -- so colorschemes and users still win when they define these names.
-    local set = function(name, opts)
-        local merged = vim.tbl_extend("force", opts, { default = true })
-        vim.api.nvim_set_hl(0, name, merged)
+-- For each heading level, try Tree-sitter markdown groups first
+-- (modern colorschemes), then the generic Tree-sitter heading groups,
+-- then legacy vim-syntax `markdownH<n>`, then a safe stdlib fallback.
+-- We pick whichever the active colorscheme actually defines.
+local HEADING_FALLBACKS = {
+    [1] = { "@markup.heading.1.markdown", "@markup.heading.1", "markdownH1", "Title" },
+    [2] = { "@markup.heading.2.markdown", "@markup.heading.2", "markdownH2", "Function" },
+    [3] = { "@markup.heading.3.markdown", "@markup.heading.3", "markdownH3", "Type" },
+    [4] = { "@markup.heading.4.markdown", "@markup.heading.4", "markdownH4", "Constant" },
+    [5] = { "@markup.heading.5.markdown", "@markup.heading.5", "markdownH5", "Statement" },
+    [6] = { "@markup.heading.6.markdown", "@markup.heading.6", "markdownH6", "Identifier" },
+}
+
+-- `nvim_get_hl(..., { link = false })` resolves links and returns the
+-- actual attrs. If a group exists but has no visible attrs (empty
+-- table), we treat it as "not really defined".
+local function group_has_styling(name)
+    local h = vim.api.nvim_get_hl(0, { name = name, link = false })
+    if not h then return false end
+    return h.fg ~= nil or h.bg ~= nil or h.bold or h.italic or h.underline
+end
+
+local function pick_existing(candidates)
+    for _, name in ipairs(candidates) do
+        if group_has_styling(name) then return name end
     end
-    set(HL.H1, { fg = "#7dcfff", bold = true, underline = true })
-    set(HL.H2, { fg = "#bb9af7", bold = true })
-    set(HL.H3, { fg = "#9ece6a", bold = true })
-    set(HL.H4, { fg = "#e0af68", bold = true })
-    set(HL.H5, { fg = "#f7768e", bold = true })
-    set(HL.H6, { fg = "#7aa2f7", bold = true })
-    set(HL.Bold, { bold = true })
-    set(HL.Em, { italic = true })
-    set(HL.Code, { link = "String" })
-    set(HL.Bullet, { link = "Special" })
-    set(HL.Quote, { link = "Comment" })
+    return nil
+end
+
+-- Apply a user-config value to a highlight group. The value may be:
+--   string → treat as `:hi link` target
+--   table  → forwarded as `nvim_set_hl` attrs
+--   nil    → use the supplied fallback (string link or table of attrs)
+local function apply_hl(target, user_val, fallback)
+    local val = user_val
+    if val == nil then val = fallback end
+    if val == nil then return end
+    if type(val) == "string" then
+        vim.api.nvim_set_hl(0, target, { link = val, force = true })
+    elseif type(val) == "table" then
+        local attrs = vim.deepcopy(val)
+        attrs.force = true
+        vim.api.nvim_set_hl(0, target, attrs)
+    end
+end
+
+local function set_default_hl()
+    local user_hl = (Config.options.highlights) or {}
+    -- Headings: explicit config wins; otherwise pick whichever group from
+    -- the fallback chain is actually defined by the colorscheme.
+    for level = 1, 6 do
+        local key = "md_h" .. level
+        local fallback = pick_existing(HEADING_FALLBACKS[level])
+        apply_hl(HL["H" .. level], user_hl[key], fallback)
+    end
+    apply_hl(HL.Bold, user_hl.md_bold, { bold = true })
+    apply_hl(HL.Em, user_hl.md_em, { italic = true })
+    apply_hl(HL.Code, user_hl.md_code, "String")
+    apply_hl(HL.Bullet, user_hl.md_bullet, "Special")
+    apply_hl(HL.Quote, user_hl.md_quote, "Comment")
 end
 
 -- Visual badge inserted before each heading body so the eye picks up the

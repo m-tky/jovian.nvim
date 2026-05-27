@@ -210,6 +210,22 @@ function M.setup(opts)
                 end
             end,
         })
+
+        -- ColorScheme: re-resolve our highlight groups so they follow the
+        -- newly-loaded theme's heading/markdown colors. Each renderer
+        -- re-runs set_default_hl() on its next call; we just need to
+        -- force a redraw so the re-resolution happens immediately.
+        vim.api.nvim_create_autocmd("ColorScheme", {
+            pattern = "*",
+            callback = function()
+                for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+                    if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "python" then
+                        local wins = vim.fn.win_findbuf(buf)
+                        refresh_buffer(buf, wins[1])
+                    end
+                end
+            end,
+        })
     end
 
     if Config.options.inline_images then

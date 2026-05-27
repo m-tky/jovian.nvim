@@ -32,16 +32,25 @@ local HL_HEADER = "JovianCellHeader"
 -- equivalent for the leading marker only).
 local HEADER_RE = "^#%s*%%%%"
 
+-- See markdown_cell.apply_hl for the value contract. We replicate the
+-- helper here to keep ui/cell_frame.lua independent of ui/markdown_cell.lua.
+local function apply_hl(target, user_val, fallback)
+    local val = user_val
+    if val == nil then val = fallback end
+    if val == nil then return end
+    if type(val) == "string" then
+        vim.api.nvim_set_hl(0, target, { link = val, force = true })
+    elseif type(val) == "table" then
+        local attrs = vim.deepcopy(val)
+        attrs.force = true
+        vim.api.nvim_set_hl(0, target, attrs)
+    end
+end
+
 local function set_default_hl()
-    -- Use linked groups so colorschemes can override. We fall back to
-    -- subdued blue/comment-y colors that look reasonable on dark themes
-    -- without committing to a specific palette.
-    if vim.fn.hlexists(HL_BORDER) == 0 then
-        vim.api.nvim_set_hl(0, HL_BORDER, { link = "Comment", default = true })
-    end
-    if vim.fn.hlexists(HL_HEADER) == 0 then
-        vim.api.nvim_set_hl(0, HL_HEADER, { link = "Function", default = true })
-    end
+    local user_hl = (Config.options.highlights) or {}
+    apply_hl(HL_BORDER, user_hl.cell_border, "Comment")
+    apply_hl(HL_HEADER, user_hl.cell_header, "Function")
 end
 
 local function dw(s)
