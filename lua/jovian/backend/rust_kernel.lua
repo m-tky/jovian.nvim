@@ -112,11 +112,21 @@ local function on_cell_event(params)
     elseif kind == "execute_result" or kind == "display_data" then
         local data = ev.data or {}
         local tp = data["text/plain"]
-        if type(tp) == "string" and tp ~= "" then
+        local has_img = data["image/png"] or data["image/gif"] or data["image/jpeg"]
+        -- Suppress matplotlib's "<Figure size NxM with K Axes>" / generic
+        -- "<X object at 0x...>" repr when an image is the real payload —
+        -- the inline cell area shows the picture, the REPL line would
+        -- just be noise.
+        if has_img and type(tp) == "string"
+            and (tp:match("^<Figure ")
+                or tp:match("^<[%w._]+ object>$")
+                or tp:match("^<[%w._]+ object at 0x[%x]+>$"))
+        then
+            UI.append_to_repl("[image]", "Special")
+        elseif type(tp) == "string" and tp ~= "" then
             UI.append_to_repl(vim.split(tp, "\n"), "Identifier")
         end
         refresh_inline_outputs(cell_id)
-        -- Phase 3 will add image/HTML support to inline outputs.
     elseif kind == "error" then
         _cell_had_error[cell_id] = true
         local head = (ev.ename or "Error") .. ": " .. (ev.evalue or "")
