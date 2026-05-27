@@ -199,14 +199,19 @@ function M.setup(opts)
             end,
         })
 
-        -- WinResized: re-render so the top/bottom border dashes match the
-        -- new text-area width and the right_align bars sit at the new edge.
+        -- WinResized / VimResized: re-render every python buffer in every
+        -- visible window. The original code only refreshed the current
+        -- buffer, which left borders stale when the resize affected a
+        -- python window that wasn't focused (e.g. resizing the preview
+        -- pane changed the source pane's width too).
         vim.api.nvim_create_autocmd({ "WinResized", "VimResized" }, {
             pattern = "*",
             callback = function()
-                local buf = vim.api.nvim_get_current_buf()
-                if vim.bo[buf].filetype == "python" then
-                    refresh_buffer(buf, vim.api.nvim_get_current_win())
+                for _, win in ipairs(vim.api.nvim_list_wins()) do
+                    local buf = vim.api.nvim_win_get_buf(win)
+                    if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "python" then
+                        refresh_buffer(buf, win)
+                    end
                 end
             end,
         })

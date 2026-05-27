@@ -208,23 +208,44 @@ function M.clear(bufnr)
     end
 end
 
--- Debounced refresh: rate-limit re-render to ~16fps under heavy typing.
-local _pending = {}
+-- Trailing debounce: each schedule call resets a 60 ms timer per buffer.
+-- The render fires once, after the last event in a burst. The previous
+-- LEADING-edge guard (`_pending = true`, ignore subsequent calls) meant a
+-- fast resize drag rendered at an intermediate width and then dropped
+-- events; trailing-edge fires at the FINAL width.
+local uv = vim.uv or vim.loop
+local _timers = {}
 function M.schedule(bufnr, winid)
     bufnr = bufnr or vim.api.nvim_get_current_buf()
-    if _pending[bufnr] then return end
-    _pending[bufnr] = true
-    vim.defer_fn(function()
-        _pending[bufnr] = nil
-        if vim.api.nvim_buf_is_valid(bufnr) then
-            local w = winid
-            if not w or not vim.api.nvim_win_is_valid(w) then
-                local wins = vim.fn.win_findbuf(bufnr)
-                w = wins[1] or vim.api.nvim_get_current_win()
+    local t = _timers[bufnr]
+    if t then
+        t:stop()
+    else
+        t = uv.new_timer()
+        _timers[bufnr] = t
+    end
+    t:start(60, 0, vim.schedule_wrap(function()
+        if not vim.api.nvim_buf_is_valid(bufnr) then
+            if _timers[bufnr] then
+                _timers[bufnr]:close()
+                _timers[bufnr] = nil
             end
-            M.render(bufnr, w)
+            return
         end
-    end, 60)
+        -- Resolve the winid AT FIRE TIME, not at schedule time. After a
+        -- resize the window's textoff/width can shift; using the live
+        -- winid means we render against the final geometry.
+        local w = winid
+        if not w or not vim.api.nvim_win_is_valid(w) then
+            local wins = vim.fn.win_findbuf(bufnr)
+            w = wins[1] or vim.api.nvim_get_current_win()
+        end
+        M.render(bufnr, w)
+        if _timers[bufnr] then
+            _timers[bufnr]:close()
+            _timers[bufnr] = nil
+        end
+    end))
 end
 
 -- Public for tests.

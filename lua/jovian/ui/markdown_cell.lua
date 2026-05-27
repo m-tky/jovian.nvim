@@ -262,17 +262,28 @@ function M.clear(bufnr)
     end
 end
 
-local _pending = {}
+-- Trailing debounce — same rationale as cell_frame.schedule. See its
+-- comment for the reasoning vs the LEADING-edge variant we used before.
+local uv = vim.uv or vim.loop
+local _timers = {}
 function M.schedule(bufnr)
     bufnr = bufnr or vim.api.nvim_get_current_buf()
-    if _pending[bufnr] then return end
-    _pending[bufnr] = true
-    vim.defer_fn(function()
-        _pending[bufnr] = nil
+    local t = _timers[bufnr]
+    if t then
+        t:stop()
+    else
+        t = uv.new_timer()
+        _timers[bufnr] = t
+    end
+    t:start(60, 0, vim.schedule_wrap(function()
         if vim.api.nvim_buf_is_valid(bufnr) then
             M.render(bufnr)
         end
-    end, 60)
+        if _timers[bufnr] then
+            _timers[bufnr]:close()
+            _timers[bufnr] = nil
+        end
+    end))
 end
 
 M._namespace = NS
