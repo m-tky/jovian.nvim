@@ -97,21 +97,31 @@ function M.ensure(opts)
     -- Resolve the actual pts device (e.g. /dev/pts/3) BEFORE forking.
     -- The jovian-core child process is spawned via vim.uv.spawn, which on
     -- many systems doesn't propagate a controlling tty — opening "/dev/tty"
-    -- inside the child then fails with ENXIO. Running `tty` in the parent
-    -- (we still have ours) and passing the resolved absolute path lets the
-    -- child open it directly.
-    local tty = vim.env.JOVIAN_TTY
-    if not tty or tty == "" then
-        local out = vim.fn.system("tty 2>/dev/null"):gsub("%s+$", "")
-        if out ~= ""
-            and not out:match("^not a tty")
-            and not out:match("^tty:")
-        then
-            tty = out
-        else
-            tty = "/dev/tty" -- fallback; will fail visibly with a useful error
+    -- inside the child then fails with ENXIO. Passing an absolute pts path
+    -- lets the child open it directly without needing a controlling tty.
+    --
+    -- We can't run `tty` via vim.fn.system because that subprocess itself
+    -- has no controlling tty (system closes stdin); it would always say
+    -- "not a tty". Instead, follow the /proc symlink of Neovim's own stdin
+    -- / stdout / stderr — at least one of them is the real tty.
+    local function resolve_tty()
+        if vim.env.JOVIAN_TTY and vim.env.JOVIAN_TTY ~= "" then
+            return vim.env.JOVIAN_TTY
         end
+        local uv = vim.uv or vim.loop
+        for _, fd in ipairs({ 0, 1, 2 }) do
+            local link = "/proc/self/fd/" .. fd
+            local target = uv.fs_readlink(link)
+            if target and target:match("^/dev/") and not target:match("^/dev/null") then
+                return target
+            end
+        end
+        -- macOS / BSD have no /proc; the env-var override is the escape
+        -- hatch there (set by the demo wrappers). Fallback to /dev/tty
+        -- which will fail with a clear diagnostic.
+        return "/dev/tty"
     end
+    local tty = resolve_tty()
     _client:request("kitty_attach", { tty = tty }, function(err, _)
         if err then
             M._kitty_attach_error = err

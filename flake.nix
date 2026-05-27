@@ -202,6 +202,12 @@
             export XDG_DATA_HOME=$(mktemp -d)
             export XDG_STATE_HOME=$(mktemp -d)
             export JOVIAN_PYTHON="${pythonEnvFull}/bin/python3"
+            # Resolve the controlling tty in the launching shell (where it
+            # still exists) and hand it down. Lua's /proc/self/fd fallback
+            # covers Linux without this, but on macOS /proc isn't there so
+            # the env var is the only path that works.
+            JOVIAN_TTY=$(tty 2>/dev/null) || JOVIAN_TTY=""
+            export JOVIAN_TTY
             exec ${neovimWithPlugins}/bin/nvim -u ${initLuaRust} "$@"
           '';
 
