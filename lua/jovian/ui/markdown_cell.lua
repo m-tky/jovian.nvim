@@ -33,25 +33,31 @@ local HL = {
 }
 
 local function set_default_hl()
-    -- Link to existing groups so colorschemes adapt automatically. We use
-    -- `default = true` so user/colorscheme overrides win.
+    -- Distinct saturated colors per heading level so they're immediately
+    -- recognizable at a glance, instead of "all bold, vaguely similar".
+    -- Uses explicit fg colors (tokyonight-ish palette) under default=true
+    -- so colorschemes and users still win when they define these names.
     local set = function(name, opts)
-        if vim.fn.hlexists(name) == 0 then
-            vim.api.nvim_set_hl(0, name, vim.tbl_extend("force", opts, { default = true }))
-        end
+        local merged = vim.tbl_extend("force", opts, { default = true })
+        vim.api.nvim_set_hl(0, name, merged)
     end
-    set(HL.H1, { link = "Title" })
-    set(HL.H2, { link = "Title" })
-    set(HL.H3, { link = "Function" })
-    set(HL.H4, { link = "Identifier" })
-    set(HL.H5, { link = "Identifier" })
-    set(HL.H6, { link = "Identifier" })
+    set(HL.H1, { fg = "#7dcfff", bold = true, underline = true })
+    set(HL.H2, { fg = "#bb9af7", bold = true })
+    set(HL.H3, { fg = "#9ece6a", bold = true })
+    set(HL.H4, { fg = "#e0af68", bold = true })
+    set(HL.H5, { fg = "#f7768e", bold = true })
+    set(HL.H6, { fg = "#7aa2f7", bold = true })
     set(HL.Bold, { bold = true })
     set(HL.Em, { italic = true })
     set(HL.Code, { link = "String" })
     set(HL.Bullet, { link = "Special" })
     set(HL.Quote, { link = "Comment" })
 end
+
+-- Visual badge inserted before each heading body so the eye picks up the
+-- heading level even before the color registers. Heavier glyphs on bigger
+-- headings; thinner ones taper down.
+local HEADING_PREFIX = { "█ ", "▆ ", "▊ ", "▌ ", "▎ ", "▏ " }
 
 local function conceal_range(buf, lnum, start_col, end_col)
     pcall(vim.api.nvim_buf_set_extmark, buf, NS, lnum, start_col, {
@@ -91,7 +97,16 @@ local function style_heading(buf, lnum, content, offset)
     if not hashes then return false end
     local level = math.min(#hashes, 6)
     local hl = HL["H" .. level] or HL.H6
+    -- Conceal the `#`/`##`/... marker AND its trailing space.
     conceal_range(buf, lnum, offset, offset + rest_offset)
+    -- Insert a colored level badge in their place — same color as the
+    -- heading body, so the whole heading reads as one continuous block.
+    pcall(vim.api.nvim_buf_set_extmark, buf, NS, lnum, offset + rest_offset, {
+        virt_text = { { HEADING_PREFIX[level] or HEADING_PREFIX[6], hl } },
+        virt_text_pos = "inline",
+        hl_mode = "combine",
+        priority = 200,
+    })
     hl_range(buf, lnum, offset + rest_offset, offset + #content, hl)
     return true
 end
