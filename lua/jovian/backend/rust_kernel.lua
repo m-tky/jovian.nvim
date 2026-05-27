@@ -112,20 +112,57 @@ local function on_cell_event(params)
     elseif kind == "execute_result" or kind == "display_data" then
         local data = ev.data or {}
         local tp = data["text/plain"]
-        local has_img = data["image/png"] or data["image/gif"] or data["image/jpeg"]
+        local img_b64 = data["image/png"] or data["image/gif"] or data["image/jpeg"]
+        if type(img_b64) == "table" then img_b64 = table.concat(img_b64, "") end
+        local has_img = type(img_b64) == "string" and img_b64 ~= ""
+
         -- Suppress matplotlib's "<Figure size NxM with K Axes>" / generic
         -- "<X object at 0x...>" repr when an image is the real payload —
-        -- the inline cell area shows the picture, the REPL line would
-        -- just be noise.
+        -- the image itself is the content.
         if has_img and type(tp) == "string"
             and (tp:match("^<Figure ")
                 or tp:match("^<[%w._]+ object>$")
                 or tp:match("^<[%w._]+ object at 0x[%x]+>$"))
         then
-            UI.append_to_repl("[image]", "Special")
-        elseif type(tp) == "string" and tp ~= "" then
+            tp = ""
+        end
+        if type(tp) == "string" and tp ~= "" then
             UI.append_to_repl(vim.split(tp, "\n"), "Identifier")
         end
+
+        if has_img then
+            local Kitty = require("jovian.ui.kitty")
+            local rows = Config.options.image_rows or 14
+            local cols = Config.options.image_cols or 56
+
+            local function write_image(image_id)
+                if not State.term_chan then return end
+                local r = bit.band(bit.rshift(image_id, 16), 0xff)
+                local g = bit.band(bit.rshift(image_id, 8), 0xff)
+                local b = bit.band(image_id, 0xff)
+                if r == 0 and g == 0 and b == 0 then b = 1 end
+                local fg = string.format("\27[38;2;%d;%d;%dm", r, g, b)
+                local reset = "\27[0m"
+                local placement = Kitty.build_virt_lines(image_id, rows, cols)
+                local out = ""
+                for _, row_chunks in ipairs(placement) do
+                    local parts = {}
+                    for _, c in ipairs(row_chunks) do
+                        table.insert(parts, c[1])
+                    end
+                    out = out .. fg .. table.concat(parts) .. reset .. "\r\n"
+                end
+                pcall(vim.api.nvim_chan_send, State.term_chan, out)
+            end
+
+            local id = Kitty.ensure_transmitted(img_b64, write_image, cols, rows)
+            if id then
+                write_image(id)
+            end
+            -- If id is nil the transmit is in flight; write_image will run
+            -- via the callback once kitty_transmit returns.
+        end
+
         refresh_inline_outputs(cell_id)
     elseif kind == "error" then
         _cell_had_error[cell_id] = true
