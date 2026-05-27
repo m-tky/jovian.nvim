@@ -371,6 +371,51 @@ function M.setup()
         UI.toggle_status_visibility(vim.api.nvim_get_current_buf())
     end, { desc = "Jovian: Toggle cell status virtual text for current buffer" })
 
+    -- Phase 2 visual toggles. These flip the config flag and re-render
+    -- immediately so users can A/B the look without restarting nvim.
+    -- (The autocmds in init.lua are only registered when at least one
+    -- flag was true at setup time, so toggling from false→true at
+    -- runtime requires `require("jovian").setup({ cell_frame=true })`
+    -- to have been called once — usually via the demo's init.lua.)
+    vim.api.nvim_create_user_command("JovianToggleCellFrame", function()
+        local Config = require("jovian.config")
+        Config.options.cell_frame = not Config.options.cell_frame
+        local CellFrame = require("jovian.ui.cell_frame")
+        for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+            if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "python" then
+                if Config.options.cell_frame then
+                    local wins = vim.fn.win_findbuf(buf)
+                    CellFrame.render(buf, wins[1])
+                else
+                    CellFrame.clear(buf)
+                end
+            end
+        end
+        vim.notify(
+            "Cell frame: " .. (Config.options.cell_frame and "ON" or "OFF"),
+            vim.log.levels.INFO
+        )
+    end, { desc = "Jovian: Toggle cell card frame" })
+
+    vim.api.nvim_create_user_command("JovianToggleMarkdownStyle", function()
+        local Config = require("jovian.config")
+        Config.options.markdown_cell_style = not Config.options.markdown_cell_style
+        local MarkdownCell = require("jovian.ui.markdown_cell")
+        for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+            if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "python" then
+                if Config.options.markdown_cell_style then
+                    MarkdownCell.render(buf)
+                else
+                    MarkdownCell.clear(buf)
+                end
+            end
+        end
+        vim.notify(
+            "Markdown cell styling: " .. (Config.options.markdown_cell_style and "ON" or "OFF"),
+            vim.log.levels.INFO
+        )
+    end, { desc = "Jovian: Toggle markdown cell styling" })
+
     -- Data & Tools
     vim.api.nvim_create_user_command("JovianVars", function()
         Core.show_variables({ force_float = true })

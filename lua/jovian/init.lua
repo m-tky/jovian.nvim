@@ -148,20 +148,20 @@ function M.setup(opts)
         callback = setup_cell_highlighting,
     })
 
-    -- Phase 2: cell card frame + markdown styling. Both are opt-in; if
-    -- neither flag is set the autocmds are not registered at all.
-    if Config.options.cell_frame or Config.options.markdown_cell_style then
+    -- Phase 2: cell card frame + markdown styling. Autocmds are always
+    -- registered (so :JovianToggleCellFrame at runtime works seamlessly);
+    -- the render functions early-return when their flag is off.
+    do
         local CellFrame = require("jovian.ui.cell_frame")
         local MarkdownCell = require("jovian.ui.markdown_cell")
 
         local function refresh_buffer(bufnr, winid)
             if vim.bo[bufnr].filetype ~= "python" then return end
-            if Config.options.cell_frame then
-                CellFrame.schedule(bufnr, winid)
-            end
-            if Config.options.markdown_cell_style then
-                MarkdownCell.schedule(bufnr)
-            end
+            -- We schedule both unconditionally; each renderer no-ops on
+            -- its own flag, which means a runtime flag flip is picked up
+            -- on the next TextChanged tick without re-arming autocmds.
+            CellFrame.schedule(bufnr, winid)
+            MarkdownCell.schedule(bufnr)
         end
 
         vim.api.nvim_create_autocmd({ "BufWinEnter", "FileType" }, {

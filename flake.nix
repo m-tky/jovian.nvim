@@ -103,6 +103,15 @@
             -- Setup jovian.nvim
             require("jovian").setup({
               python_interpreter = "${pythonEnvFull}/bin/python3",
+              -- Phase 2 visual upgrades — enabled in the demo so the
+              -- nix-jovian wrapper showcases them. End users opt in via
+              -- their own setup() call.
+              cell_frame = true,
+              markdown_cell_style = true,
+              -- Set to true to route the kernel through jovian-core (Rust).
+              -- Phase 1 only covers run/stream/status; variable inspection,
+              -- DataFrame view, clipboard etc. still need the Python bridge.
+              use_rust_core = false,
             })
 
             -- Setup nvim-treesitter
