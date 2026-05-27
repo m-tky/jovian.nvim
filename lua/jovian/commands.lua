@@ -371,16 +371,29 @@ function M.setup()
         UI.toggle_status_visibility(vim.api.nvim_get_current_buf())
     end, { desc = "Jovian: Toggle cell status virtual text for current buffer" })
 
-    -- Phase 2 visual toggles. These flip the config flag and re-render
-    -- immediately so users can A/B the look without restarting nvim.
-    -- (The autocmds in init.lua are only registered when at least one
-    -- flag was true at setup time, so toggling from false→true at
-    -- runtime requires `require("jovian").setup({ cell_frame=true })`
-    -- to have been called once — usually via the demo's init.lua.)
+    -- Phase 2 visual toggles. These flip the config flag, re-render
+    -- immediately, AND bump window conceallevel so concealed prefixes
+    -- (`# ` on markdown lines, `# %% id="..."` on cell headers) actually
+    -- vanish at toggle-on time. Without the conceallevel bump the
+    -- conceal extmark is a no-op.
+    local function ensure_conceallevel()
+        for _, win in ipairs(vim.api.nvim_list_wins()) do
+            local buf = vim.api.nvim_win_get_buf(win)
+            if vim.bo[buf].filetype == "python" then
+                local cur = vim.api.nvim_get_option_value("conceallevel", { win = win })
+                if cur < 2 then
+                    vim.api.nvim_set_option_value("conceallevel", 2, { win = win })
+                end
+                vim.api.nvim_set_option_value("concealcursor", "", { win = win })
+            end
+        end
+    end
+
     vim.api.nvim_create_user_command("JovianToggleCellFrame", function()
         local Config = require("jovian.config")
         Config.options.cell_frame = not Config.options.cell_frame
         local CellFrame = require("jovian.ui.cell_frame")
+        if Config.options.cell_frame then ensure_conceallevel() end
         for _, buf in ipairs(vim.api.nvim_list_bufs()) do
             if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "python" then
                 if Config.options.cell_frame then
@@ -401,6 +414,7 @@ function M.setup()
         local Config = require("jovian.config")
         Config.options.markdown_cell_style = not Config.options.markdown_cell_style
         local MarkdownCell = require("jovian.ui.markdown_cell")
+        if Config.options.markdown_cell_style then ensure_conceallevel() end
         for _, buf in ipairs(vim.api.nvim_list_bufs()) do
             if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "python" then
                 if Config.options.markdown_cell_style then

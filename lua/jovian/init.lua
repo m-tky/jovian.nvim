@@ -157,18 +157,37 @@ function M.setup(opts)
 
         local function refresh_buffer(bufnr, winid)
             if vim.bo[bufnr].filetype ~= "python" then return end
-            -- We schedule both unconditionally; each renderer no-ops on
-            -- its own flag, which means a runtime flag flip is picked up
-            -- on the next TextChanged tick without re-arming autocmds.
             CellFrame.schedule(bufnr, winid)
             MarkdownCell.schedule(bufnr)
         end
 
-        vim.api.nvim_create_autocmd({ "BufWinEnter", "FileType" }, {
+        -- conceallevel/concealcursor are WINDOW options. We bump conceallevel
+        -- to 2 (concealed chars vanish entirely) only when at least one of
+        -- the Phase 2 features is on, and only if the user hasn't set a
+        -- higher value themselves. concealcursor stays empty so the cursor's
+        -- line reveals raw source for editing — without that, the user
+        -- can't see the `# ` prefix or `**bold**` markers they're typing.
+        local function apply_window_options(winid)
+            if not vim.api.nvim_win_is_valid(winid) then return end
+            if not (Config.options.cell_frame or Config.options.markdown_cell_style) then
+                return
+            end
+            local buf = vim.api.nvim_win_get_buf(winid)
+            if vim.bo[buf].filetype ~= "python" then return end
+            local cur = vim.api.nvim_get_option_value("conceallevel", { win = winid })
+            if cur < 2 then
+                vim.api.nvim_set_option_value("conceallevel", 2, { win = winid })
+            end
+            vim.api.nvim_set_option_value("concealcursor", "", { win = winid })
+        end
+
+        vim.api.nvim_create_autocmd({ "BufWinEnter", "FileType", "WinEnter" }, {
             pattern = "*",
             callback = function(ev)
                 if vim.bo[ev.buf].filetype == "python" then
-                    refresh_buffer(ev.buf, vim.api.nvim_get_current_win())
+                    local win = vim.api.nvim_get_current_win()
+                    apply_window_options(win)
+                    refresh_buffer(ev.buf, win)
                 end
             end,
         })

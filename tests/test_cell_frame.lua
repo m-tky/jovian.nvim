@@ -42,15 +42,17 @@ local MarkdownCell = require("jovian.ui.markdown_cell")
 -- Build a fixture buffer
 local buf = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_buf_set_option(buf, "filetype", "python")
+-- Note: markdown cell lines wear a Python `# ` prefix so the file stays
+-- valid Python on disk. The renderer conceals that prefix at display time.
 local lines = {
     '# %% id="code1"',
     'print("hello")',
     'x = 1',
     '',
     '# %% [markdown] id="md1"',
-    '# Heading',
-    'plain **bold** text',
-    '- item',
+    '# # Heading',
+    '# plain **bold** text',
+    '# - item',
     '',
     '# %% id="code2"',
     'y = 2',
@@ -148,6 +150,28 @@ assert_true(md_lines[7], "bullet line has markdown extmark")
 assert_eq(md_lines[1] or false, false, "code cell line 1 has no markdown extmark")
 assert_eq(md_lines[2] or false, false, "code cell line 2 has no markdown extmark")
 assert_eq(md_lines[10] or false, false, "code cell line 10 has no markdown extmark")
+
+-- Each markdown line should have at least one extmark concealing the
+-- Python `# ` prefix at columns 0..1 (so visually the line starts with
+-- the markdown content, not the `#` comment marker).
+local function has_prefix_conceal(lnum)
+    for _, m in ipairs(md_marks) do
+        if m[2] == lnum then
+            local det = m[4]
+            if det.conceal == "" and m[3] == 0 and det.end_col == 2 then
+                return true
+            end
+        end
+    end
+    return false
+end
+-- Update our test fixture: line index 5 = "# # Heading" — needs prefix conceal
+-- but we wrote it as "# # Heading" which already has `# ` then `# Heading`.
+-- So col 0..1 should be concealed (the Python `# `), then the inner `# `
+-- markdown marker is a separate conceal at cols 2..3.
+assert_true(has_prefix_conceal(5), "heading line conceals python `# ` prefix")
+assert_true(has_prefix_conceal(6), "bold line conceals python `# ` prefix")
+assert_true(has_prefix_conceal(7), "bullet line conceals python `# ` prefix")
 
 -- ---------------------------- clear ----------------------------
 print("\n-- clear --")

@@ -71,32 +71,43 @@ local function hl_range(buf, lnum, start_col, end_col, hl)
     })
 end
 
-local function style_heading(buf, lnum, line)
-    -- Match `^(#+)\s+(.*)$`. Hashes + the trailing space get concealed,
-    -- the body is highlighted as the appropriate heading level.
-    local hashes, rest_offset = line:match("^(#+)()%s")
+-- Strip the Python comment prefix (`# ` or bare `#`) that every line of a
+-- `# %% [markdown]` cell has to wear so the .py file stays valid Python.
+-- Returns the byte length of the prefix (so we can conceal it) and the
+-- remaining markdown content. Returns nil if the line isn't a `#`-prefixed
+-- comment — we leave such lines alone rather than misinterpret them.
+local function strip_py_md_prefix(line)
+    if line:sub(1, 2) == "# " then
+        return 2, line:sub(3)
+    end
+    if line == "#" then
+        return 1, ""
+    end
+    return nil, nil
+end
+
+local function style_heading(buf, lnum, content, offset)
+    local hashes, rest_offset = content:match("^(#+)()%s")
     if not hashes then return false end
     local level = math.min(#hashes, 6)
     local hl = HL["H" .. level] or HL.H6
-    conceal_range(buf, lnum, 0, rest_offset) -- conceal `#`s and the space after
-    hl_range(buf, lnum, rest_offset, #line, hl)
+    conceal_range(buf, lnum, offset, offset + rest_offset)
+    hl_range(buf, lnum, offset + rest_offset, offset + #content, hl)
     return true
 end
 
-local function style_bullet(buf, lnum, line)
-    -- `^(\s*)([-*])\s+(.*)$` → keep indent, replace the dash with a glyph
-    local indent_end, marker, body_start = line:match("^(%s*)([-*])()%s")
+local function style_bullet(buf, lnum, content, offset)
+    local indent_end, _marker, body_start = content:match("^(%s*)([-*])()%s")
     if not indent_end then return false end
     local marker_col = #indent_end
-    pcall(vim.api.nvim_buf_set_extmark, buf, NS, lnum, marker_col, {
-        end_col = marker_col + 1,
+    pcall(vim.api.nvim_buf_set_extmark, buf, NS, lnum, offset + marker_col, {
+        end_col = offset + marker_col + 1,
         conceal = "•",
         hl_mode = "combine",
         priority = 200,
     })
-    -- Style the bullet itself
-    pcall(vim.api.nvim_buf_set_extmark, buf, NS, lnum, marker_col, {
-        end_col = body_start,
+    pcall(vim.api.nvim_buf_set_extmark, buf, NS, lnum, offset + marker_col, {
+        end_col = offset + body_start,
         hl_group = HL.Bullet,
         hl_mode = "combine",
         priority = 195,
@@ -104,50 +115,40 @@ local function style_bullet(buf, lnum, line)
     return true
 end
 
-local function style_quote(buf, lnum, line)
-    local prefix_end = line:match("^>()%s") or line:match("^>()$")
+local function style_quote(buf, lnum, content, offset)
+    local prefix_end = content:match("^>()%s") or content:match("^>()$")
     if not prefix_end then return false end
-    conceal_range(buf, lnum, 0, prefix_end)
-    hl_range(buf, lnum, prefix_end, #line, HL.Quote)
+    conceal_range(buf, lnum, offset, offset + prefix_end)
+    hl_range(buf, lnum, offset + prefix_end, offset + #content, HL.Quote)
     return true
 end
 
-local function style_inline(buf, lnum, line)
+local function style_inline(buf, lnum, content, offset)
     -- Bold **text** — concealed pairs, inner bolded
     local s = 1
     while true do
-        local a, b = line:find("%*%*[^%*]+%*%*", s)
+        local a, b = content:find("%*%*[^%*]+%*%*", s)
         if not a then break end
-        conceal_range(buf, lnum, a - 1, a + 1)
-        hl_range(buf, lnum, a + 1, b - 2, HL.Bold)
-        conceal_range(buf, lnum, b - 2, b)
+        conceal_range(buf, lnum, offset + a - 1, offset + a + 1)
+        hl_range(buf, lnum, offset + a + 1, offset + b - 2, HL.Bold)
+        conceal_range(buf, lnum, offset + b - 2, offset + b)
         s = b + 1
-    end
-
-    -- Italic *text* — require non-* neighbours so we don't clash with bold
-    s = 1
-    while true do
-        local lead, ia, ib = line:find("([^%*])%*([^%*][^%*]-)%*", s)
-        if not lead then break end
-        local star1 = ia
-        local inner_start = ia + 1
-        local inner_end = ib
-        conceal_range(buf, lnum, star1 - 1, star1)
-        hl_range(buf, lnum, inner_start - 1, inner_end - 1, HL.Em)
-        conceal_range(buf, lnum, inner_end - 1, inner_end)
-        s = ib + 1
     end
 
     -- Inline code `text`
     s = 1
     while true do
-        local a, b = line:find("`([^`]+)`", s)
+        local a, b = content:find("`([^`]+)`", s)
         if not a then break end
-        conceal_range(buf, lnum, a - 1, a)
-        hl_range(buf, lnum, a, b - 1, HL.Code)
-        conceal_range(buf, lnum, b - 1, b)
+        conceal_range(buf, lnum, offset + a - 1, offset + a)
+        hl_range(buf, lnum, offset + a, offset + b - 1, HL.Code)
+        conceal_range(buf, lnum, offset + b - 1, offset + b)
         s = b + 1
     end
+    -- Italic intentionally skipped: distinguishing `*italic*` from list
+    -- markers, multiplication operators, and runaway `**bold**` patterns
+    -- requires more state than is worth carrying in Phase 2. Use the
+    -- `_underscore_` form if you need it (also intentionally unhandled).
 end
 
 local function is_markdown_header(line)
@@ -175,16 +176,24 @@ function M.render(bufnr)
         local next_line = headers[idx + 1] and headers[idx + 1].line or #lines
         local hdr_line = lines[h.line + 1] or ""
         if is_markdown_header(hdr_line) then
-            -- Style each source line in this cell
             for ln = h.line + 1, next_line - 1 do
                 local line = lines[ln + 1] or ""
                 if line ~= "" then
-                    if not style_heading(bufnr, ln, line)
-                        and not style_quote(bufnr, ln, line)
-                    then
-                        style_bullet(bufnr, ln, line)
+                    local prefix_len, content = strip_py_md_prefix(line)
+                    if prefix_len then
+                        -- Conceal the Python comment prefix so the line looks
+                        -- like real markdown. The actual `# ` stays in the
+                        -- buffer (so the file remains valid Python on disk).
+                        conceal_range(bufnr, ln, 0, prefix_len)
+                        if content ~= "" then
+                            if not style_heading(bufnr, ln, content, prefix_len)
+                                and not style_quote(bufnr, ln, content, prefix_len)
+                            then
+                                style_bullet(bufnr, ln, content, prefix_len)
+                            end
+                            style_inline(bufnr, ln, content, prefix_len)
+                        end
                     end
-                    style_inline(bufnr, ln, line)
                 end
             end
         end
