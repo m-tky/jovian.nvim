@@ -189,6 +189,9 @@
 
             echo ">>> Running UI/Layout Tests..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_resize_layout.lua
+
+            echo ">>> Running Rust Backend Phase 1 Smoke Test (Real Kernel)..."
+            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_rust_phase1.lua
           '';
 
           run-tests-fallback = pkgs.writeShellScriptBin "run-tests-fallback" ''
