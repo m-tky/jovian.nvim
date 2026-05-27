@@ -459,24 +459,36 @@ function M.setup()
         local client = Core.client() or Core.ensure()
         -- 1x1 transparent PNG, base64-encoded
         local one_px = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgAAIAAAUAAeImBZsAAAAASUVORK5CYII="
-        vim.notify("jovian: probing kitty_transmit...", vim.log.levels.INFO)
-        client:request("kitty_transmit", { png_b64 = one_px }, function(err, result)
-            vim.schedule(function()
-                if err then
-                    vim.notify(
-                        "jovian image pipeline FAILED: " .. err
-                        .. "\n  TERM=" .. (vim.env.TERM or "?")
-                        .. " TERM_PROGRAM=" .. (vim.env.TERM_PROGRAM or "?")
-                        .. " TMUX=" .. (vim.env.TMUX and "set" or "unset"),
-                        vim.log.levels.ERROR
-                    )
-                else
-                    vim.notify(
-                        "jovian image pipeline OK (image_id="
-                        .. tostring(result and result.image_id) .. ")",
-                        vim.log.levels.INFO
-                    )
-                end
+        vim.notify("jovian: probing kitty pipeline...", vim.log.levels.INFO)
+        Core.on_kitty_ready(function(ok, attach_err)
+            if not ok then
+                vim.notify(
+                    "jovian image pipeline FAILED at kitty_attach: " .. (attach_err or "unknown")
+                    .. "\n  TERM=" .. (vim.env.TERM or "?")
+                    .. " TERM_PROGRAM=" .. (vim.env.TERM_PROGRAM or "?")
+                    .. " TMUX=" .. (vim.env.TMUX and "set" or "unset"),
+                    vim.log.levels.ERROR
+                )
+                return
+            end
+            client:request("kitty_transmit", { png_b64 = one_px }, function(err, result)
+                vim.schedule(function()
+                    if err then
+                        vim.notify(
+                            "jovian image pipeline FAILED at kitty_transmit: " .. err
+                            .. "\n  TERM=" .. (vim.env.TERM or "?")
+                            .. " TERM_PROGRAM=" .. (vim.env.TERM_PROGRAM or "?")
+                            .. " TMUX=" .. (vim.env.TMUX and "set" or "unset"),
+                            vim.log.levels.ERROR
+                        )
+                    else
+                        vim.notify(
+                            "jovian image pipeline OK (image_id="
+                            .. tostring(result and result.image_id) .. ")",
+                            vim.log.levels.INFO
+                        )
+                    end
+                end)
             end)
         end)
     end, { desc = "Jovian: probe the Kitty image transmit RPC" })

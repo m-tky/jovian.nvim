@@ -79,10 +79,22 @@ function M.ensure(opts)
 
     -- Hand the controlling tty to core so it can write Kitty graphics escapes
     -- directly (bypassing Neovim's TUI mux). Use a request (not notify) so a
-    -- failure to open /dev/tty surfaces visibly — otherwise every subsequent
-    -- kitty_transmit just errors silently and users see blank image areas.
+    -- failure to open /dev/tty surfaces visibly. Anyone needing the attach
+    -- state (notably kitty_transmit callers) waits via M.on_kitty_ready —
+    -- the Rust core dispatches RPC requests concurrently via tokio::spawn,
+    -- so without this gate kitty_transmit can land before kitty_attach has
+    -- opened /dev/tty and returns "kitty_attach not called".
     M._kitty_attached = false
     M._kitty_attach_error = nil
+    M._kitty_ready_cbs = {}
+    local function flush_ready(ok, err)
+        local cbs = M._kitty_ready_cbs
+        M._kitty_ready_cbs = {}
+        for _, cb in ipairs(cbs) do
+            pcall(cb, ok, err)
+        end
+    end
+
     local tty = vim.env.JOVIAN_TTY or "/dev/tty"
     _client:request("kitty_attach", { tty = tty }, function(err, _)
         if err then
@@ -94,13 +106,28 @@ function M.ensure(opts)
                     .. "Run `:checkhealth jovian` to diagnose.",
                     vim.log.levels.WARN
                 )
+                flush_ready(false, err)
             end)
         else
             M._kitty_attached = true
+            vim.schedule(function() flush_ready(true, nil) end)
         end
     end)
 
     return _client
+end
+
+--- Invoke `cb(ok, err?)` once kitty_attach has settled. Fires immediately
+--- if it already has; queues the cb otherwise.
+function M.on_kitty_ready(cb)
+    if M._kitty_attached then
+        vim.schedule(function() cb(true, nil) end)
+    elseif M._kitty_attach_error then
+        vim.schedule(function() cb(false, M._kitty_attach_error) end)
+    else
+        M._kitty_ready_cbs = M._kitty_ready_cbs or {}
+        table.insert(M._kitty_ready_cbs, cb)
+    end
 end
 
 function M.client()

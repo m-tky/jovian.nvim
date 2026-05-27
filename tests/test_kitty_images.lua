@@ -46,7 +46,10 @@ assert_eq(vlines[1][1][2], "JovianKittyImg_42", "chunks carry the per-image hl g
 print("\n-- ensure_transmitted with stubbed core --")
 
 -- Replace Core.client()/Core.ensure() so the test never spawns jovian-core.
+-- Pre-mark the attach as completed; ensure_transmitted gates on this.
 local Core = require("jovian.backend.core")
+Core._kitty_attached = true
+Core._kitty_attach_error = nil
 local stub_client = {}
 function stub_client:request(method, params, cb)
     assert_eq(method, "kitty_transmit", "ensure_transmitted calls kitty_transmit")

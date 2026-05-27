@@ -158,34 +158,47 @@ function M.ensure_transmitted(b64, cb)
     _transmits[key] = "pending"
     _pending_cbs[key] = cb and { cb } or {}
 
+    -- Ensure the core is spawned (which kicks off kitty_attach if it
+    -- hasn't already) and wait for the attach to settle before we send
+    -- kitty_transmit. The Rust side dispatches RPC requests via
+    -- tokio::spawn so they run in parallel; without this gate transmit
+    -- can land first and return "kitty_attach not called".
     local client = Core.client() or Core.ensure()
-    client:request("kitty_transmit", { png_b64 = b64 }, function(err, result)
-        if err or not result or not result.image_id then
+    Core.on_kitty_ready(function(ok, attach_err)
+        if not ok then
             _transmits[key] = nil
-            -- Surface the first failure so users know inline images aren't
-            -- silently no-op'ing. Subsequent failures stay quiet (we already
-            -- told them once); flip M._warned back to false to re-arm.
-            if err and not M._warned then
-                M._warned = true
-                vim.schedule(function()
-                    vim.notify(
-                        "jovian: kitty_transmit failed (" .. err .. "). "
-                        .. "Inline images will not render until this is fixed. "
-                        .. "Run `:checkhealth jovian` to diagnose.",
-                        vim.log.levels.WARN
-                    )
-                end)
-            end
             local cbs = _pending_cbs[key] or {}
             _pending_cbs[key] = nil
             for _, c in ipairs(cbs) do pcall(c, nil) end
+            -- The user already saw the kitty_attach failure notification
+            -- from core.lua; don't double-notify here.
             return
         end
-        local id = result.image_id
-        _transmits[key] = id
-        local cbs = _pending_cbs[key] or {}
-        _pending_cbs[key] = nil
-        for _, c in ipairs(cbs) do pcall(c, id) end
+        client:request("kitty_transmit", { png_b64 = b64 }, function(err, result)
+            if err or not result or not result.image_id then
+                _transmits[key] = nil
+                if err and not M._warned then
+                    M._warned = true
+                    vim.schedule(function()
+                        vim.notify(
+                            "jovian: kitty_transmit failed (" .. err .. "). "
+                            .. "Inline images will not render until this is fixed. "
+                            .. "Run `:checkhealth jovian` to diagnose.",
+                            vim.log.levels.WARN
+                        )
+                    end)
+                end
+                local cbs = _pending_cbs[key] or {}
+                _pending_cbs[key] = nil
+                for _, c in ipairs(cbs) do pcall(c, nil) end
+                return
+            end
+            local id = result.image_id
+            _transmits[key] = id
+            local cbs = _pending_cbs[key] or {}
+            _pending_cbs[key] = nil
+            for _, c in ipairs(cbs) do pcall(c, id) end
+        end)
     end)
     return nil
 end
