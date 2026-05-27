@@ -230,6 +230,106 @@ function M.invalidate(source_path)
     if path then _cache[path] = nil end
 end
 
+-- ---------- Preview buffer renderer ----------
+--
+-- The side preview window doesn't honour right_align / virt_text, so we
+-- can't reuse the chunked `│ ... │` form the cell_frame uses inline.
+-- Instead we write plain text lines into the buffer and apply per-line
+-- highlight extmarks. Same color groups as inline outputs so the two
+-- views read consistently.
+
+local PREVIEW_NS = vim.api.nvim_create_namespace("jovian_preview_outputs")
+
+local function outputs_to_preview_lines(outputs)
+    local lines, hls = {}, {}
+    local function push(text, hl)
+        for _, line in ipairs(vim.split(text, "\n", { plain = true })) do
+            table.insert(lines, line)
+            table.insert(hls, hl)
+        end
+    end
+    for _, o in ipairs(outputs) do
+        local kind = o.output_type
+        if kind == "stream" then
+            local hl = (o.name == "stderr") and HL.Stderr or HL.Stdout
+            local text = strip_ansi(as_str(o.text)):gsub("\n$", "")
+            if text ~= "" then push(text, hl) end
+        elseif kind == "execute_result" or kind == "display_data" then
+            local data = o.data or {}
+            local tp = as_str(data["text/plain"])
+            if tp ~= "" then
+                push(strip_ansi(tp):gsub("\n$", ""), HL.Result)
+            end
+        elseif kind == "error" then
+            local head = as_str(o.ename) .. ": " .. as_str(o.evalue)
+            if head ~= ": " then push(head, HL.Error) end
+            for _, tb in ipairs(o.traceback or {}) do
+                push(strip_ansi(as_str(tb)), HL.Error)
+            end
+        end
+    end
+    return lines, hls
+end
+
+--- Render a cell's outputs into a buffer (the side preview pane or a pin).
+--- Writes text lines + applies highlight extmarks per line. Safe to call
+--- on every cursor move; cheap because we don't allocate per-row chunks.
+function M.render_to_buffer(buf, win, source_path, cell_id, execution_count_hint)
+    if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+    M.setup_hl(nil)
+
+    local co = M.cell_outputs(source_path, cell_id)
+    local exec
+    local body_lines, body_hls = {}, {}
+    if co then
+        exec = co.execution_count
+        body_lines, body_hls = outputs_to_preview_lines(co.outputs or {})
+    end
+    if exec == nil then exec = execution_count_hint end
+
+    -- Header: "Out[N]" + an underline. Falls back to a hint if the cell
+    -- has no outputs yet so the user still gets the cell identifier.
+    local lines, hls = {}, {}
+    local label = "Out[" .. (exec and tostring(exec) or " ") .. "]"
+    table.insert(lines, label)
+    table.insert(hls, HL.Divider)
+    table.insert(lines, string.rep("─", math.max(#label, 12)))
+    table.insert(hls, HL.Divider)
+
+    if #body_lines == 0 then
+        table.insert(lines, "(no output)")
+        table.insert(hls, HL.Divider)
+    else
+        for i, l in ipairs(body_lines) do
+            table.insert(lines, l)
+            table.insert(hls, body_hls[i])
+        end
+    end
+
+    vim.bo[buf].modifiable = true
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modifiable = false
+    vim.bo[buf].readonly = true
+
+    vim.api.nvim_buf_clear_namespace(buf, PREVIEW_NS, 0, -1)
+    for i, hl in ipairs(hls) do
+        if hl then
+            pcall(vim.api.nvim_buf_set_extmark, buf, PREVIEW_NS, i - 1, 0, {
+                end_row = i,
+                end_col = 0,
+                hl_eol = true,
+                hl_group = hl,
+                priority = 100,
+            })
+        end
+    end
+
+    -- Scroll to top so the user sees Out[N] first, not the tail.
+    if win and vim.api.nvim_win_is_valid(win) then
+        pcall(vim.api.nvim_win_set_cursor, win, { 1, 0 })
+    end
+end
+
 M._HL = HL
 
 return M

@@ -152,6 +152,37 @@ for _, m in ipairs(marks) do
 end
 assert_eq(#(off_lines or {}), 1, "with inline_outputs=false the virt_lines is just the bottom border")
 
+-- ---------------------------- preview buffer render ----------------------------
+print("\n-- output_render.render_to_buffer (preview path) --")
+require("jovian.config").options.inline_outputs = true
+
+-- A fresh buffer stands in for State.buf.preview here. We don't need an
+-- actual window — render_to_buffer scrolls only when one is supplied.
+local preview_buf = vim.api.nvim_create_buf(false, true)
+OutRender.render_to_buffer(preview_buf, nil, src_path, "probe1")
+
+local preview_lines = vim.api.nvim_buf_get_lines(preview_buf, 0, -1, false)
+assert_true(preview_lines[1]:match("Out%[7%]"), "preview header is Out[7]")
+-- The underline is a row of `─` (3-byte UTF-8 each). Lua patterns are
+-- byte-oriented, so check via find + no other content.
+assert_true(preview_lines[2]:find("─", 1, true) ~= nil
+    and not preview_lines[2]:match("[%w]"),
+    "second line is a `─` underline (no other content)")
+
+local joined_preview = table.concat(preview_lines, "\n")
+assert_true(joined_preview:find("hello", 1, true), "preview includes stdout line")
+assert_true(joined_preview:find("world", 1, true), "preview includes second stdout line")
+assert_true(joined_preview:find("42", 1, true), "preview includes execute_result text/plain")
+assert_true(joined_preview:find("ValueError: no good", 1, true),
+    "preview includes error header")
+
+-- An empty cell (no entry in sidecar) should still produce a "no output" placeholder.
+local empty_buf = vim.api.nvim_create_buf(false, true)
+OutRender.render_to_buffer(empty_buf, nil, src_path, "does_not_exist")
+local empty_lines = vim.api.nvim_buf_get_lines(empty_buf, 0, -1, false)
+assert_true(empty_lines[3] and empty_lines[3]:match("no output"),
+    "preview shows '(no output)' placeholder for an empty cell")
+
 vim.fn.delete(src_dir, "rf")
 
 print(string.format("\n%d passed, %d failed", pass, fail))

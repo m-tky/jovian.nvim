@@ -69,4 +69,9 @@ M.lua_messenger_stop = nil
 M.rust_active = false
 M.rust_session_id = nil
 
+-- Tracks which cell the preview window is currently showing, so cell_event
+-- handlers can decide whether to refresh it. nil when no cell is loaded
+-- (either preview window is closed or we're on the legacy markdown path).
+M.current_preview_cell_id = nil
+
 return M

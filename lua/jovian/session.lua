@@ -215,12 +215,36 @@ function M.schedule_structure_check()
 end
 
 function M.check_cursor_cell()
-    -- if not State.job_id then return end -- Allow checking cache even if kernel is not running
     vim.schedule(function()
         local cell_id = Cell.get_current_cell_id(nil, false)
         if not cell_id then
             return
         end
+        -- Rust backend path: render the cell's nbformat outputs directly
+        -- from the sidecar JSON into the preview buffer. No .md round-trip.
+        if Config.options.use_rust_core then
+            local src_path = vim.api.nvim_buf_get_name(0)
+            if src_path == "" then return end
+            if not State.buf.preview or not vim.api.nvim_buf_is_valid(State.buf.preview) then
+                return
+            end
+            -- Skip duplicate renders when the cursor stays on the same cell;
+            -- cell_event handlers explicitly re-trigger when new output
+            -- arrives so this gate doesn't starve fresh content.
+            if State.current_preview_cell_id == cell_id then return end
+            State.current_preview_cell_id = cell_id
+            State.current_preview_file = nil
+            require("jovian.ui.output_render").render_to_buffer(
+                State.buf.preview,
+                State.win.preview,
+                src_path,
+                cell_id
+            )
+            return
+        end
+
+        -- Legacy path: kernel_bridge.py writes a markdown file per cell
+        -- and we load it into the preview verbatim.
         local filename = vim.fn.expand("%:t")
         if filename == "" then
             filename = "scratchpad"

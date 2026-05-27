@@ -61,14 +61,31 @@ end
 
 -- Trigger a debounced cell_frame re-render whenever an output-bearing
 -- event arrives, so the inline output block grows in near-real-time as
--- the kernel streams. Cheap because cell_frame.schedule itself debounces.
+-- the kernel streams. Also push the freshest cell into the side preview
+-- buffer if it's the one currently being shown.
 local function refresh_inline_outputs(cell_id)
-    if not Config.options.inline_outputs or not Config.options.cell_frame then return end
     local buf = State.cell_buf_map[cell_id]
     if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+    local src_path = vim.api.nvim_buf_get_name(buf)
     local OutRender = require("jovian.ui.output_render")
-    OutRender.invalidate(vim.api.nvim_buf_get_name(buf))
-    require("jovian.ui.cell_frame").schedule(buf)
+    OutRender.invalidate(src_path)
+
+    if Config.options.inline_outputs and Config.options.cell_frame then
+        require("jovian.ui.cell_frame").schedule(buf)
+    end
+
+    -- Refresh preview if the focused cell is the one in the preview pane.
+    if State.current_preview_cell_id == cell_id
+        and State.buf.preview
+        and vim.api.nvim_buf_is_valid(State.buf.preview)
+    then
+        OutRender.render_to_buffer(
+            State.buf.preview,
+            State.win.preview,
+            src_path,
+            cell_id
+        )
+    end
 end
 
 local function on_cell_event(params)
