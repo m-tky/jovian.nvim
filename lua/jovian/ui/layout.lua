@@ -473,7 +473,15 @@ function M.open_output_window()
     vim.cmd("belowright split")
     State.win.output = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_buf(State.win.output, State.buf.output)
-    local height = math.floor(get_effective_height() * 0.25)
+    -- Match the Pin window's height so the bottom row (pin on the left
+    -- column, output on the code column) lines up. Fall back to 25% of
+    -- the screen when the pin window isn't open.
+    local height
+    if State.win.pin and vim.api.nvim_win_is_valid(State.win.pin) then
+        height = vim.api.nvim_win_get_height(State.win.pin)
+    else
+        height = math.floor(get_effective_height() * 0.25)
+    end
     vim.api.nvim_win_set_height(State.win.output, math.max(height, 5))
     vim.wo[State.win.output].winfixheight = true
     Windows.apply_window_options(State.win.output, { wrap = true })
