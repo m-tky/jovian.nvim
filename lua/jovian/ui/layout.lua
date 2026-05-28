@@ -431,9 +431,27 @@ function M.open_pin_window()
     end
 end
 
--- Open the Output (REPL) window as a bottom split showing the shared
--- output buffer. The buffer + term channel are created lazily by the
--- writers (ui/shared.ensure_output_term), so any output produced while
+-- Find the main code window: the focused window if it's not a jovian
+-- panel, otherwise the first non-panel window. Used so the Output split
+-- carves out of the code column rather than spanning the full width
+-- (which would squish the left-side preview/pin column).
+local function find_code_win()
+    local panel = {}
+    for _, w in ipairs({ State.win.preview, State.win.output, State.win.variables, State.win.pin }) do
+        if w then panel[w] = true end
+    end
+    local cur = vim.api.nvim_get_current_win()
+    if not panel[cur] then return cur end
+    for _, w in ipairs(vim.api.nvim_list_wins()) do
+        if not panel[w] then return w end
+    end
+    return cur
+end
+
+-- Open the Output (REPL) window as a horizontal split BELOW the code
+-- window — not `botright` (full width), which would shorten the left
+-- preview/pin column. The buffer + term channel are created lazily by
+-- the writers (ui/shared.ensure_output_term), so output produced while
 -- the window was closed is already there when it opens.
 function M.open_output_window()
     if Config.options.output_window == "off" then return end
@@ -446,7 +464,13 @@ function M.open_output_window()
     end
 
     local cur_win = vim.api.nvim_get_current_win()
-    vim.cmd("botright split")
+    local code_win = find_code_win()
+    if code_win and vim.api.nvim_win_is_valid(code_win) then
+        vim.api.nvim_set_current_win(code_win)
+    end
+    -- `belowright split` (not botright) keeps the new window within the
+    -- code window's column, leaving the preview/pin column untouched.
+    vim.cmd("belowright split")
     State.win.output = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_buf(State.win.output, State.buf.output)
     local height = math.floor(get_effective_height() * 0.25)
