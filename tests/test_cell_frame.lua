@@ -183,23 +183,24 @@ assert_true(has_prefix_conceal(5), "heading line conceals python `# ` prefix")
 assert_true(has_prefix_conceal(6), "bold line conceals python `# ` prefix")
 assert_true(has_prefix_conceal(7), "bullet line conceals python `# ` prefix")
 
--- Table styling: the header (line 8), separator (line 9), and data
--- row (line 10) each get extmarks. Detect by checking md_marks for
--- a TableDivider-coloured hl extmark with end_col covering a `|` byte.
-local function has_table_extmarks(ln)
+-- Table block (lines 8/9/10): rendered render-markdown style — each source row
+-- is overlaid in place with an inline rendered row (carrying the table-divider
+-- highlight). (The table layout itself is covered by test_markdown_table.)
+local function has_table_overlay(ln)
     for _, m in ipairs(md_marks) do
-        if m[2] == ln then
-            local det = m[4]
-            if det.hl_group == "JovianMdTableDivider" or det.hl_group == "JovianMdTableHeader" then
-                return true
+        if m[2] == ln and m[4].virt_text and m[4].virt_text_pos == "inline" then
+            for _, ch in ipairs(m[4].virt_text) do
+                if ch[2] == "JovianMdTableDivider" then
+                    return true
+                end
             end
         end
     end
     return false
 end
-assert_true(has_table_extmarks(8), "table header row has divider/header extmarks")
-assert_true(has_table_extmarks(9), "separator row has divider extmark")
-assert_true(has_table_extmarks(10), "table data row has divider extmarks")
+assert_true(has_table_overlay(8), "table header row is overlaid in place")
+assert_true(has_table_overlay(9), "table separator row is overlaid in place")
+assert_true(has_table_overlay(10), "table data row is overlaid in place")
 
 -- ---------------------------- clear ----------------------------
 print("\n-- clear --")

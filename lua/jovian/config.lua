@@ -106,6 +106,15 @@ M.defaults = {
     -- cursor is on that line, but the rest of the cell stays styled).
     markdown_cell_style = false,
 
+    -- Border style for rendered markdown tables, à la render-markdown.nvim:
+    --   "round"  : ╭─┬─╮ rounded corners (default)
+    --   "none"   : ┌─┬─┐ square corners
+    --   "heavy"  : ┏━┳━┓ thick lines
+    --   "double" : ╔═╦═╗ double lines
+    -- The delimiter row marks explicit `:--` / `:-:` / `--:` alignment with a
+    -- contrasting indicator, exactly like render-markdown.
+    table_border = "round",
+
     -- Render the kernel's outputs (stdout/stderr/text result/error
     -- traceback, PNG/GIF/JPEG images) below each cell as virt_lines,
     -- jupynvim-style. Reads from the nbformat-style JSON sidecar that

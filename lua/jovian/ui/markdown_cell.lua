@@ -15,6 +15,7 @@ local M = {}
 
 local Config = require("jovian.config")
 local CellFrame = require("jovian.ui.cell_frame")
+local MarkdownTable = require("jovian.ui.markdown_table")
 
 local NS = vim.api.nvim_create_namespace("JovianMarkdownCell")
 
@@ -604,7 +605,12 @@ function M.render(bufnr)
                     for j = i, block_end do
                         table.insert(block, cell_lines[j])
                     end
-                    render_table_block(bufnr, block)
+                    -- Render-markdown-style in-place overlay (rows stay real,
+                    -- borders added as virt_lines). Falls back to the legacy
+                    -- pad renderer only if the block isn't a real table.
+                    if not MarkdownTable.render(bufnr, NS, block) then
+                        render_table_block(bufnr, block)
+                    end
                     i = block_end + 1
                 else
                     if info.content ~= "" then
