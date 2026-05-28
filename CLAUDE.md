@@ -175,7 +175,10 @@ require("jovian").setup({
                                       -- to draw the frame above indent-guide plugins
     markdown_cell_style = false,      -- conceal #/**bold**/tables in markdown cells
     table_border        = "round",    -- round/none/heavy/double (render-markdown style)
-    math = { enabled = true, converter = nil },  -- $…$/$$…$$ → Unicode; converter = external tool opt-in
+    -- $…$/$$…$$ → Unicode (render-markdown semantics). position: center =
+    -- single-line/inline overlaid in place, multi-line falls back to above;
+    -- above/below = virt_line with raw source kept. converter = external opt-in.
+    math = { enabled = true, position = "center", converter = nil },
     inline_outputs      = false,      -- render outputs below the cell (needs cell_frame)
     folding             = false,      -- cell-based folds for Python files
 

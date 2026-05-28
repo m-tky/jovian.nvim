@@ -122,8 +122,16 @@ M.defaults = {
     -- external command (render-markdown's "latex2text" / "utftex", or a list
     -- tried in order); the built-in is the fallback. Only renders when
     -- markdown_cell_style is on.
+    -- position (render-markdown semantics): where a block formula is drawn
+    -- relative to its `$$…$$`:
+    --   "center" : single-line blocks (and inline `$…$`) are concealed and the
+    --              Unicode is overlaid in place; multi-line blocks fall back to
+    --              "above" (center needs a single line).
+    --   "above" / "below" : the Unicode is drawn as a virtual line above/below
+    --              the block and the raw LaTeX source stays visible.
     math = {
         enabled = true,
+        position = "center",
         converter = nil,
     },
 

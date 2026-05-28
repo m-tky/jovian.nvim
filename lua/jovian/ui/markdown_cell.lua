@@ -626,20 +626,46 @@ local function detect_math_block(cell_lines, i)
     return nil -- unterminated
 end
 
--- Render a `$$ … $$` block in place (like the table): overlay the converted
--- Unicode on the block's first source line and collapse the rest, so the
--- formula stays where it was written rather than floating on a separate line.
+-- Render a `$$ … $$` block, render-markdown.nvim style. `center` (default):
+-- a single-line block is concealed and the Unicode overlaid in place; a
+-- multi-line block falls back to `above`. `above`/`below`: the Unicode is drawn
+-- as a virtual line and the raw LaTeX stays visible (cell-frame `│ ` prefix so
+-- it lines up under the frame).
 local function render_math_block(buf, cell_lines, start_i, end_i, inner)
-    local first = cell_lines[start_i]
-    conceal_range(buf, first.ln, first.offset, first.offset + #first.content)
-    pcall(vim.api.nvim_buf_set_extmark, buf, NS, first.ln, first.offset, {
-        virt_text = { { Math.convert(inner), HL.Math } },
-        virt_text_pos = "inline",
-        hl_mode = "combine",
-        priority = 201,
-    })
-    for k = start_i + 1, end_i do
-        pcall(vim.api.nvim_buf_set_extmark, buf, NS, cell_lines[k].ln, 0, { conceal_lines = "", priority = 200 })
+    local uni = Math.convert(inner)
+    local pos = (Config.options.math or {}).position or "center"
+    if pos == "center" and start_i ~= end_i then
+        pos = "above" -- center needs a single line (render-markdown semantics)
+    end
+
+    if pos == "center" then
+        local first = cell_lines[start_i]
+        conceal_range(buf, first.ln, first.offset, first.offset + #first.content)
+        pcall(vim.api.nvim_buf_set_extmark, buf, NS, first.ln, first.offset, {
+            virt_text = { { uni, HL.Math } },
+            virt_text_pos = "inline",
+            hl_mode = "combine",
+            priority = 201,
+        })
+        return
+    end
+
+    local chunks = {}
+    if Config.options.cell_frame then
+        chunks[1] = { "│ ", "JovianCellBorderMarkdown" }
+    end
+    chunks[#chunks + 1] = { uni, HL.Math }
+    if pos == "below" then
+        pcall(vim.api.nvim_buf_set_extmark, buf, NS, cell_lines[end_i].ln, 0, {
+            virt_lines = { chunks },
+            priority = 200,
+        })
+    else
+        pcall(vim.api.nvim_buf_set_extmark, buf, NS, cell_lines[start_i].ln, 0, {
+            virt_lines = { chunks },
+            virt_lines_above = true,
+            priority = 200,
+        })
     end
 end
 

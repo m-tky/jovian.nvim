@@ -49,15 +49,16 @@ local f = vim.fn.tempname() .. ".py"
 vim.cmd("edit " .. f)
 vim.api.nvim_buf_set_lines(0, 0, -1, false, {
     '# %% [markdown] id="m"',
-    "# energy $E=mc^2$ here",
-    "# $$",
+    "# energy $E=mc^2$ here", -- 1: inline math
+    "# $$", -- 2..4: multi-line block
     "# \\sum_{i=1}^{n} x_i",
     "# $$",
+    "# $$\\frac{a}{b}$$", -- 5: single-line block
 })
 MC.render(0)
 local buf = vim.api.nvim_get_current_buf()
 
-local inline_on_1, block_inline, block_collapsed = false, nil, 0
+local inline_on_1, single_inline, block_above, src_concealed = false, nil, nil, false
 for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, NS, 0, -1, { details = true })) do
     local ln, d = m[2], m[4]
     if d.virt_text and d.virt_text_pos == "inline" then
@@ -68,21 +69,32 @@ for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, NS, 0, -1, { details = tru
         local s = table.concat(t)
         if ln == 1 and s == "E=mc²" then
             inline_on_1 = true
-        elseif ln == 2 then
-            block_inline = s -- formula overlaid in place on the block's first line
+        elseif ln == 5 then
+            single_inline = s -- single-line block overlaid in place
         end
     end
-    if (ln == 3 or ln == 4) and d.conceal_lines ~= nil then
-        block_collapsed = block_collapsed + 1
+    if d.virt_lines and d.virt_lines_above then
+        local t = {}
+        for _, ch in ipairs(d.virt_lines[1]) do
+            t[#t + 1] = ch[1]
+        end
+        block_above = table.concat(t)
+    end
+    if (ln == 2 or ln == 3 or ln == 4) and d.conceal_lines ~= nil then
+        src_concealed = true
     end
 end
 
-ok(inline_on_1, "inline `$E=mc^2$` is overlaid as `E=mc²`")
+ok(inline_on_1, "inline `$E=mc^2$` is overlaid in place as `E=mc²`")
 ok(
-    block_inline ~= nil and block_inline:find("xᵢ", 1, true) ~= nil,
-    "block math is overlaid in place on the first block line (got " .. tostring(block_inline) .. ")"
+    single_inline == "(a)/(b)",
+    "single-line `$$\\frac{a}{b}$$` overlaid in place (got " .. tostring(single_inline) .. ")"
 )
-ok(block_collapsed == 2, "the remaining `$$` block lines are collapsed (got " .. block_collapsed .. ")")
+ok(
+    block_above ~= nil and block_above:find("xᵢ", 1, true) ~= nil,
+    "multi-line block drawn ABOVE as a virt_line, render-markdown style (got " .. tostring(block_above) .. ")"
+)
+ok(not src_concealed, "multi-line block keeps its raw `$$` source visible (not collapsed)")
 
 print(string.format("\n%d passed, %d failed", pass, fail))
 os.exit(fail == 0 and 0 or 1)
