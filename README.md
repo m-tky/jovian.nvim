@@ -1,11 +1,17 @@
 # jovian.nvim 🪐
 
 ![Lua](https://img.shields.io/badge/Lua-blue.svg?style=for-the-badge&logo=lua)
-![Neovim](https://img.shields.io/badge/Neovim%200.9+-green.svg?style=for-the-badge&logo=neovim)
+![Rust](https://img.shields.io/badge/Rust-orange.svg?style=for-the-badge&logo=rust)
+![Neovim](https://img.shields.io/badge/Neovim%200.10+-green.svg?style=for-the-badge&logo=neovim)
 
-**jovian.nvim** transforms Neovim into a powerful Jupyter-like environment for Python. Edit `.py` files using the `# %%` cell format, execute code interactively, view rich outputs (including plots), and manage your data—all without leaving your editor.
+**jovian.nvim** turns Neovim into a Jupyter-like environment for Python. Edit
+`.py` files using the `# %%` cell format, execute code against a live IPython
+kernel, and view rich output — text, tables, errors, and plots — inline below
+each cell or in a side-by-side preview window, without leaving your editor.
 
-![Demo](https://via.placeholder.com/800x400?text=Demo+GIF+Placeholder)
+Execution is powered by **`jovian-core`**, a small Rust backend that speaks the
+Jupyter wire protocol directly. No `libzmq`, no `pyzmq`, no Python bridge
+process — just a single static binary talking msgpack-RPC to Neovim.
 
 ---
 
@@ -16,105 +22,123 @@
 - [Requirements](#-requirements)
 - [Installation](#-installation)
 - [Usage Guide](#-usage-guide)
+- [Visual Features](#-visual-features)
 - [Recommended Keybindings](#️-recommended-keybindings)
 - [Configuration](#️-configuration)
 - [How it Works](#-how-it-works)
 - [Command Reference](#-command-reference)
 - [Customization](#-customization)
+- [Roadmap](#-roadmap)
 - [Acknowledgements](#-acknowledgements)
 
 ---
 
 ## ✨ Features
 
-| Feature                      | Description                                                             |
-| :--------------------------- | :---------------------------------------------------------------------- |
-| **🚀 Native Performance**    | Blazing fast zero-latency execution via Lua-native ZMQ bridge.          |
-| **🧠 Smart Fallback**        | Automatically falls back to Python bridge if system libs are missing.   |
-| **👀 Live Preview**          | See results (text & plots) in a side-by-side preview window.            |
-| **📊 Variables Pane**        | Monitor active variables with real-time paging support.                 |
-| **🖼️ Plot Support**          | View Matplotlib/Plotly plots directly in Neovim (via `image.nvim`).     |
-| **☁️ Remote & Tailscale**    | One-button SSH/Tailscale tunneling with automatic lifecycle management. |
-| **🔄 Easy Sync**             | Build-in `rsync` command to keep local/remote files in sync.           |
-| **🎨 Smart UI**              | Auto-resizing windows, virtual text status, and DataFrame pagination.   |
-| **⚡ Magic Commands**        | Full support for `%timeit`, `!ls`, and other IPython magics.            |
+| Feature | Description |
+| :--- | :--- |
+| **🦀 Rust core** | A single `jovian-core` binary speaks the Jupyter wire protocol directly over msgpack-RPC. No `libzmq`/`pyzmq`/Python-bridge dependencies. |
+| **🚀 Low latency** | Streamed stdout/stderr, cell status, and completions come straight off the kernel's IOPUB/SHELL sockets. |
+| **👀 Live preview** | Rich output (text, tables, errors, plots) in a side-by-side window, rendered from a structured output store. |
+| **🃏 Inline cell cards** | Optional bordered "cards" around each cell with output rendered directly beneath it, à la notebook UIs. |
+| **📝 Markdown cells** | Optional styling for `# %% [markdown]` cells: headings, bold/italic, code spans, bullets, and aligned tables. |
+| **🖼️ Inline plots** | Matplotlib/Plotly images rendered in-terminal via the Kitty graphics protocol (Kitty, Ghostty, recent WezTerm). |
+| **📊 Variables & DataFrames** | `:JovianVars` and `:JovianView` inspect the live namespace and paginate DataFrames. |
+| **⚡ Quick eval / REPL** | Try throwaway code against the kernel without polluting `In[]`/`Out[]` history. |
+| **🔁 Persistent outputs** | Cell output is cached to an `nbformat`-shaped JSON sidecar, so results survive restarts. |
+| **🪄 Magic commands** | `%timeit`, `!ls`, and other IPython magics work, with LSP false-positives suppressed. |
 
 ---
 
 ## ⚡ Try with Nix
 
-No install needed! If you have [Nix](https://nixos.org/), try `jovian.nvim` with full performance features:
+No install needed. If you have [Nix](https://nixos.org/), the flake bundles the
+prebuilt `jovian-core` binary and a minimal Python environment:
 
 ```bash
 nix run github:m-tky/jovian.nvim -- demo_jovian.py
 ```
 
+The demo launches with the inline cell cards, markdown styling, and inline
+output features all enabled so you can see everything at once.
+
 ---
 
 ## 📋 Requirements
 
-Dependencies for `jovian.nvim` are categorized into three levels based on your usage.
-
 > [!TIP]
-> **For Nix / NixOS users**: All dependencies (including system libraries) are automatically handled by the provided Flake. See [Installation (Nix)](#using-nix-flake) for details.
+> **For Nix / NixOS users**: everything below — the Rust binary, the Python
+> environment, and a Kitty-capable terminal — is handled by the flake. See
+> [Installation (Nix)](#using-nix-flake).
 
-### 1. Core (Essential)
-Required for basic functionality (kernel connection, code execution).
-*   **Python 3.10+**: Environment containing the following:
-    *   `ipython`, `ipykernel`, `jupyter-client`
-*   **System Commands**:
-    *   `awk`, `shasum` (or `sha256sum`): Used for backend session integrity checks.
+### 1. Python (essential)
 
-### 2. Performance & Native Mode (Recommended)
-Required to enable **Native ZMQ Mode** for near-zero latency execution.
-*   **System Libraries**:
-    *   **`libzmq`**: High-performance messaging.
-    *   **`openssl`** (libcrypto): Secure communication.
-*   **Python Libraries**:
-    *   `pyzmq`: (Preferably built against the system `libzmq`).
+A Python 3.10+ environment containing:
 
-### 3. Feature-specific (Optional)
-Required only if you use specific commands or visualization features.
-*   **Remote Synchronization (`:JovianSync`)**:
-    - **`rsync`**: Essential for fast file synchronization between local and remote hosts.
-*   **Tailscale Integration**:
-    - **`tailscale`**: Required when connecting to nodes within a Tailscale network.
-*   **Rich Visualization (Plots)**:
-    - **[image.nvim](https://github.com/3rd/image.nvim)**: Required to render kernel-generated plots inside Neovim.
-*   **Notebook Support**:
-    - **[jupytext.nvim](https://github.com/GCBallesteros/jupytext.nvim)**: Highly recommended for opening and editing `.ipynb` files.
-*   **Advanced Highlighting**:
-    - **[nvim-treesitter](https://github.com/nvim-treesitter/nvim-treesitter)**: Recommended for proper code highlighting and Markdown injection in cells.
+- **`ipykernel`** — the kernel jovian connects to.
+- **`ipython`** — provides the interactive shell used by `:JovianREPL`.
+
+That's it for the kernel. There is no `pyzmq`, `jupyter-client`, or
+`jupyter-console` requirement anymore — `jovian-core` talks to the kernel
+directly.
+
+### 2. The `jovian-core` binary
+
+The native backend. You get it one of three ways, in order of preference:
+
+1. **Prebuilt download** (default): the plugin's `build` hook downloads the
+   release binary matching your platform (Linux/macOS, x86_64/aarch64).
+2. **Built from source**: if no prebuilt matches, the hook runs
+   `cargo build --release` — this needs a [Rust toolchain](https://rustup.rs).
+3. **Nix**: the flake drops the binary in place; nothing to download or build.
+
+### 3. Optional
+
+- **A Kitty-graphics terminal** ([Kitty](https://sw.kovidgoyal.org/kitty/),
+  [Ghostty](https://ghostty.org/) 1.3+, recent [WezTerm](https://wezfurlong.org/wezterm/))
+  — required for inline plot rendering. Without one, images are skipped; text
+  output is unaffected.
+- **[nvim-treesitter](https://github.com/nvim-treesitter/nvim-treesitter)** —
+  for code highlighting and markdown injection inside cells.
+- **[jupytext.nvim](https://github.com/GCBallesteros/jupytext.nvim)** — to open
+  and edit `.ipynb` files as `# %%` Python.
 
 ---
 
 ## 📦 Installation
 
 #### Using [Lazy.nvim](https://github.com/folke/lazy.nvim)
+
+The `build` hook installs `jovian-core` (prebuilt download, or cargo fallback):
+
 ```lua
 {
     "m-tky/jovian.nvim",
-    dependencies = {
-        "3rd/image.nvim",
-        "neovim/nvim-lspconfig",
-    },
+    build = function(plugin)
+        require("jovian.install").run(plugin)
+    end,
     config = function()
         require("jovian").setup({
             python_interpreter = "python3",
-            use_lua_native_shell = true, -- Enable zero-latency mode
+            -- Opt-in visuals (all off by default):
+            cell_frame = true,           -- bordered cell cards
+            markdown_cell_style = true,  -- styled markdown cells
+            inline_outputs = true,       -- output rendered below cells
         })
-    end
+    end,
 }
 ```
 
 #### Using Nix (Flake)
-The recommended way to use Jovian on Nix is via its **Overlay**, which adds `jovian-nvim` to `pkgs.vimPlugins`.
+
+The recommended way on Nix is the **overlay**, which adds `jovian-nvim` (with
+the binary bundled) to `pkgs.vimPlugins`.
 
 ```nix
 # Example integration in your flake.nix
 {
   inputs.jovian.url = "github:m-tky/jovian.nvim";
-  
+
   outputs = { nixpkgs, jovian, ... }: {
     # 1. Apply the overlay
     pkgs = import nixpkgs {
@@ -126,29 +150,23 @@ The recommended way to use Jovian on Nix is via its **Overlay**, which adds `jov
     # Example using Home Manager:
     programs.neovim.plugins = [
       pkgs.vimPlugins.jovian-nvim
-      pkgs.vimPlugins.image-nvim -- Optional: for plots
     ];
 
     # 3. (Optional) Use the provided minimal Python environment
-    # customRC = ''
-    #   lua << EOF
-    #     require("jovian").setup({
-    #       python_interpreter = "${pkgs.jovian-minimal-python}/bin/python3",
-    #     })
-    #   EOF
-    # '';
+    # require("jovian").setup({
+    #   python_interpreter = "${pkgs.jovian-minimal-python}/bin/python3",
+    # })
   };
 }
 ```
 
 #### Runtime Autocompletion
 
-Jovian provides context-aware autocompletion powered by the Jupyter kernel. This allows you to complete dictionary keys, data columns, and dynamic attributes that static LSP (like Pyright) might miss.
-
-By default, it is set as `omnifunc`. You can trigger it with `<C-x><C-o>`.
+Jovian provides context-aware completion powered by the kernel — dictionary
+keys, DataFrame columns, and dynamic attributes that a static LSP can miss. It
+is registered as `omnifunc` (trigger with `<C-x><C-o>`).
 
 **Integration with [blink.cmp](https://github.com/Saghen/blink.cmp):**
-Add the following to your configuration to see Jupyter completions alongside LSP results:
 
 ```lua
 require('blink.cmp').setup({
@@ -169,28 +187,63 @@ require('blink.cmp').setup({
 
 ## 🎮 Usage Guide
 
-### Running Code
+### Running code
 
-- Define cells with `# %%`
-- Run with `:JovianRun` — output appears in the Preview Window (**Native ZMQ execution for zero latency!**)
-- Check virtual text status (`Running`, `Done`) on cell headers
+- Define cells with `# %%`. IDs (`# %% id="..."`) are generated on first run.
+- `:JovianStart` connects a kernel (or it starts lazily on first run).
+- `:JovianRun` runs the current cell; `:JovianRunAndNext`, `:JovianRunAll`,
+  `:JovianRunAbove`, `:JovianRunLine`, and `:JovianSendSelection` cover the rest.
+- Cell headers show virtual-text status: `Running…`, `Done`, `Error`, `Stale`.
 
-### Working with Data
+### Inspecting data
 
-- `:JovianVars` — View active variables. (**Paging supported for large environments**)
-  - Use `<PageDown>` / `<PageUp>` in the float window to navigate.
-- `:JovianView` — Inspect DataFrames in a floating window (**Paging supported: 50 rows/page**).
-  - Use `<PageDown>` / `<PageUp>` to navigate pages.
-- `:JovianSync` — Sync your current local project to the remote server via `rsync`.
+- `:JovianVars` — show the live namespace in a floating window.
+- `:JovianView [var]` — inspect a DataFrame (paginated, 50 rows/page; use
+  `<PageDown>` / `<PageUp>`).
 
-### Remote Development (SSH & Tailscale)
+### Quick eval and REPL
 
-1.  Run **`:JovianConnect`**.
-2.  Select a host from your `~/.ssh/config` or **Tailscale** nodes.
-3.  Choose **"Auto-Tunnel"** mode.
-4.  Specify **"Remote Directory"** (e.g., `~/projects/my-analysis`).
-5.  Jovian will automatically start a remote kernel, setup SSH tunnels, and connect!
-6.  Use **`:JovianSync`** to push your local data/code to the remote server.
+- `:JovianEval [code]` runs a one-off expression against the kernel with
+  **history disabled** — it sees all your variables but doesn't bump
+  `In[]`/`Out[]` or get recorded.
+- `:JovianREPL`, or pressing `i` / `e` in the Output window, opens an
+  interactive loop on top of the same mechanism: type, run, repeat. An empty
+  line exits. No `jupyter console` needed.
+
+### Output window
+
+By default the Output (REPL) window is **on-demand** — toggle it with
+`:JovianToggleOutput`. Output still accumulates in the background, so the full
+cross-cell log and live `\r` progress bars (tqdm) are there when you open it.
+Set `output_window = "always"` to dock it, or `"off"` to drop it entirely.
+
+---
+
+## 🎨 Visual Features
+
+Three independent, **opt-in** rendering layers. Enable any combination:
+
+```lua
+require("jovian").setup({
+    cell_frame = true,          -- ┌─ [3] Code ──┐ card borders around cells
+    markdown_cell_style = true, -- conceal/style # %% [markdown] cells
+    inline_outputs = true,      -- render kernel output below each cell
+})
+```
+
+- **`cell_frame`** draws a bordered card around each cell (code vs. markdown
+  cells get distinct border colors). It shifts the right edge of cell lines, so
+  it's off by default.
+- **`markdown_cell_style`** conceals markdown punctuation (`#`, `**`, `` ` ``)
+  in `# %% [markdown]` cells and renders headings, bold/italic, code spans,
+  bullets, and box-drawn tables. The raw source re-appears on the cursor line
+  while you edit.
+- **`inline_outputs`** renders each cell's output (stdout/stderr, text results,
+  error tracebacks, and Kitty images) as virtual lines beneath the cell. Long
+  text output is elided to `inline_output_max_lines` (default 20) — the full
+  text stays in the preview pane and Output window. Requires `cell_frame`.
+
+Toggle at runtime with `:JovianToggleCellFrame` and `:JovianToggleMarkdownStyle`.
 
 ---
 
@@ -208,6 +261,7 @@ map("n", "<leader>R", "<cmd>JovianRunAll<CR>", { desc = "Run All Cells" })
 map("n", "<leader>jo", "<cmd>JovianOpen<CR>", { desc = "Open UI" })
 map("n", "<leader>jt", "<cmd>JovianToggle<CR>", { desc = "Toggle UI" })
 map("n", "<leader>jv", "<cmd>JovianVars<CR>", { desc = "Variables" })
+map("n", "<leader>je", "<cmd>JovianEval<CR>", { desc = "Quick eval" })
 
 -- Navigation
 map("n", "]c", "<cmd>JovianNextCell<CR>", { desc = "Next Cell" })
@@ -219,71 +273,80 @@ map("n", "[c", "<cmd>JovianPrevCell<CR>", { desc = "Prev Cell" })
 ## ⚙️ Configuration
 
 <details>
-<summary>Click to expand full configuration options</summary>
+<summary>Click to expand the full configuration options</summary>
 
 ```lua
 require("jovian").setup({
-	-- Visuals
-	flash_highlight_group = "Visual",
-	flash_duration = 300,
-	float_border = "rounded", -- Border style for floating windows (single, double, rounded, solid, shadow)
+    -- Visuals
+    flash_highlight_group = "Visual",
+    flash_duration = 300,
+    float_border = "rounded", -- single | double | rounded | solid | shadow
 
-	-- Python Environment
-	python_interpreter = "python3",
+    -- Python
+    python_interpreter = "python3", -- or set $JOVIAN_PYTHON
 
-	-- Behavior
-	notify_threshold = 10,
-	notify_mode = "all", -- "all", "error", "none"
-	show_execution_time = true,
-	plot_view_mode = "inline", -- "inline", "window"
+    -- Behavior
+    notify_threshold = 10,   -- seconds before a long run notifies
+    notify_mode = "all",     -- "all" | "error" | "none"
+    show_execution_time = true,
+    folding = false,         -- cell-based folds for Python files
+    dataframe_page_size = 50,
 
-	ui = {
-		-- cell_separator_highlight:
-        -- "line"  : Highlight the entire line (default).
-        -- "text"  : Highlight only the text.
-        -- "none"  : No highlight.
-        cell_separator_highlight = "text",
-		-- winblend = 0,
-		layouts = {
-			{
-				elements = {
-					{ id = "preview", size = 0.75 },
-					{ id = "pin", size = 0.30 },
-				},
-				position = "right", -- "left", "top", "bottom"
-				size = 0.30,
-			},
-			{
-				elements = {
-					{ id = "output", size = 0.65 },
-					{ id = "variables", size = 0.35 },
-				},
-				position = "bottom",
-				size = 0.25,
-			},
-		},
-	},
+    -- Output (REPL) window: "ondemand" (default) | "always" | "off"
+    output_window = "ondemand",
 
-	-- UI Symbols
-	ui_symbols = {
-		running = " Running...",
-		done = " Done",
-		error = " Error",
-		interrupted = " Interrupted",
-		stale = " Stale",
-	},
+    -- Opt-in visual layers (all off by default)
+    cell_frame = false,
+    markdown_cell_style = false,
+    inline_outputs = false,        -- requires cell_frame
+    inline_output_max_lines = 20,  -- elide longer inline text output
 
-	-- Magic Commands
-	suppress_magic_command_errors = true,
+    -- Inline image placement (terminal cells)
+    image_rows = 14,
+    image_cols = 56,
+    -- Preview-pane image sizing (parses PNG/GIF headers; never upscales)
+    preview_cell_pixel_height = 16,
+    preview_cell_pixel_aspect = 0.5,
+    preview_image_max_cols = nil,  -- nil = fill the preview text area
+    preview_image_max_rows = nil,
 
-	-- TreeSitter
-	    treesitter = {
-        -- Set to false to disable
-        -- Set to true (default) to use built-in queries
-        -- Set to a string to use a custom query
+    -- Default persistent panels. Variables and Output are intentionally not
+    -- here: Variables is a float via :JovianVars, Output is governed by
+    -- `output_window` above.
+    ui = {
+        cell_separator_highlight = "text", -- "line" | "text" | "none"
+        layouts = {
+            {
+                elements = {
+                    { id = "preview", size = 0.70 },
+                    { id = "pin", size = 0.30 },
+                },
+                position = "left", -- "left" | "right" | "top" | "bottom"
+                size = 0.35,
+            },
+        },
+    },
+
+    -- Cell status virtual text
+    ui_symbols = {
+        running = " Running...",
+        done = " Done",
+        error = " Error",
+        interrupted = " Interrupted",
+        stale = " Stale",
+    },
+
+    -- Magic commands
+    suppress_magic_command_errors = true,
+
+    -- TreeSitter (true | false | custom query string)
+    treesitter = {
         markdown_injection = true,
         magic_command_highlight = true,
     },
+
+    -- Per-group highlight overrides — see Customization below.
+    highlights = {},
 })
 ```
 
@@ -293,135 +356,120 @@ require("jovian").setup({
 
 ## 🌲 TreeSitter Queries
 
-To enable **Markdown highlighting** in Python comments and **Magic Command** highlighting, you need to add the plugin's query files to your Neovim configuration:
+To enable **Markdown highlighting** in Python comments and **Magic Command**
+highlighting:
 
-1. Create a `queries/python` directory in your Neovim config (e.g., `~/.config/nvim/queries/python/`).
-2. Copy `injections.scm` and `highlights.scm` from `jovian.nvim/queries/python/` to that directory.
+1. Create a `queries/python` directory in your Neovim config
+   (e.g. `~/.config/nvim/queries/python/`).
+2. Copy `injections.scm` and `highlights.scm` from
+   `jovian.nvim/queries/python/` into it.
 
-Neovim's TreeSitter will automatically pick up these queries.
+Neovim's TreeSitter picks these up automatically.
 
 ---
 
 ## 🧠 How it Works
 
-`jovian.nvim` uses a **Dual-Bridge Architecture** to balance extreme performance with broad compatibility:
+```
+:JovianRun
+  → core.send_cell()
+  → jovian-core (Rust) execute_request over the SHELL socket
+      ├─ IOPUB stream/status/result/error events
+      │    → msgpack-RPC notifications → handlers → UI (inline / preview / pin)
+      └─ outputs mirrored to .jovian_cache/<filename>/outputs.json (sidecar)
+```
 
-1.  **Native Lua Bridge (Primary)**: Uses `libzmq` and FFI to talk directly to the Jupyter kernel from Neovim's Lua thread. This provides **zero-latency** execution and autocompletion.
-2.  **Python Bridge (Fallback & Background)**: A persistent `kernel_bridge.py` process that handles complex background tasks, SSH tunneling, and rich data inspection (like DataFrames).
-3.  **Smart Routing**: Execution and status updates go through the fastest available path, while stdout/stderr are streamed asynchronously to keep Neovim responsive.
-4.  **Plotting**: Intercepts display data from the kernel, saving plots as temporary images rendered via `image.nvim`.
+- **`jovian-core`** (Rust, in `core/`) spawns and owns the IPython kernel,
+  signs messages with HMAC-SHA256, and speaks the Jupyter v5 wire protocol over
+  pure-Rust ZeroMQ. It exposes a small msgpack-RPC API over stdio.
+- **Neovim** spawns the binary via `vim.uv` pipes and exchanges length-prefixed
+  msgpack frames (`request` / `response` / `notification`).
+- **Outputs** are stored in an `nbformat`-shaped JSON sidecar at
+  `.jovian_cache/<filename>/outputs.json`, keyed by cell ID. The inline,
+  preview, and pin renderers all read from this structured store — output is
+  not tied to a markdown file format.
+- **Images** are transmitted to the terminal via the Kitty graphics protocol
+  (Unicode placeholder mode); Neovim only places the placeholder glyphs.
 
----
-
-## ☁️ Remote Data Handling
-
-When using `jovian.nvim` with a remote host, the **Python Kernel runs on the remote machine**.
-
-### 1. Unified Connection via `:JovianConnect`
-
-Instead of manually adding hosts, use `:JovianConnect` to interactively pick from:
-- `~/.ssh/config` entries.
-- **Tailscale** nodes (requires `tailscale` CLI).
-
-### 2. File Synchronization via `:JovianSync`
-
-To keep your remote data in sync with local changes:
-- Run `:JovianSync` to push the current directory to the `remote_cwd`.
-- Run `:JovianSync <path>` to push specific files.
-- Default excludes: `.git`, `__pycache__`, `.jovian_cache`.
-
-### 3. Path Mapping (`remote_cwd`)
-
-When connecting, Jovian asks for a **Remote Directory**.
-- The remote kernel will `cd` into this directory before starting.
-- Your code's relative paths (e.g., `pd.read_csv("./data.csv")`) will correctly resolve to files in that remote directory.
+Why a `.py` + `# %%` source format with IDs? Cell IDs stored in the file let
+the output sidecar correlate with specific cells across edits and sessions,
+while keeping the source plain, diff-friendly, and source-controllable.
 
 ---
 
 ## 📚 Command Reference
 
 <details>
-<summary>Execution Commands</summary>
+<summary>Execution</summary>
 
-| Command                | Description             |
-| :--------------------- | :---------------------- |
-| `:JovianRun`           | Run current cell        |
-| `:JovianRunAndNext`    | Run and jump to next    |
-| `:JovianRunAll`        | Run all cells           |
-| `:JovianRunAbove`      | Run cells up to current |
-| `:JovianRunLine`       | Run current line        |
-| `:JovianSendSelection` | Run selection           |
-| `:JovianStart`         | Start kernel            |
-| `:JovianRestart`       | Restart kernel          |
-| `:JovianInterrupt`     | Interrupt execution     |
-
-</details>
-
-<details>
-<summary>UI & Layout Commands</summary>
-
-| Command                       | Description       |
-| :---------------------------- | :---------------- |
-| `:JovianOpen`                 | Open full UI      |
-| `:JovianToggle`               | Toggle UI         |
-| `:JovianClearREPL`            | Clear REPL        |
-| `:JovianToggleVars`           | Toggle Variables  |
-| `:JovianTogglePlot`           | Toggle plot mode  |
-| `:JovianToggleStatus`         | Toggle cell marks |
-| `:JovianPin` / `:JovianUnpin` | Pin/unpin output  |
+| Command | Description |
+| :--- | :--- |
+| `:JovianStart` | Start / connect a kernel |
+| `:JovianRun` | Run current cell |
+| `:JovianRunAndNext` | Run cell and jump to next |
+| `:JovianRunAll` | Run all cells |
+| `:JovianRunAbove` | Run all cells above the cursor |
+| `:JovianRunLine` | Run the current line |
+| `:JovianSendSelection` | Run the visual selection |
+| `:JovianRestart` | Restart the kernel |
+| `:JovianInterrupt` | Interrupt execution (SIGINT) |
+| `:JovianEval` | Quick-eval an expression (no history) |
+| `:JovianREPL` | Interactive eval loop on the live kernel |
 
 </details>
 
 <details>
-<summary>Cell Management Commands</summary>
+<summary>UI & Layout</summary>
 
-| Command                                       | Description    |
-| :-------------------------------------------- | :------------- |
-| `:JovianNextCell` / `:JovianPrevCell`         | Navigate cells |
-| `:JovianNewCellBelow` / `:JovianNewCellAbove` | Insert cell    |
-| `:JovianDeleteCell`                           | Delete cell    |
-| `:JovianMoveCellUp` / `:JovianMoveCellDown`   | Move cell      |
-| `:JovianMergeBelow`                           | Merge cells    |
-| `:JovianSplitCell`                            | Split cell     |
-
-</details>
-
-<details>
-<summary>Data & Inspection Commands</summary>
-
-| Command             | Description       |
-| :------------------ | :---------------- |
-| `:JovianVars`       | Show variables    |
-| `:JovianView [var]` | View DataFrame    |
-| `:JovianCopy [var]` | Copy to clipboard |
-| `:JovianDoc [obj]`  | View docstring    |
-| `:JovianPeek [obj]` | Quick peek        |
-| `:JovianProfile`    | Profile cell      |
-| `:JovianClean(!)`   | Clean caches      |
+| Command | Description |
+| :--- | :--- |
+| `:JovianOpen` / `:JovianToggle` | Open / toggle the panels |
+| `:JovianToggleOutput` | Toggle the Output (REPL) window |
+| `:JovianToggleVars` | Toggle the Variables pane |
+| `:JovianToggleStatus` | Toggle cell status virtual text |
+| `:JovianToggleCellFrame` | Toggle bordered cell cards |
+| `:JovianToggleMarkdownStyle` | Toggle markdown cell styling |
+| `:JovianPin` / `:JovianUnpin` | Pin / unpin current cell output |
+| `:JovianTogglePin` | Toggle the pinned output window |
+| `:JovianClearREPL` | Clear the Output buffer |
 
 </details>
 
 <details>
-<summary>Host Management Commands</summary>
+<summary>Cell management</summary>
 
-| Command               | Description            |
-| :-------------------- | :--------------------- |
-| `:JovianConnect`      | SSH/Tailscale Connect  |
-| `:JovianSync`         | Sync data via rsync    |
-| `:JovianTunnelStatus` | Check tunnel health    |
-| `:JovianAddHost`      | Add SSH host (Manual)  |
-| `:JovianAddLocal`     | Add local (Manual)     |
-| `:JovianUse`          | Switch host            |
-| `:JovianRemoveHost`   | Remove host            |
+| Command | Description |
+| :--- | :--- |
+| `:JovianNextCell` / `:JovianPrevCell` | Navigate cells |
+| `:JovianNewCellBelow` / `:JovianNewCellAbove` | Insert a cell |
+| `:JovianNewMarkdownCellBelow` | Insert a markdown cell |
+| `:JovianDeleteCell` | Delete the current cell |
+| `:JovianMoveCellUp` / `:JovianMoveCellDown` | Reorder cells |
+| `:JovianSplitCell` | Split the cell at the cursor |
+| `:JovianMergeBelow` | Merge with the next cell |
 
 </details>
 
 <details>
-<summary>Diagnostics</summary>
+<summary>Data & inspection</summary>
 
-| Command               | Description       |
-| :-------------------- | :---------------- |
-| `:checkhealth jovian` | Run health checks |
+| Command | Description |
+| :--- | :--- |
+| `:JovianVars` | Show variables in a float |
+| `:JovianView [var]` | Inspect a variable / DataFrame |
+
+</details>
+
+<details>
+<summary>Cache & diagnostics</summary>
+
+| Command | Description |
+| :--- | :--- |
+| `:JovianClean[!]` | Clean stale / orphaned cache |
+| `:JovianClearCache[!]` | Clear cell output cache |
+| `:JovianClearDiag` | Clear LSP diagnostics |
+| `:JovianDebugImages` | Probe the Kitty image pipeline |
+| `:checkhealth jovian` | Validate dependencies |
 
 </details>
 
@@ -429,18 +477,46 @@ When connecting, Jovian asks for a **Remote Directory**.
 
 ## 🎨 Customization
 
-Override these highlight groups to match your theme:
+Override highlight groups to match your theme. Most groups default to a
+fallback chain that picks up your colorscheme's own heading/accent colors, so
+they look reasonable out of the box. Override per-group via the `highlights`
+table — a **string** is treated as a link target, a **table** as `nvim_set_hl`
+attributes:
 
-| Group                                         | Purpose                           |
-| :-------------------------------------------- | :-------------------------------- |
-| `JovianFloat`, `JovianFloatBorder`            | Floating windows                  |
-| `JovianHeader`, `JovianSeparator`             | Table elements                    |
-| `JovianCellMarker`                            | Cell separator highlight (`# %%`) |
-| `JovianVariable`, `JovianType`, `JovianValue` | Variables pane                    |
+```lua
+require("jovian").setup({
+    highlights = {
+        cell_border_code = "Function",            -- link
+        cell_border_markdown = { fg = "#e0af68" },  -- attrs
+        md_h1 = "@markup.heading.1.markdown",
+        out_error = "ErrorMsg",
+    },
+})
+```
+
+| Area | Groups |
+| :--- | :--- |
+| Cell cards | `JovianCellBorderCode`, `JovianCellBorderMarkdown` |
+| Markdown cells | `JovianMdH1`…`JovianMdH6`, `JovianMdBold`, `JovianMdEm`, `JovianMdCode`, `JovianMdBullet`, `JovianMdQuote`, `JovianMdTableDivider`, `JovianMdTableHeader` |
+| Inline / preview output | `JovianOutDivider`, `JovianOutStdout`, `JovianOutStderr`, `JovianOutResult`, `JovianOutError` |
+| Floats & panes | `JovianFloat`, `JovianFloatBorder`, `JovianHeader`, `JovianSeparator`, `JovianVariable`, `JovianType`, `JovianValue` |
+| Cell separator | `JovianCellMarker` |
+
+---
+
+## 🗺️ Roadmap
+
+- **Remote kernels (SSH / Tailscale)**: the host-management commands
+  (`:JovianConnect`, `:JovianAddHost`, `:JovianUse`, `:JovianSync`, …) persist
+  configuration, but routing the kernel over an SSH tunnel is **not yet
+  reconnected** to the Rust core — kernels currently run on `localhost` only.
+  Remote-kernel support will return in a later release.
 
 ---
 
 ## 🙏 Acknowledgements
 
-This plugin is inspired by **[vim-jukit](https://github.com/luk400/vim-jukit)**.
-
+- Inspired by **[vim-jukit](https://github.com/luk400/vim-jukit)**.
+- The Rust backend architecture (single core binary speaking the Jupyter wire
+  protocol over msgpack-RPC, Kitty placeholder image rendering) is modeled on
+  **[jupynvim](https://github.com/sheng-tse/jupynvim)**.
