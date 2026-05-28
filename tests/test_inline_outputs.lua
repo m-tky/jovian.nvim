@@ -207,6 +207,45 @@ for i = 2, #tqdm_rows do
 end
 assert_eq(stream_row_count, 1, "tqdm renders a single (final) progress row inline")
 
+-- ---------------------------- long-output elision ----------------------------
+print("\n-- long output capping --")
+require("jovian.config").options.inline_output_max_lines = 10
+local big = {}
+for i = 1, 100 do big[#big + 1] = "line " .. i end
+local long_rows = OutRender.build_virt_lines({
+    { output_type = "stream", name = "stdout", text = table.concat(big, "\n") .. "\n" },
+}, 1, 40, "JovianCellBorderCode")
+-- divider + at most 10 capped rows
+assert_true(#long_rows <= 1 + 10,
+    "100-line output capped to <= max+divider (got " .. #long_rows .. ")")
+local joined_long = ""
+for _, row in ipairs(long_rows) do
+    for _, c in ipairs(row) do joined_long = joined_long .. c[1] end
+    joined_long = joined_long .. "\n"
+end
+assert_true(joined_long:find("more line", 1, true), "shows a '… N more …' notice")
+assert_true(joined_long:find("line 1", 1, true), "keeps head lines")
+assert_true(joined_long:find("line 100", 1, true), "keeps tail lines")
+
+-- A cell with an image is NOT capped (plots are bounded).
+require("jovian.config").options.inline_output_max_lines = 2
+local img_rows = OutRender.build_virt_lines({
+    { output_type = "stream", name = "stdout", text = "a\nb\nc\nd\ne\n" },
+    { output_type = "display_data", data = { ["image/png"] = "AAAA" }, metadata = {} },
+}, 1, 40, "JovianCellBorderCode")
+-- The 5 stream lines survive (not capped to 2) because an image is present.
+-- Look for a row whose Result-highlighted chunk text is exactly "e".
+local function has_text_row(rows, want)
+    for _, row in ipairs(rows) do
+        for _, c in ipairs(row) do
+            if c[1] == want then return true end
+        end
+    end
+    return false
+end
+assert_true(has_text_row(img_rows, "a") and has_text_row(img_rows, "e"),
+    "image cell keeps all text rows (no cap when an image is present)")
+
 vim.fn.delete(src_dir, "rf")
 
 print(string.format("\n%d passed, %d failed", pass, fail))

@@ -104,6 +104,14 @@ M.defaults = {
     -- terminals the placeholder unicode glyphs are visible but harmless.
     inline_outputs = false,
 
+    -- Max rows of text output rendered inline below a cell. Longer output
+    -- is elided (first lines + "… N more …" + last lines) so a cell that
+    -- prints thousands of lines doesn't shove the buffer down — the full
+    -- text is still in the preview pane / Output window, which scroll.
+    -- Cells that produce an image aren't capped (plots are bounded by
+    -- image_rows and rarely accompany huge text).
+    inline_output_max_lines = 20,
+
     -- Placement dimensions for images in the inline output block, in
     -- terminal cells. Tweak to match your typical plot aspect ratio.
     image_rows = 14,

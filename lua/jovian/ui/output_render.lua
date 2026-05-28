@@ -174,7 +174,6 @@ function M.build_virt_lines(outputs, execution_count, width, border_hl, refresh_
     local inner_w = width - 4 -- "│ " + content + " │"
     if inner_w < 1 then inner_w = 1 end
 
-    local rows = {}
     local exec_label = execution_count and tostring(execution_count) or " "
     -- Outputs loaded from the sidecar JSON without a fresh re-run in the
     -- current kernel session get a "(cached)" suffix so the user can tell
@@ -184,35 +183,36 @@ function M.build_virt_lines(outputs, execution_count, width, border_hl, refresh_
     if cell_id and not State.fresh_cells[cell_id] then
         label = label .. " (cached)"
     end
-    table.insert(rows, { { divider_line(label, width), HL.Divider } })
 
     -- Lazy-require Config so build_virt_lines stays usable in tests that
     -- haven't called setup().
     local Config = require("jovian.config")
     local Kitty -- lazily required only when an image output appears
 
+    -- Collect the output rows into `body` (the divider is prepended after
+    -- capping). has_image disables the line cap — plots are bounded and
+    -- rarely sit next to thousands of text lines.
+    local body = {}
+    local has_image = false
+    local function emit(row) body[#body + 1] = row end
+
     for _, o in ipairs(outputs) do
         local kind = o.output_type
         if kind == "stream" then
             local hl = (o.name == "stderr") and HL.Stderr or HL.Stdout
             local text = process_cr(strip_ansi(as_str(o.text)))
-            -- Trim a single trailing newline so we don't add a blank row
-            -- after every print() call.
             text = text:gsub("\n$", "")
             for _, line in ipairs(vim.split(text, "\n", { plain = true })) do
                 for _, w in ipairs(wrap(line, inner_w)) do
-                    table.insert(rows, side_wrap(w, hl, inner_w, border_hl))
+                    emit(side_wrap(w, hl, inner_w, border_hl))
                 end
             end
         elseif kind == "execute_result" or kind == "display_data" then
             local data = o.data or {}
             local img_b64 = find_image_b64(data)
             local tp = as_str(data["text/plain"])
-            local has_img = img_b64 ~= nil
-            -- Matplotlib emits "<Figure size NxM with K Axes>" as the
-            -- text/plain alongside the PNG. Suppressing it keeps the
-            -- output area tidy when the image is the real content.
-            if has_img and (tp == ""
+            local img = img_b64 ~= nil
+            if img and (tp == ""
                 or tp:match("^<Figure ")
                 or tp:match("^<[%w._]+ object>$")
                 or tp:match("^<[%w._]+ object at 0x[%x]+>$"))
@@ -223,11 +223,12 @@ function M.build_virt_lines(outputs, execution_count, width, border_hl, refresh_
                 tp = strip_ansi(tp):gsub("\n$", "")
                 for _, line in ipairs(vim.split(tp, "\n", { plain = true })) do
                     for _, w in ipairs(wrap(line, inner_w)) do
-                        table.insert(rows, side_wrap(w, HL.Result, inner_w, border_hl))
+                        emit(side_wrap(w, HL.Result, inner_w, border_hl))
                     end
                 end
             end
-            if has_img then
+            if img then
+                has_image = true
                 Kitty = Kitty or require("jovian.ui.kitty")
                 local image_rows = Config.options.image_rows or 14
                 local image_cols = math.min(Config.options.image_cols or 56, inner_w)
@@ -235,14 +236,11 @@ function M.build_virt_lines(outputs, execution_count, width, border_hl, refresh_
                 if id then
                     local placement = Kitty.build_virt_lines(id, image_rows, image_cols)
                     for _, prow in ipairs(placement) do
-                        table.insert(rows, image_row_with_sides(prow, image_cols, inner_w, border_hl))
+                        emit(image_row_with_sides(prow, image_cols, inner_w, border_hl))
                     end
                 else
-                    -- Reserve blank space while the transmit is in flight;
-                    -- the refresh_cb will re-trigger render with the real
-                    -- placeholders once the image_id arrives.
                     for _ = 1, image_rows do
-                        table.insert(rows, side_wrap("", HL.Result, inner_w, border_hl))
+                        emit(side_wrap("", HL.Result, inner_w, border_hl))
                     end
                 end
             end
@@ -250,13 +248,13 @@ function M.build_virt_lines(outputs, execution_count, width, border_hl, refresh_
             local head = as_str(o.ename) .. ": " .. as_str(o.evalue)
             if head == ": " then head = "Error" end
             for _, w in ipairs(wrap(head, inner_w)) do
-                table.insert(rows, side_wrap(w, HL.Error, inner_w, border_hl))
+                emit(side_wrap(w, HL.Error, inner_w, border_hl))
             end
             for _, tb in ipairs(o.traceback or {}) do
                 local plain = strip_ansi(as_str(tb))
                 for _, line in ipairs(vim.split(plain, "\n", { plain = true })) do
                     for _, w in ipairs(wrap(line, inner_w)) do
-                        table.insert(rows, side_wrap(w, HL.Error, inner_w, border_hl))
+                        emit(side_wrap(w, HL.Error, inner_w, border_hl))
                     end
                 end
             end
@@ -264,6 +262,26 @@ function M.build_virt_lines(outputs, execution_count, width, border_hl, refresh_
         -- Other output types (e.g. clear_output) intentionally skipped.
     end
 
+    -- Cap long text output: keep the first chunk + last few lines with a
+    -- "… N more …" notice between, so the inline block stays bounded.
+    local max = Config.options.inline_output_max_lines or 20
+    if not has_image and max > 0 and #body > max then
+        local tail = math.min(3, math.max(1, math.floor(max / 4)))
+        local head = max - tail - 1 -- 1 row for the notice
+        if head < 1 then head = 1 end
+        local hidden = #body - head - tail
+        local capped = {}
+        for i = 1, head do capped[#capped + 1] = body[i] end
+        capped[#capped + 1] = side_wrap(
+            ("… %d more line(s) — open preview / :JovianToggleOutput …"):format(hidden),
+            HL.Divider, inner_w, border_hl
+        )
+        for i = #body - tail + 1, #body do capped[#capped + 1] = body[i] end
+        body = capped
+    end
+
+    local rows = { { { divider_line(label, width), HL.Divider } } }
+    for _, r in ipairs(body) do rows[#rows + 1] = r end
     return rows
 end
 
