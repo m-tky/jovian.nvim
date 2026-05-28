@@ -96,6 +96,9 @@ local function on_cell_event(params)
 
     if kind == "execute_input" then
         _cell_had_error[cell_id] = false
+        -- Mark this cell as freshly executed in the current session so
+        -- the renderers drop the "(cached)" suffix on its outputs.
+        State.fresh_cells[cell_id] = true
         UI.append_to_repl({ "In [" .. cell_id .. "]:" }, "Type")
         if type(ev.code) == "string" and ev.code ~= "" then
             local indented = {}
@@ -287,6 +290,9 @@ function M.stop()
     State.rust_active = false
     State.rust_session_id = nil
     State.job_id = nil
+    -- Outputs from the killed kernel are now historical — flag them
+    -- as cached so the user can tell they're not from the new session.
+    State.fresh_cells = {}
 end
 
 function M.restart(on_ready)

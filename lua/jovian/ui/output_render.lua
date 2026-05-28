@@ -149,14 +149,22 @@ end
 --- @param refresh_cb function|nil called when an async image transmit
 ---   completes, so the cell_frame caller can re-render with the image
 --- @return table list of virt_line chunk arrays
-function M.build_virt_lines(outputs, execution_count, width, border_hl, refresh_cb)
+function M.build_virt_lines(outputs, execution_count, width, border_hl, refresh_cb, cell_id)
     if not outputs or #outputs == 0 then return {} end
     local inner_w = width - 4 -- "│ " + content + " │"
     if inner_w < 1 then inner_w = 1 end
 
     local rows = {}
     local exec_label = execution_count and tostring(execution_count) or " "
-    table.insert(rows, { { divider_line("Out[" .. exec_label .. "]", width), HL.Divider } })
+    -- Outputs loaded from the sidecar JSON without a fresh re-run in the
+    -- current kernel session get a "(cached)" suffix so the user can tell
+    -- them apart from this-session results.
+    local State = require("jovian.state")
+    local label = "Out[" .. exec_label .. "]"
+    if cell_id and not State.fresh_cells[cell_id] then
+        label = label .. " (cached)"
+    end
+    table.insert(rows, { { divider_line(label, width), HL.Divider } })
 
     -- Lazy-require Config so build_virt_lines stays usable in tests that
     -- haven't called setup().
@@ -501,8 +509,14 @@ function M.render_to_buffer(buf, win, source_path, cell_id, execution_count_hint
 
     -- Header: "Out[N]" + an underline. Falls back to a hint if the cell
     -- has no outputs yet so the user still gets the cell identifier.
+    -- "(cached)" suffix tells the user this output isn't from the
+    -- current kernel session (loaded from the sidecar JSON).
+    local State = require("jovian.state")
     local lines, hls = {}, {}
     local label = "Out[" .. (exec and tostring(exec) or " ") .. "]"
+    if cell_id and not State.fresh_cells[cell_id] then
+        label = label .. " (cached)"
+    end
     table.insert(lines, label)
     table.insert(hls, HL.Divider)
     table.insert(lines, string.rep("─", math.max(#label, 12)))

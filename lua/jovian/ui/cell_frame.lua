@@ -256,7 +256,8 @@ function M.render(bufnr, winid)
                     co.execution_count,
                     width,
                     hl,
-                    refresh
+                    refresh,
+                    h.id
                 )
                 for _, row in ipairs(out_rows) do
                     table.insert(lines_below, row)

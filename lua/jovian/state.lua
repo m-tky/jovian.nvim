@@ -73,4 +73,10 @@ M.rust_session_id = nil
 -- (either preview window is closed or we're on the legacy markdown path).
 M.current_preview_cell_id = nil
 
+-- Cell ids that have been executed in the CURRENT kernel session. Outputs
+-- for cells not in this set were loaded from the sidecar JSON (a previous
+-- nvim session's run) — the renderers append "(cached)" so the user
+-- doesn't mistake them for fresh results. Cleared on kernel restart.
+M.fresh_cells = {}
+
 return M
