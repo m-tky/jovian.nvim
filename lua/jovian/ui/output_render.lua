@@ -435,25 +435,39 @@ local function preview_available_area(win)
 end
 
 -- Compute the placement size (cols × rows) for one specific image,
--- preserving its actual pixel aspect. Letterbox-free.
+-- preserving its actual pixel aspect. Letterbox-free, AND capped at
+-- the image's native cell footprint so a 200×100 png isn't stretched
+-- to fill a 200×60 cell pane.
 local function fit_image_in_area(b64, max_cols, max_rows)
     local Config = require("jovian.config")
     local cell_pixel_aspect = Config.options.preview_cell_pixel_aspect or 0.5
+    local cell_pixel_height = Config.options.preview_cell_pixel_height or 16
+    local cell_pixel_width = cell_pixel_height * cell_pixel_aspect
     local w_px, h_px = image_pixel_dims(b64)
-    local cell_aspect
-    if w_px and h_px then
-        -- image cell aspect = pixel aspect / cell shape
+
+    local cell_aspect, natural_cols, natural_rows
+    if w_px and h_px and cell_pixel_width > 0 then
         cell_aspect = (w_px / h_px) / cell_pixel_aspect
+        natural_cols = math.floor(w_px / cell_pixel_width)
+        natural_rows = math.floor(h_px / cell_pixel_height)
     else
-        cell_aspect = 2.0 -- safe fallback for unknown formats (jpeg etc.)
+        cell_aspect = 2.0 -- safe fallback (jpeg etc.)
+        natural_cols = max_cols
+        natural_rows = max_rows
     end
+
+    -- Upper bound: never larger than the image's native cell count.
+    local upper_w = math.min(max_cols, math.max(natural_cols, 1))
+    local upper_h = math.min(max_rows, math.max(natural_rows, 1))
+
+    -- Fit aspect-preserved inside upper_w × upper_h.
     local cols, rows
-    local rows_for_cols = math.floor(max_cols / cell_aspect)
-    if rows_for_cols <= max_rows then
-        cols, rows = max_cols, rows_for_cols
+    local rows_for_cols = math.floor(upper_w / cell_aspect)
+    if rows_for_cols <= upper_h then
+        cols, rows = upper_w, rows_for_cols
     else
-        rows = max_rows
-        cols = math.floor(max_rows * cell_aspect)
+        rows = upper_h
+        cols = math.floor(upper_h * cell_aspect)
     end
     if cols < 4 then cols = 4 end
     if rows < 2 then rows = 2 end

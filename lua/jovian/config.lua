@@ -110,12 +110,19 @@ M.defaults = {
 
     -- Preview-pane image sizing. The renderer parses the PNG/GIF
     -- header to read each image's actual pixel dimensions and scales
-    -- the placement so neither axis is clipped — letterbox-free.
-    -- preview_cell_pixel_aspect is the pixel ratio of one terminal
-    -- cell (width / height). Most monospace fonts land around 0.5
-    -- (cells are roughly twice as tall as wide); change this if your
-    -- font has different cell proportions and images come out
-    -- stretched.
+    -- the placement so neither axis is clipped (letterbox-free) AND
+    -- the placement is never larger than the image's native footprint
+    -- in cells (small pictures aren't blown up to fill the pane).
+    --
+    -- preview_cell_pixel_height: pixel height of one terminal cell.
+    -- 16 covers most 10–11pt fonts on hidpi-ish setups. Set this
+    -- explicitly if `kitty +kitten icat` shows images at a noticeably
+    -- different size than jovian renders them.
+    preview_cell_pixel_height = 16,
+    -- preview_cell_pixel_aspect: width / height of one cell. 0.5 is
+    -- the typical monospace ratio (cells are about twice as tall as
+    -- wide). Together with preview_cell_pixel_height this gives the
+    -- conversion from image pixels to terminal cells.
     preview_cell_pixel_aspect = 0.5,
     -- Upper bounds. nil = "fill the preview window's text area".
     preview_image_max_cols = nil,
