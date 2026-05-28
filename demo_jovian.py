@@ -26,6 +26,22 @@
 #
 # ![file demo](assets/demo_inline.png)
 
+# %% [markdown]
+# ## Math (LaTeX)
+#
+# With `markdown_cell_style` on, `$…$` and `$$…$$` render as Unicode.
+#
+# Inline: mass-energy $E = mc^2$, Pythagoras $a^2 + b^2 = c^2$, and Greek
+# such as $\alpha + \beta = \gamma$, with $\theta \leq \frac{\pi}{2}$.
+#
+# Block math renders on its own line:
+#
+# $$
+# \sum_{i=1}^{n} i = \frac{n(n+1)}{2}
+# $$
+#
+# $$ \int_0^\infty e^{-x^2}\, dx = \frac{\sqrt{\pi}}{2} $$
+
 # %% id="3HBWq2Im4lG4"
 import time
 import numpy as np

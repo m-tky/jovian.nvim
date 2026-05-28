@@ -57,37 +57,32 @@ vim.api.nvim_buf_set_lines(0, 0, -1, false, {
 MC.render(0)
 local buf = vim.api.nvim_get_current_buf()
 
-local inline_on_1, block_concealed, block_vline = false, 0, nil
+local inline_on_1, block_inline, block_collapsed = false, nil, 0
 for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, NS, 0, -1, { details = true })) do
     local ln, d = m[2], m[4]
-    if ln == 1 and d.virt_text and d.virt_text_pos == "inline" then
-        for _, ch in ipairs(d.virt_text) do
-            if ch[1] == "E=mc²" then
-                inline_on_1 = true
-            end
-        end
-    end
-    if (ln == 2 or ln == 3 or ln == 4) and d.conceal_lines ~= nil then
-        block_concealed = block_concealed + 1
-    end
-    if d.virt_lines then
+    if d.virt_text and d.virt_text_pos == "inline" then
         local t = {}
-        for _, ch in ipairs(d.virt_lines[1]) do
+        for _, ch in ipairs(d.virt_text) do
             t[#t + 1] = ch[1]
         end
-        local line = table.concat(t)
-        if line:find("∑", 1, true) then
-            block_vline = line
+        local s = table.concat(t)
+        if ln == 1 and s == "E=mc²" then
+            inline_on_1 = true
+        elseif ln == 2 then
+            block_inline = s -- formula overlaid in place on the block's first line
         end
+    end
+    if (ln == 3 or ln == 4) and d.conceal_lines ~= nil then
+        block_collapsed = block_collapsed + 1
     end
 end
 
 ok(inline_on_1, "inline `$E=mc^2$` is overlaid as `E=mc²`")
-ok(block_concealed == 3, "the `$$ … $$` block source rows are collapsed (got " .. block_concealed .. ")")
 ok(
-    block_vline ~= nil and block_vline:find("xᵢ", 1, true) ~= nil,
-    "block math drawn as a Unicode virt_line (got " .. tostring(block_vline) .. ")"
+    block_inline ~= nil and block_inline:find("xᵢ", 1, true) ~= nil,
+    "block math is overlaid in place on the first block line (got " .. tostring(block_inline) .. ")"
 )
+ok(block_collapsed == 2, "the remaining `$$` block lines are collapsed (got " .. block_collapsed .. ")")
 
 print(string.format("\n%d passed, %d failed", pass, fail))
 os.exit(fail == 0 and 0 or 1)

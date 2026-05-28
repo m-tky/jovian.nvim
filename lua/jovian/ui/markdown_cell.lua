@@ -543,24 +543,51 @@ local function math_enabled()
     return m == nil or m.enabled ~= false
 end
 
+-- Backtick code-span ranges (1-based, inclusive) in `content`, so inline math
+-- inside `code` isn't converted (e.g. a literal `$x$` in prose).
+local function code_span_ranges(content)
+    local spans, s = {}, 1
+    while true do
+        local a, b = content:find("`[^`]+`", s)
+        if not a then
+            break
+        end
+        spans[#spans + 1] = { a, b }
+        s = b + 1
+    end
+    return spans
+end
+
+local function inside_any(spans, a, b)
+    for _, sp in ipairs(spans) do
+        if a <= sp[2] and b >= sp[1] then
+            return true
+        end
+    end
+    return false
+end
+
 -- Inline `$…$` math: conceal the span and overlay the converted Unicode.
 local function style_math_inline(buf, lnum, content, offset)
     if not math_enabled() then
         return
     end
+    local spans = code_span_ranges(content)
     local s = 1
     while true do
         local a, b, inner = content:find("%$([^%$\n]+)%$", s)
         if not a then
             break
         end
-        conceal_range(buf, lnum, offset + a - 1, offset + b)
-        pcall(vim.api.nvim_buf_set_extmark, buf, NS, lnum, offset + a - 1, {
-            virt_text = { { Math.convert(inner), HL.Math } },
-            virt_text_pos = "inline",
-            hl_mode = "combine",
-            priority = 200,
-        })
+        if not inside_any(spans, a, b) then
+            conceal_range(buf, lnum, offset + a - 1, offset + b)
+            pcall(vim.api.nvim_buf_set_extmark, buf, NS, lnum, offset + a - 1, {
+                virt_text = { { Math.convert(inner), HL.Math } },
+                virt_text_pos = "inline",
+                hl_mode = "combine",
+                priority = 200,
+            })
+        end
         s = b + 1
     end
 end
@@ -569,12 +596,14 @@ end
 -- inner_latex) or nil if the line doesn't open a (terminated) block.
 local function detect_math_block(cell_lines, i)
     local first = cell_lines[i].content
-    local single = first:match("^%s*%$%$(.-)%$%$%s*$")
-    if single then
-        return i, single
-    end
-    if not first:find("%$%$", 1) then
+    -- Only a line that STARTS with `$$` opens a block — avoids matching `$$`
+    -- written inside prose / code spans (e.g. a literal `$$…$$` in backticks).
+    if not first:match("^%s*%$%$") then
         return nil
+    end
+    local single = first:match("^%s*%$%$(.-)%$%$%s*$")
+    if single and single ~= "" then
+        return i, single
     end
     local _, open_end = first:find("%$%$")
     local parts = {}
@@ -597,37 +626,21 @@ local function detect_math_block(cell_lines, i)
     return nil -- unterminated
 end
 
--- Render a `$$ … $$` block: single-line blocks overlay in place; multi-line
--- blocks collapse the source rows and draw the Unicode above (with the
--- cell-frame `│ ` prefix so it lines up, like the table renderer).
+-- Render a `$$ … $$` block in place (like the table): overlay the converted
+-- Unicode on the block's first source line and collapse the rest, so the
+-- formula stays where it was written rather than floating on a separate line.
 local function render_math_block(buf, cell_lines, start_i, end_i, inner)
-    local uni = Math.convert(inner)
-    if start_i == end_i then
-        local info = cell_lines[start_i]
-        conceal_range(buf, info.ln, info.offset, info.offset + #info.content)
-        pcall(vim.api.nvim_buf_set_extmark, buf, NS, info.ln, info.offset, {
-            virt_text = { { uni, HL.Math } },
-            virt_text_pos = "inline",
-            hl_mode = "combine",
-            priority = 201,
-        })
-        return
-    end
-    local first_ln = cell_lines[start_i].ln
-    for k = start_i, end_i do
+    local first = cell_lines[start_i]
+    conceal_range(buf, first.ln, first.offset, first.offset + #first.content)
+    pcall(vim.api.nvim_buf_set_extmark, buf, NS, first.ln, first.offset, {
+        virt_text = { { Math.convert(inner), HL.Math } },
+        virt_text_pos = "inline",
+        hl_mode = "combine",
+        priority = 201,
+    })
+    for k = start_i + 1, end_i do
         pcall(vim.api.nvim_buf_set_extmark, buf, NS, cell_lines[k].ln, 0, { conceal_lines = "", priority = 200 })
     end
-    local chunks = {}
-    if Config.options.cell_frame then
-        chunks[1] = { "│ ", "JovianCellBorderMarkdown" }
-    end
-    chunks[#chunks + 1] = { uni, HL.Math }
-    local anchor = first_ln > 0 and first_ln - 1 or first_ln
-    pcall(vim.api.nvim_buf_set_extmark, buf, NS, anchor, 0, {
-        virt_lines = { chunks },
-        virt_lines_above = anchor == first_ln,
-        priority = 200,
-    })
 end
 
 local function is_markdown_header(line)
