@@ -1,0 +1,67 @@
+name: Release
+
+# Build prebuilt jovian-core binaries on tag push and attach them to the
+# GitHub release. Asset names are `jovian-core-<target>` to match the
+# download URL that lua/jovian/install.lua constructs.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            apt_packages: gcc-aarch64-linux-gnu
+            linker: aarch64-linux-gnu-gcc
+          - target: x86_64-apple-darwin
+            os: macos-14
+          - target: aarch64-apple-darwin
+            os: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+          key: ${{ matrix.target }}
+
+      - name: Install cross linker
+        if: matrix.apt_packages != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.apt_packages }}
+
+      - name: Build
+        env:
+          # Only consulted for the aarch64-linux target; harmless otherwise.
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.linker }}
+        run: cargo build --release --locked --manifest-path core/Cargo.toml --target ${{ matrix.target }}
+
+      - name: Stage asset
+        shell: bash
+        run: cp "core/target/${{ matrix.target }}/release/jovian-core" "jovian-core-${{ matrix.target }}"
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: jovian-core-${{ matrix.target }}
+          fail_on_unmatched_files: true
