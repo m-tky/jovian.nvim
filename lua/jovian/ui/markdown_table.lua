@@ -178,14 +178,25 @@ function M.render(buf, ns, block)
         })
     end
 
-    -- Top + bottom borders as virtual lines around the block.
+    -- Top + bottom borders as virtual lines around the block. When cell_frame
+    -- is on, each source row carries an inline `│ ` left bar (and the `#`
+    -- prefix is concealed), shifting the overlaid rows right; virtual lines
+    -- don't inherit that, so prepend the same bar to keep the frame's left edge
+    -- continuous and the borders aligned with the rows.
+    local frame_prefix = require("jovian.config").options.cell_frame and { "│ ", "JovianCellBorderMarkdown" } or nil
+    local function border_line(s)
+        if frame_prefix then
+            return { frame_prefix, { s, HL_DIVIDER } }
+        end
+        return { { s, HL_DIVIDER } }
+    end
     pcall(vim.api.nvim_buf_set_extmark, buf, ns, block[1].ln, 0, {
-        virt_lines = { { { seg_line(B[1], B[2], B[3], fill), HL_DIVIDER } } },
+        virt_lines = { border_line(seg_line(B[1], B[2], B[3], fill)) },
         virt_lines_above = true,
         priority = 200,
     })
     pcall(vim.api.nvim_buf_set_extmark, buf, ns, block[#block].ln, 0, {
-        virt_lines = { { { seg_line(B[7], B[8], B[9], fill), HL_DIVIDER } } },
+        virt_lines = { border_line(seg_line(B[7], B[8], B[9], fill)) },
         priority = 200,
     })
     return true

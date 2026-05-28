@@ -120,5 +120,16 @@ for _ in pairs(b.inline) do
 end
 assert_true(rows_with_inline == 3, "exactly one rendered row per source row (no extra lines)")
 
+-- ---------------------------- cell_frame border alignment ----------------------------
+print("\n-- cell_frame border alignment --")
+require("jovian.config").options.cell_frame = true
+local f = render({ "| a | b |", "| --- | --- |", "| 1 | 2 |" })
+require("jovian.config").options.cell_frame = false
+assert_true(
+    f.top and vim.startswith(f.top, "│ "),
+    "with cell_frame on, the top border carries the `│ ` frame bar (aligns + continuous edge)"
+)
+assert_true(f.bottom and vim.startswith(f.bottom, "│ "), "bottom border carries the frame bar too")
+
 print(string.format("\n%d passed, %d failed", pass, fail))
 os.exit(fail == 0 and 0 or 1)
