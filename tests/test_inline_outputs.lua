@@ -183,6 +183,30 @@ local empty_lines = vim.api.nvim_buf_get_lines(empty_buf, 0, -1, false)
 assert_true(empty_lines[3] and empty_lines[3]:match("no output"),
     "preview shows '(no output)' placeholder for an empty cell")
 
+-- ---------------------------- carriage-return (tqdm) handling ----------------------------
+print("\n-- process_cr (tqdm \\r overwrite) --")
+local pc = OutRender._process_cr
+assert_eq(pc("plain text"), "plain text", "no \\r passes through unchanged")
+-- Progress bar: each \r reprints; only the final frame should survive.
+assert_eq(pc(" 0%|  |\r 50%|## |\r100%|####|"), "100%|####|",
+    "carriage returns collapse to the last frame")
+-- Multi-line with \r on one of them.
+assert_eq(pc("start\rgo\nfinal\n"), "go\nfinal",
+    "\\r overwrite is per logical line; trailing blank dropped")
+-- A real tqdm cell renders ONE progress row, not many.
+local tqdm_rows = OutRender.build_virt_lines({
+    { output_type = "stream", name = "stderr",
+      text = " 10%|#   | 2/20\r 50%|##  | 10/20\r100%|####| 20/20\n" },
+}, 3, 40, "JovianCellBorderCode")
+-- divider + exactly one stream row + ... (no per-frame rows)
+local stream_row_count = 0
+for i = 2, #tqdm_rows do
+    local parts = {}
+    for _, c in ipairs(tqdm_rows[i]) do parts[#parts + 1] = c[1] end
+    if table.concat(parts):find("%d+/20") then stream_row_count = stream_row_count + 1 end
+end
+assert_eq(stream_row_count, 1, "tqdm renders a single (final) progress row inline")
+
 vim.fn.delete(src_dir, "rf")
 
 print(string.format("\n%d passed, %d failed", pass, fail))

@@ -60,6 +60,26 @@ local function strip_ansi(s)
     return s
 end
 
+-- Apply carriage-return overwrite semantics: within each logical (\n)
+-- line, a \r returns to the start of the line, so only the LAST
+-- \r-terminated segment survives. This collapses tqdm / progress-bar
+-- spam (which re-prints the bar after every \r) to its final frame,
+-- instead of rendering every intermediate state concatenated. The REPL
+-- terminal buffer handles \r natively; this is for the text renderers.
+local function process_cr(s)
+    if not s:find("\r", 1, true) then return s end
+    local out = {}
+    for chunk in (s .. "\n"):gmatch("([^\n]*)\n") do
+        local last = ""
+        for seg in (chunk .. "\r"):gmatch("([^\r]*)\r") do
+            last = seg
+        end
+        table.insert(out, last)
+    end
+    if out[#out] == "" then table.remove(out) end
+    return table.concat(out, "\n")
+end
+
 local function dw(s) return vim.fn.strdisplaywidth(s) end
 
 -- Wrap a single logical line into chunks of at most `max_w` display cells.
@@ -175,7 +195,7 @@ function M.build_virt_lines(outputs, execution_count, width, border_hl, refresh_
         local kind = o.output_type
         if kind == "stream" then
             local hl = (o.name == "stderr") and HL.Stderr or HL.Stdout
-            local text = strip_ansi(as_str(o.text))
+            local text = process_cr(strip_ansi(as_str(o.text)))
             -- Trim a single trailing newline so we don't add a blank row
             -- after every print() call.
             text = text:gsub("\n$", "")
@@ -417,7 +437,7 @@ local function outputs_to_preview_lines(outputs, refresh_cb, max_cols, max_rows)
         local kind = o.output_type
         if kind == "stream" then
             local hl = (o.name == "stderr") and HL.Stderr or HL.Stdout
-            local text = strip_ansi(as_str(o.text)):gsub("\n$", "")
+            local text = process_cr(strip_ansi(as_str(o.text))):gsub("\n$", "")
             if text ~= "" then push(text, hl) end
         elseif kind == "execute_result" or kind == "display_data" then
             local data = o.data or {}
@@ -557,5 +577,6 @@ function M.render_to_buffer(buf, win, source_path, cell_id, execution_count_hint
 end
 
 M._HL = HL
+M._process_cr = process_cr
 
 return M
