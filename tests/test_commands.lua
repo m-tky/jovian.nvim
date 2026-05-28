@@ -397,76 +397,15 @@ end
 
 -- ── Load ─────────────────────────────────────────────────────────────────────
 
--- This file mocks vim.fn.jobstart/chansend to assert that the command
--- callbacks dispatch the expected legacy-bridge payloads. The Rust path
--- (use_rust_core=true) talks to a real jovian-core binary which the mock
--- env can't satisfy, so explicitly opt back into the legacy path.
-require("jovian.config").options.use_rust_core = false
-
 require("jovian.commands").setup()
 local State = require("jovian.state")
 
 -- ── Tests ────────────────────────────────────────────────────────────────────
-
-section("Kernel lifecycle")
-
-run("JovianStart")
-ok("JovianStart sets job_id to 123", State.job_id == 123)
-
-State.job_id = nil
-run("JovianREPL")
-ok("JovianREPL warns when kernel not running", #notify_msgs > 0 and notify_msgs[1]:lower():match("start"))
-
-section("Cell execution")
-
-State.job_id = 123
-State.win.output = 100
-cursor_pos = { 2, 0 }
-reset_lines(DEFAULT_LINES)
-
-run("JovianRun")
-ok("JovianRun sends execute payload", has_payload("command=execute"))
-ok("JovianRun sends cell1 id", has_payload("cell_id=cell1"))
-
-reset_lines(DEFAULT_LINES)
-cursor_pos = { 2, 0 }
-run("JovianRunAndNext")
-ok("JovianRunAndNext sends execute payload", has_payload("command=execute"))
-
-reset_lines(DEFAULT_LINES)
-cursor_pos = { 2, 0 }
-run("JovianRunLine")
-ok("JovianRunLine sends execute payload", has_payload("command=execute"))
-
-reset_lines(DEFAULT_LINES)
-cursor_pos = { 2, 0 }
-run("JovianRunAll")
-ok("JovianRunAll sends execute for cell1", has_payload("cell_id=cell1"))
-ok("JovianRunAll sends execute for cell2", has_payload("cell_id=cell2"))
-
-section("Kernel control")
-
-State.job_id = 123
-run("JovianInterrupt")
-ok("JovianInterrupt calls kill()", #kill_calls > 0)
-ok("JovianInterrupt sends SIGINT (2)", kill_calls[1] and kill_calls[1].sig == 2)
-ok("JovianInterrupt targets PID 9999", kill_calls[1] and kill_calls[1].pid == 9999)
-
-section("Variables & inspection")
-
-State.job_id = 123
-
-run("JovianVars")
-ok("JovianVars sends get_variables", has_payload("command=get_variables"))
-
-run("JovianView", "my_df")
-ok("JovianView sends view_dataframe", has_payload("command=view_dataframe"))
-ok("JovianView includes variable name", has_payload("name=my_df"))
-
-section("Cache")
-
-run("JovianClearCache")
-ok("JovianClearCache sends remove_cache", has_payload("command=remove_cache"))
+--
+-- This file mocks the Vim API and checks command callbacks that don't
+-- need a running kernel: cell navigation and cell editing. Kernel and
+-- bridge payloads used to live here too; with the Rust backend they're
+-- exercised by tests/test_rust_phase1.lua against a real ipykernel.
 
 section("Cell navigation")
 

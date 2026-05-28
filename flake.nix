@@ -43,11 +43,6 @@
             src = self;
             dependencies = [ ];
             postPatch = ''
-              substituteInPlace lua/jovian/backend/zmq.lua \
-                --replace 'ffi.load, "zmq"' 'ffi.load, "${final.zeromq}/lib/libzmq${final.stdenv.hostPlatform.extensions.sharedLibrary}"'
-              substituteInPlace lua/jovian/backend/messenger.lua \
-                --replace 'ffi.load, "crypto"' 'ffi.load, "${final.openssl.out}/lib/libcrypto${final.stdenv.hostPlatform.extensions.sharedLibrary}"'
-
               # Drop the prebuilt jovian-core binary where lua/jovian/backend/core.lua
               # looks for it (`<plugin_dir>/core/target/release/jovian-core`).
               # This makes the plugin work out of the box under nix without the
@@ -150,23 +145,12 @@
             export XDG_DATA_HOME=$(mktemp -d)
             export XDG_STATE_HOME=$(mktemp -d)
             export JOVIAN_PYTHON="${pythonEnvFull}/bin/python3"
-            export LD_LIBRARY_PATH="${pkgs.zeromq}/lib:${pkgs.openssl}/lib:$LD_LIBRARY_PATH"
             # Resolve the controlling tty in the launching shell (where it
             # still exists) and hand it down so the Rust core can write
             # Kitty graphics escapes. macOS lacks /proc, so without this
             # env var the Lua fallback can't find the tty.
             JOVIAN_TTY=$(tty 2>/dev/null) || JOVIAN_TTY=""
             export JOVIAN_TTY
-            exec ${neovimWithPlugins}/bin/nvim -u ${initLua} "$@"
-          '';
-
-          nvim-jovian-fallback = pkgs.writeShellScriptBin "nvim-jovian-fallback" ''
-            export NVIM_APPNAME="nvim-jovian-fallback"
-            export XDG_CONFIG_HOME=$(mktemp -d)
-            export XDG_DATA_HOME=$(mktemp -d)
-            export XDG_STATE_HOME=$(mktemp -d)
-            export JOVIAN_PYTHON="${pythonEnvFull}/bin/python3"
-            # Note: No ZMQ or OpenSSL in LD_LIBRARY_PATH here
             exec ${neovimWithPlugins}/bin/nvim -u ${initLua} "$@"
           '';
 
@@ -201,23 +185,15 @@
             echo ">>> Running Rust Backend Phase 1 Smoke Test (Real Kernel)..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_rust_phase1.lua
           '';
-
-          run-tests-fallback = pkgs.writeShellScriptBin "run-tests-fallback" ''
-            echo ">>> Running Fallback Mode Tests (NO Native ZMQ)..."
-            ${nvim-jovian-fallback}/bin/nvim-jovian-fallback --headless -l tests/test_features.lua
-            ${nvim-jovian-fallback}/bin/nvim-jovian-fallback --headless -l tests/edge_cases.lua
-          '';
         in
         {
           default = nvim-jovian;
           nvim-jovian = nvim-jovian;
-          nvim-jovian-fallback = nvim-jovian-fallback;
           jovian-nvim = pkgs.vimPlugins.jovian-nvim;
           jovian-core = pkgs.jovian-core;
           pythonEnv = pythonEnvFull;
           pythonEnvMinimal = pkgs.jovian-minimal-python;
           run-tests = run-tests;
-          run-tests-fallback = run-tests-fallback;
         }
       );
 
@@ -241,16 +217,6 @@
             installPhase = "touch $out";
           };
 
-          fallback-test = pkgs.stdenv.mkDerivation {
-            name = "jovian-fallback-test";
-            src = self;
-            buildInputs = [ self.packages.${system}.run-tests-fallback ];
-            buildPhase = ''
-              export HOME=$TMPDIR
-              ${self.packages.${system}.run-tests-fallback}/bin/run-tests-fallback
-            '';
-            installPhase = "touch $out";
-          };
 
           lua-lint = pkgs.stdenv.mkDerivation {
             name = "jovian-lua-lint";
@@ -308,14 +274,10 @@
               pkgs.stylua
               pkgs.lua51Packages.luacheck
               pkgs.libnotify
-              pkgs.zeromq
-              pkgs.openssl
               pythonEnv
 
               # Rust toolchain for building jovian-core (the native backend).
-              # Pure-rust zmq crate so libzmq/openssl are NOT linked into the
-              # binary; they remain only for the legacy lua/jovian/backend/zmq.lua
-              # FFI path during the Phase 0..4 migration.
+              # The zmq crate is pure-rust, so no system libzmq/openssl needed.
               pkgs.cargo
               pkgs.rustc
               pkgs.rustfmt

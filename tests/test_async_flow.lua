@@ -149,44 +149,9 @@ complete_job(py_check_job, 0)
 
 assert_test(t2_done, "SSH Validation completed successfully")
 
--- Test 3: Core.sync_backend
-print("\nTest 3: Core.sync_backend")
-local t3_done = false
-Core.sync_backend("myserver", "/local/backend", function()
-    t3_done = true
-end, function(err)
-    print("T3 ERROR: " .. err)
-end)
-
--- Should have started hash check
-local hash_job = #PendingJobs
-assert_test(string.match(PendingJobs[hash_job].cmd, "cat /tmp/jovian_backend/.hash") ~= nil, "Hash check started")
-
--- Complete hash check (with mismatching hash to trigger sync)
-complete_job(hash_job, 1)
-
--- Should have started 'ssh rm'
-local rm_job = #PendingJobs
-assert_test(string.match(PendingJobs[rm_job].cmd, "rm %-rf") ~= nil, "Remote cleanup started")
-
--- Complete cleanup
-complete_job(rm_job, 0)
-
--- Should have started 'scp'
-local scp_job = #PendingJobs
-assert_test(scp_job > rm_job and string.match(PendingJobs[scp_job].cmd, "scp %-r") ~= nil, "SCP started")
-
--- Complete SCP
-complete_job(scp_job, 0)
-
--- Should have started 'ssh echo ... > .hash'
-local hash_write_job = #PendingJobs
-assert_test(string.match(PendingJobs[hash_write_job].cmd, "echo .* > .*%.hash") ~= nil, "Hash write started")
-
--- Complete hash write
-complete_job(hash_write_job, 0)
-
-assert_test(t3_done, "Backend Sync completed successfully")
+-- (Test 3 "Core.sync_backend" removed in Phase 5: the Python bridge it
+-- rsync'd to remote hosts no longer exists. SSH/remote-kernel routing
+-- will return later with the Rust core owning the wire setup.)
 
 if fail_count > 0 then
     print("\nTotal Failures: " .. fail_count)

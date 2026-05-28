@@ -8,15 +8,6 @@ function M.setup(opts)
     require("jovian.diagnostics").setup()
     require("jovian.highlights").setup()
 
-    -- Start ZMQ discovery in background for zero-config Native mode
-    if Config.options.use_lua_native_shell then
-        local State = require("jovian.state")
-        State.is_discovering_zmq = true
-        require("jovian.backend.zmq").discover_bundled(Config.options.python_interpreter, function(_, _)
-            State.is_discovering_zmq = false
-        end)
-    end
-
     -- Register custom predicate for magic command highlighting
     pcall(function()
         vim.treesitter.query.add_predicate("same-line?", function(match, _pattern, _bufnr, predicate)

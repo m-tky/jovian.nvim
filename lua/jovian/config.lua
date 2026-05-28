@@ -65,16 +65,9 @@ M.defaults = {
         markdown_injection = true,
         magic_command_highlight = true,
     },
-    -- Legacy: bundled libzmq/openssl FFI lookup for the old Python-bridge
-    -- path. Has no effect once use_rust_core is on (the Rust core talks
-    -- Jupyter wire protocol directly). Kept here so old setups don't
-    -- error if they still reference it.
-    use_lua_native_shell = true,
-
-    -- Route kernel I/O through the jovian-core Rust backend. Default on.
-    -- Set to false to fall back to kernel_bridge.py + libzmq FFI (the
-    -- legacy path that shipped before Phase 5). The legacy code is
-    -- scheduled for removal so this fallback is temporary.
+    -- Kept as a recognised key for old setups; the legacy Python-bridge
+    -- and libzmq FFI paths it gated were removed in Phase 5. Setting it
+    -- has no effect.
     use_rust_core = true,
 
     -- Render each `# %%` cell as a bordered card via extmarks:

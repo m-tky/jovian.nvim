@@ -36,8 +36,6 @@ M.batch_execution = nil -- { total = int, current = int, start_time = timestamp 
 
 M.is_starting_kernel = false
 M.running_cells = {} -- { [cell_id] = true }
-M.stdout_buffer = ""
-M.stderr_buffer = ""
 
 M.virt_text_hidden_bufs = {} -- { [bufnr] = true }
 M.cell_status_cache = {} -- { [cell_id] = { status, msg, bufnr } }
@@ -47,24 +45,15 @@ M.dataframe_sessions = {} -- { [var_name] = { total, offset, limit, columns } }
 M.tunnel_job_id = nil
 M.tunnel_host = nil
 M.remote_kernel_pid = nil
-M.has_warned_native_unavailable = false
 
-M.last_completion_results = nil
 M.last_stream_type = nil
 M.last_stream_tail = nil
 M.vars_request_force_float = false
 M.current_pin_file = nil
 
--- Native ZMQ / Lua Messenger state
-M.is_discovering_zmq = false
-M.lua_shell_socket = nil
-M.lua_zmq_key = nil
-M.lua_messenger_stop = nil
-
--- Rust core (jovian-core) state. Only populated when use_rust_core=true.
--- `job_id` is set to the sentinel string "rust" so legacy `if State.job_id`
--- checks still gate execution, but vim.fn.jobstop / jobpid must NOT be
--- called on it — branch on `rust_active` first.
+-- Rust core (jovian-core) state.
+-- `job_id` is set to the sentinel string "rust" so `if State.job_id`
+-- gates still pass; never call vim.fn.jobstop / jobpid on it.
 M.rust_active = false
 M.rust_session_id = nil
 
