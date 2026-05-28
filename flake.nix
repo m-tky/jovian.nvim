@@ -56,7 +56,6 @@
         jovian-minimal-python = final.python3.withPackages (ps: with ps; [
           ipython
           ipykernel
-          jupyter-client
         ]);
       };
 
@@ -74,7 +73,6 @@
             ps: with ps; [
               ipython
               ipykernel
-              jupyter-client
               jupyter-console   # provides the `jupyter console` CLI for :JovianREPL
               numpy
               pandas
@@ -254,7 +252,7 @@
             ps: with ps; [
               ipython
               ipykernel
-              jupyter-client
+              jupyter-console
               numpy
               pandas
               matplotlib

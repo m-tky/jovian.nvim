@@ -9,13 +9,14 @@ function M.check()
     if vim.fn.executable(python_exe) == 1 then
         vim.health.ok("Python executable found: " .. python_exe)
 
-        -- Check dependencies
-        local check_cmd = { python_exe, "-c", "import ipykernel, jupyter_client; print('ok')" }
+        -- jovian-core spawns `python -m ipykernel_launcher`; ipykernel is
+        -- the only hard dependency (it pulls jupyter_client transitively).
+        local check_cmd = { python_exe, "-c", "import ipykernel; print('ok')" }
         local out = vim.fn.system(check_cmd)
         if out:match("ok") then
-            vim.health.ok("Python dependencies (ipykernel, jupyter_client) found")
+            vim.health.ok("Python dependency (ipykernel) found")
         else
-            vim.health.error("Missing Python dependencies: ipykernel, jupyter_client")
+            vim.health.error("Missing Python dependency: ipykernel (pip install ipykernel)")
         end
     else
         vim.health.error("Python executable not found: " .. python_exe)
