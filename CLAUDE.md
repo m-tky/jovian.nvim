@@ -3,113 +3,149 @@
 ## What This Is
 
 A Neovim plugin for interactive Python development using `# %%` cell markers,
-similar to VS Code's Jupyter extension. Executes code against a live IPython
-kernel and displays results in a side-by-side markdown preview window.
+similar to VS Code's Jupyter extension. Executes code against a live Jupyter
+kernel and displays results inline in the cell, in a side preview window, and
+in a REPL/output window. Plots render as real images via the Kitty graphics
+protocol.
 
 ## Architecture
 
-### Dual-Bridge Design
+### Rust backend (`jovian-core`)
 
-Two communication paths to the Python kernel run in parallel:
+A single Rust binary (`core/`) owns all kernel communication. The Lua
+front-end spawns it once and talks to it over **msgpack-RPC on stdio**.
 
-**Python Bridge** (always active)
-- `lua/jovian/backend/kernel_bridge.py` runs as a subprocess
-- Neovim spawns it via `vim.fn.jobstart`, talks over stdin/stdout JSON lines
-- Handles: execution results, variable inspection, DataFrame views, image
-  saving, clipboard copy, remote file sync
-- Message format: `{"type": "...", ...}` lines received in `core.lua` →
-  dispatched to `handlers.lua`
+- `core/src/main.rs` — tokio entry point + file logging (`$XDG_CACHE/jovian/core.log`)
+- `core/src/rpc.rs` — msgpack-RPC framing (`<u32 BE len><payload>`) + method dispatch
+- `core/src/protocol.rs` — Jupyter wire protocol v5.4 + HMAC-SHA256 signing
+- `core/src/kernel.rs` — kernel spawn, the 3 ZMQ sockets (shell/control/iopub),
+  iopub event loop. Uses the **pure-rust `zeromq` crate** (no system libzmq).
+- `core/src/kernelspec.rs` — discover `kernel.json` specs with version fallback
+- `core/src/notebook.rs` — `# %%` source parser + sidecar JSON output store
+- `core/src/session.rs` — per-buffer state, cell↔msg_id routing, output collector
+- `core/src/kitty.rs` — Kitty graphics protocol, writes escapes straight to the tty
 
-**Native Lua/ZMQ Messenger** (active when libzmq is available)
-- `lua/jovian/backend/zmq.lua` — FFI wrapper around system libzmq
-- `lua/jovian/backend/messenger.lua` — Jupyter wire protocol (HMAC-SHA256)
-- Connects directly to the kernel's IOPUB and SHELL ZMQ sockets
-- Handles: real-time stream output, cell status updates (busy/idle),
-  completion requests — with lower latency than the Python bridge
-- Activated automatically; falls back to Python bridge if libzmq is missing
-- `State.lua_shell_socket` is non-nil when this path is active
+The kernel talks the Jupyter wire protocol directly; there is **no Python
+bridge process** and **no libzmq FFI** (both removed in Phase 5).
 
-When both are running, `handlers.handle_stream` skips Python bridge stream
-messages to avoid duplicates (checks `State.lua_shell_socket`).
+### Lua front-end
 
-### Key Data Flow
+- `lua/jovian/backend/rpc.lua` — msgpack-RPC client over `vim.uv` pipes
+  (NOT `jobstart` — it strips `\n` from binary stdio)
+- `lua/jovian/backend/core.lua` — locates the `jovian-core` binary, owns the
+  shared client singleton, performs `kitty_attach` (resolving the real pts
+  via `/proc/self/fd` or `$JOVIAN_TTY`)
+- `lua/jovian/backend/rust_kernel.lua` — translates RPC `cell_event`
+  notifications into UI updates; implements Vars/View via `execute_collect`
+- `lua/jovian/install.lua` — downloads a prebuilt binary or `cargo build`s it
+  (lazy.nvim `build` hook); under nix the flake bundles the binary instead
+
+### Key data flow
 
 ```
-User runs :JovianRun
-  → core.send_cell()
-  → core.send_payload(code, cell_id, filename)
-      ├─ [native path] messenger.send_message(shell_socket, execute_request)
-      │    ZMQ IOPUB → timer poll → status/stream updates → UI
-      └─ [bridge path] chan_send(job_id, JSON)
-           kernel_bridge.py → result_ready JSON → handlers.handle_result_ready
-               → session.save_execution_result (writes .md + .png to cache)
-               → UI.open_markdown_preview (renders in preview window)
+:JovianRun
+  → core.send_cell() → core.send_payload(code, cell_id)
+  → rust_kernel.execute(code, cell_id)
+      reparse (buffer text → cell models) + execute RPC
+  → jovian-core: execute_request over ZMQ shell socket
+      iopub events → session.apply_event → outputs.json + cell_event notify
+  → rust_kernel.on_cell_event
+      ├─ UI.append_to_repl / append_stream_text   (REPL window)
+      ├─ UI.set_cell_status                        (Running/Done/Error extmark)
+      └─ cell_frame.schedule / preview re-render   (inline + preview, reads sidecar)
 ```
 
-### Module Responsibilities
+### Output rendering (one source of truth)
+
+Outputs live in a per-file sidecar JSON, nbformat-shaped:
+
+```
+<file_dir>/.jovian_cache/<filename>/outputs.json
+  { "version": 1, "cells": { "<cell_id>": { execution_count, outputs[] } } }
+```
+
+`lua/jovian/ui/output_render.lua` reads that JSON and renders the SAME outputs
+to three surfaces:
+- **inline** — `cell_frame.lua` embeds `├ Out[N] ┤` + output rows in the cell's
+  bottom `virt_lines` (opt-in: `inline_outputs`)
+- **preview pane** — `render_to_buffer` writes text lines + per-line hl extmarks
+- **REPL/output window** — `rust_kernel` writes ANSI + placeholders to the term channel
+
+Images (`image/png|gif|jpeg`) are transmitted once via `kitty.lua`
+(`ensure_transmitted` → core `kitty_transmit` RPC, `a=T,U=1,c=N,r=N`) and
+rendered as Unicode-placeholder rows whose fg color encodes the image_id.
+
+### Module responsibilities
 
 | Module | Role |
 |---|---|
 | `init.lua` | `setup()` entry point; registers autocmds |
 | `config.lua` | Default options; `M.options` is the live config table |
 | `state.lua` | Single global state table; all mutable plugin state lives here |
-| `core.lua` | Kernel lifecycle + execution + inspection commands |
+| `core.lua` | Kernel lifecycle + execution + Vars/View — delegates to rust_kernel |
+| `backend/core.lua` | jovian-core binary locator + shared RPC client + kitty_attach |
+| `backend/rpc.lua` | vim.uv msgpack-RPC client |
+| `backend/rust_kernel.lua` | cell_event → UI; Vars/View via execute_collect |
 | `cell.lua` | Cell ID management, range detection, cell edit operations |
-| `session.lua` | Cache I/O, stale detection, structure change tracking |
-| `handlers.lua` | Routes JSON messages from the Python bridge to UI/state |
+| `session.lua` | Preview-on-cursor, cache cleanup, structure change tracking |
 | `commands.lua` | Registers all `:Jovian*` user commands |
-| `hosts.lua` | Persists SSH/local host configs to `stdpath("data")/jovian/hosts.json` |
-| `tunnel.lua` | SSH port-forwarding for remote kernels |
+| `complete.lua` | `omnifunc` via the core `complete` RPC |
+| `hosts.lua` / `ssh_config.lua` / `tunnel.lua` | SSH host config (remote-kernel routing is not wired to the Rust path yet) |
 | `ui.lua` | Public UI facade; re-exports from ui/ submodules |
-| `ui/layout.lua` | Window layout orchestration (open/toggle/resize) |
-| `ui/windows.lua` | Low-level window/buffer creation |
+| `ui/layout.lua` / `ui/windows.lua` | Window/buffer orchestration |
 | `ui/virtual_text.lua` | Cell status extmarks (Running/Done/Error/Stale) |
-| `ui/renderers.lua` | Float window content: variables, DataFrames, peek/doc |
-| `ui/shared.lua` | Terminal output (REPL buffer) and system notifications |
+| `ui/renderers.lua` | Float content: variables pane, DataFrame viewer |
+| `ui/shared.lua` | REPL terminal output + system notifications |
+| `ui/cell_frame.lua` | Card-frame extmarks + inline output block (opt-in) |
+| `ui/markdown_cell.lua` | Markdown cell styling: headings/bold/code/tables (opt-in) |
+| `ui/output_render.lua` | nbformat outputs → virt_lines / preview lines |
+| `ui/kitty.lua` | Kitty Unicode-placeholder generation + async transmit |
 | `diagnostics.lua` | LSP diagnostic filter for magic commands (`!ls`, `%timeit`) |
-| `complete.lua` | `omnifunc` completion via kernel |
-| `inline_images.lua` | Inline plot rendering (requires `image.nvim`; opt-in) |
-
-### Cache Layout
-
-```
-<file_dir>/.jovian_cache/<filename>/
-  <cell_id>.md          — markdown output for preview window
-  <cell_id>_<ts>_<n>.png — plot images
-```
-
-Cache files are cleaned on save/exit (`session.clean_stale_cache`) and when
-source files are deleted (`session.clean_orphaned_caches`).
 
 ---
 
 ## Development
 
-### Running Tests
+### Building the Rust core
 
 ```bash
-nvim -l tests/test_commands.lua
-nvim -l tests/test_async_flow.lua
-nvim -l tests/test_resize_layout.lua
-nvim -l tests/edge_cases.lua      # requires a live Python kernel
+cd core && cargo build --release      # outputs core/target/release/jovian-core
+```
+The nix devShell auto-builds it on first entry. The Lua side finds it via
+`$JOVIAN_CORE_BIN`, then `<plugin>/core/target/release/jovian-core`, then `$PATH`.
+
+### Running tests
+
+```bash
+nix run .#run-tests        # full suite (builds core, runs all test files)
+```
+Individual files (need the core binary on `$JOVIAN_CORE_BIN` or a nix build):
+```bash
+nvim --headless -l tests/test_cell_frame.lua       # cell frame + markdown styling
+nvim --headless -l tests/test_inline_outputs.lua   # sidecar JSON → inline/preview
+nvim --headless -l tests/test_kitty_images.lua     # placeholder geometry (stubbed RPC)
+nvim --headless -l tests/test_rust_phase1.lua      # real kernel: spawn+run+stream
+nvim --headless -l tests/test_commands.lua         # mocked: cell navigation/editing
+```
+**When adding a test file, register it in `flake.nix`'s `run-tests` script and
+re-run the whole suite** — anything outside `run-tests` isn't covered by CI.
+
+### Formatting & linting
+
+```bash
+stylua .                  # auto-format Lua  (stylua --check . in CI)
+luacheck .                # lint Lua
+ruff check .              # lint Python (only the demo / example files now)
+cd core && cargo fmt && cargo clippy
 ```
 
-Tests use a mocked Vim API. Non-zero exit = failure.
-
-### Formatting & Linting
+### Nix
 
 ```bash
-stylua .                  # auto-format Lua
-stylua --check .          # check only (used in CI)
-luacheck .                # lint
-ruff check .              # lint Python files
-```
-
-### Nix Dev Environment
-
-```bash
-nix develop               # enters shell with Python + Neovim pre-configured
-nix run .#run-tests       # runs all tests via the Nix test runner
+nix develop               # Python + Neovim + Rust toolchain; auto-builds core
+nix build .#jovian-core   # just the Rust binary
+nix build .#jovian-nvim   # vim plugin with the binary bundled in
+nix run .#nvim-jovian -- demo_jovian.py   # full demo (Rust backend, all features)
 ```
 
 ---
@@ -120,6 +156,8 @@ nix run .#run-tests       # runs all tests via the Nix test runner
 require("jovian").setup({
     -- Python
     python_interpreter = "python3",   -- or JOVIAN_PYTHON env var
+                                      -- an absolute path → used as the kernel's
+                                      -- python directly (bypasses kernelspec lookup)
 
     -- UI
     float_border       = "rounded",   -- single/double/rounded/solid/shadow
@@ -127,33 +165,47 @@ require("jovian").setup({
     show_execution_time = true,
     notify_threshold   = 10,          -- seconds before showing a notification
     notify_mode        = "all",       -- "all" | "error" | "none"
-    plot_view_mode     = "inline",    -- "inline" | "window"
     dataframe_page_size = 50,
 
-    -- Opt-in features (off by default)
-    inline_images      = false,       -- requires image.nvim
-    folding            = false,       -- cell-based folds for Python files
+    -- Phase 2/3/4 visuals (opt-in)
+    cell_frame          = false,      -- ┌─ Code [id] ─┐ card borders
+    markdown_cell_style = false,      -- conceal #/**bold**/tables in markdown cells
+    inline_outputs      = false,      -- render outputs below the cell (needs cell_frame)
+    folding             = false,      -- cell-based folds for Python files
 
-    -- Cell separator highlight
+    -- Image sizing (Kitty graphics)
+    image_rows = 14, image_cols = 56,            -- inline cell output block
+    preview_cell_pixel_height = 16,              -- px height of one terminal cell
+    preview_cell_pixel_aspect = 0.5,             -- cell width/height ratio
+    -- preview scales each image from its PNG/GIF header dims, never upscales
+    -- past native size, capped to the preview window
+
+    -- Highlight overrides — string = :hi link target, table = nvim_set_hl attrs.
+    -- nil = follow the colorscheme / built-in fallback.
+    highlights = {
+        cell_border_code = nil,       -- code cell frame (default: Function-family)
+        cell_border_markdown = nil,   -- markdown cell frame (default: WarningMsg-family)
+        md_h1 = nil, md_h2 = nil, ... md_h6 = nil,   -- heading levels
+        md_bold = nil, md_code = nil, md_bullet = nil, md_quote = nil,
+        md_table_divider = nil, md_table_header = nil,
+        out_divider = nil, out_stdout = nil, out_stderr = nil,
+        out_result = nil, out_error = nil,
+    },
+
     ui = {
         cell_separator_highlight = "text",  -- "text" | "line" | "none"
         layouts = { ... },                  -- see config.lua for structure
     },
 
-    -- Virtual text symbols
     ui_symbols = {
-        running     = " Running...",
-        done        = " Done",
-        error       = " Error",
-        interrupted = " Interrupted",
-        stale       = " Stale",
+        running = " Running...", done = " Done", error = " Error",
+        interrupted = " Interrupted", stale = " Stale",
     },
 
-    -- Magic command LSP suppression
     suppress_magic_command_errors = true,
 
-    -- Native ZMQ path (disable if libzmq causes issues)
-    use_lua_native_shell = true,
+    -- use_rust_core is recognised but inert — the Rust backend is the only
+    -- path now (the legacy Python bridge was removed in Phase 5).
 })
 ```
 
@@ -172,22 +224,21 @@ require("jovian").setup({
 | `:JovianRunLine` | Run current line |
 | `:JovianSendSelection` | Run visual selection |
 | `:JovianRestart` | Restart kernel |
-| `:JovianInterrupt` | Send SIGINT to kernel |
-| `:JovianREPL` | Open interactive IPython console connected to the running kernel |
+| `:JovianInterrupt` | Interrupt kernel |
+| `:JovianREPL` | Open `jupyter console` attached to the running kernel |
 
 ### UI
 | Command | Description |
 |---|---|
-| `:JovianOpen` | Open all panels |
-| `:JovianToggle` | Toggle all panels |
+| `:JovianOpen` / `:JovianToggle` | Open / toggle all panels |
 | `:JovianToggleVars` | Toggle variables pane |
 | `:JovianToggleStatus` | Toggle cell status virtual text |
-| `:JovianTogglePlot` | Toggle inline/window plot mode |
-| `:JovianTogglePin` | Toggle pinned output window |
-| `:JovianPin` / `:JovianUnpin` | Pin/unpin current cell output |
+| `:JovianToggleCellFrame` | Toggle cell card frames |
+| `:JovianToggleMarkdownStyle` | Toggle markdown cell styling |
+| `:JovianTogglePin` / `:JovianPin` / `:JovianUnpin` | Pinned output window |
 | `:JovianClearREPL` | Clear the REPL output buffer |
 
-### Cell Navigation & Editing
+### Cell navigation & editing
 | Command | Description |
 |---|---|
 | `:JovianNextCell` / `:JovianPrevCell` | Jump between cells |
@@ -198,24 +249,26 @@ require("jovian").setup({
 | `:JovianSplitCell` | Split cell at cursor |
 | `:JovianMergeBelow` | Merge current cell with next |
 
-### Inspection & Data
+### Inspection & data
 | Command | Description |
 |---|---|
-| `:JovianVars` | Show variables in float |
-| `:JovianView [var]` | Inspect variable / DataFrame |
-| `:JovianCopy [var]` | Copy variable to clipboard |
-| `:JovianDoc [obj]` | Show docstring |
-| `:JovianPeek [obj]` | Quick type/value preview |
+| `:JovianVars` | Show variables pane |
+| `:JovianView [var]` | Paginated DataFrame viewer |
 
-### Remote / Host
+(`:JovianDoc`, `:JovianPeek`, `:JovianCopy`, `:JovianBackend`,
+`:JovianTogglePlot` were removed — use LSP hover / a one-off cell instead.)
+
+### Remote / host
 | Command | Description |
 |---|---|
 | `:JovianConnect` | Interactive SSH/Tunnel setup wizard |
 | `:JovianAddHost` / `:JovianAddLocal` | Register host |
-| `:JovianUse [name]` | Switch active host |
-| `:JovianRemoveHost [name]` | Remove host |
+| `:JovianUse [name]` / `:JovianRemoveHost [name]` | Switch / remove host |
 | `:JovianSync [path]` | rsync files to remote host |
 | `:JovianTunnelStatus` | Show active tunnel info |
+
+> Note: remote-kernel execution is not yet routed through the Rust core;
+> these manage host config / tunnels for a future phase.
 
 ### Misc
 | Command | Description |
@@ -223,35 +276,37 @@ require("jovian").setup({
 | `:JovianClean[!]` | Clean stale/orphaned cache |
 | `:JovianClearCache[!]` | Clear cell output cache |
 | `:JovianClearDiag` | Clear LSP diagnostics |
-| `:JovianRenderImages` | Force render inline images (when `inline_images=true`) |
-| `:JovianBackend` | Print matplotlib backend |
+| `:JovianDebugImages` | Probe the Kitty image pipeline (reports attach/transmit errors) |
 | `:checkhealth jovian` | Validate dependencies |
 
 ---
 
 ## Design Decisions
 
-**Why a Python bridge + native ZMQ, not just one?**
-The Python bridge handles complex tasks (variable serialization, image saving,
-SSH sync) that would be painful in Lua. The native ZMQ path gives sub-20ms
-stream output and completion latency, which the subprocess JSON round-trip
-can't match.
+**Why a Rust core instead of the old Python bridge + libzmq FFI?**
+One binary talks the Jupyter wire protocol directly (pure-rust zeromq, no
+system libzmq), owns nbformat I/O, and writes Kitty graphics escapes to the
+tty. It replaced ~1700 lines of dual-path Lua/Python with lower latency and a
+single code path. Modeled on sheng-tse/jupynvim's architecture.
 
-**Why `# %%` cell IDs in-file?**
-Cell outputs are cached to `.jovian_cache/<filename>/<id>.md`. IDs stored in
-the file survive across sessions and allow the cache to be correlated with
-specific cells even after editing. IDs are auto-generated on first execution.
+**Why `.py` + `# %% id="..."` (not `.ipynb`)?**
+The source stays a plain, git-diffable Python file. Outputs live in a separate
+sidecar JSON so the `.py` never carries base64 blobs. IDs in the header line
+correlate cached outputs with cells across edits.
 
-**Why `inline_images` defaults to false?**
-`image.nvim` is a hard dependency for rendering and requires a terminal with
-Kitty/Sixel protocol. Most users don't have this; gating it avoids silent
-failures.
+**Why a sidecar JSON instead of per-cell markdown files?**
+One nbformat-shaped store feeds all three render surfaces (inline / preview /
+REPL) identically, preserves full output fidelity (images, HTML, errors), and
+survives nvim restarts. Outputs from a previous session render with a
+`(cached)` tag until re-run.
 
-**Why `folding` defaults to false?**
-Silently overriding fold settings on all Python files is surprising behavior.
-Users who want cell-based folding opt in explicitly.
+**Why Kitty Unicode placeholders (not `image.nvim`)?**
+No external Lua dependency; the Rust core transmits PNG bytes to the tty once
+and the placeholder chars (with image_id in their fg color) survive Neovim
+redraws because they're real buffer/virt_text. Requires a Kitty-graphics
+terminal (Kitty, Ghostty 1.3+, recent WezTerm).
 
-**Why `JovianREPL` uses `jupyter console --existing`?**
-It attaches to the same kernel session that cell execution uses — variables
-defined in cells are immediately available in the REPL and vice versa. Falls
-back to standalone IPython if no connection file is available.
+**Why are the visual layers opt-in?**
+`cell_frame` / `markdown_cell_style` overlay extmarks and set window
+`conceallevel`; `inline_outputs` needs a Kitty terminal. Defaulting them off
+keeps the plugin unsurprising for users who just want execution + preview.
