@@ -5,7 +5,6 @@ local Cell = require("jovian.cell")
 local Hosts = require("jovian.hosts")
 local Config = require("jovian.config")
 local SSHConfig = require("jovian.ssh_config")
-local Tunnel = require("jovian.tunnel")
 local State = require("jovian.state")
 
 -- Navigation helpers
@@ -246,54 +245,40 @@ function M.setup()
                 return
             end
 
-            vim.ui.select({ "SSH Direct", "Auto-Tunnel (Jupyter)" }, { prompt = "Connection Mode:" }, function(mode)
-                if not mode then
+            -- jovian-core owns the SSH tunnel + remote kernel launch, so
+            -- connecting is just: record the remote python/cwd, activate the
+            -- host, and let the next :JovianRun start the kernel there.
+            vim.ui.input({ prompt = "Remote Python: ", default = "python3" }, function(python)
+                if not python or python == "" then
                     return
                 end
-
-                vim.ui.input({ prompt = "Python Path: ", default = "python3" }, function(python)
-                    if not python or python == "" then
-                        return
-                    end
-
-                    if mode == "SSH Direct" then
-                        vim.ui.input({ prompt = "Remote Directory (Optional): ", default = "." }, function(remote_cwd)
-                            local config =
-                                { type = "ssh", host = selected_name, python = python, remote_cwd = remote_cwd }
-                            Hosts.add_host(selected_name, config)
-                            Hosts.use_host(selected_name)
-                        end)
-                    else
-                        -- Tunnel Mode
-                        vim.ui.input({ prompt = "Remote Directory (Optional): ", default = "." }, function(remote_cwd)
-                            Tunnel.start(selected_name, python, remote_cwd, function()
-                                -- On success, start kernel
-                                Core.start_kernel()
-                            end, function(err)
-                                vim.notify("Tunnel Error: " .. err, vim.log.levels.ERROR)
-                            end)
-                        end)
-                    end
+                vim.ui.input({ prompt = "Remote Directory (Optional): ", default = "." }, function(remote_cwd)
+                    local config = { type = "ssh", host = selected_name, python = python, remote_cwd = remote_cwd }
+                    Hosts.add_host(selected_name, config)
+                    Hosts.use_host(selected_name)
+                    vim.notify(
+                        ("jovian: remote host '%s' active — next :JovianRun starts the kernel there"):format(
+                            selected_name
+                        ),
+                        vim.log.levels.INFO
+                    )
                 end)
             end)
         end)
     end, {})
 
     vim.api.nvim_create_user_command("JovianTunnelStatus", function()
-        if State.tunnel_host then
-            local msg = string.format(
-                "Tunneled to %s (Remote PID: %s)",
-                State.tunnel_host,
-                State.remote_kernel_pid or "unknown"
-            )
-            vim.notify(msg, vim.log.levels.INFO)
+        local host = Config.options.ssh_host
+        if host and host ~= "" then
+            local running = State.job_id and "running" or "not started"
+            vim.notify(("jovian: remote host '%s' via SSH (kernel %s)"):format(host, running), vim.log.levels.INFO)
         else
-            vim.notify("No active tunnel", vim.log.levels.INFO)
+            vim.notify("jovian: no remote host active (local kernel)", vim.log.levels.INFO)
         end
     end, {})
 
     vim.api.nvim_create_user_command("JovianSync", function(opts)
-        local host = Config.options.ssh_host or State.tunnel_host
+        local host = Config.options.ssh_host
         if not host then
             return vim.notify("Jovian: No remote host active. Use :JovianConnect first.", vim.log.levels.ERROR)
         end

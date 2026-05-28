@@ -33,7 +33,12 @@
           # Pure-rust zmq crate — no C deps, no system libzmq required. We
           # still need a C linker (provided by buildRustPackage's default
           # stdenv) for the final link step.
-          doCheck = false;
+          #
+          # Run `cargo test` as part of the build so the Rust unit tests
+          # (protocol signing, notebook parsing, remote-kernel helpers, …)
+          # are exercised in CI — the test job builds this derivation via the
+          # plugin. All tests are sandbox-safe (pure / expected-failure).
+          doCheck = true;
         };
 
         vimPlugins = prev.vimPlugins // {

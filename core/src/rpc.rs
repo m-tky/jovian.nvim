@@ -294,42 +294,53 @@ impl Server {
             .ok_or_else(|| anyhow!("session not found"))?
             .clone();
 
-        let spec = if let Some(py) = p.get("python_path").and_then(|v| v.as_str()) {
-            let py = py.to_string();
-            let path_buf = PathBuf::from(&py);
-            let parent = path_buf
-                .parent()
-                .and_then(|p| p.parent())
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| path_buf.clone());
-            kernelspec::KernelSpec {
-                name: "venv-python".to_string(),
-                path: parent,
-                argv: vec![
-                    py,
-                    "-m".to_string(),
-                    "ipykernel_launcher".to_string(),
-                    "-f".to_string(),
-                    "{connection_file}".to_string(),
-                ],
-                display_name: "venv python".to_string(),
-                language: "python".to_string(),
-                interrupt_mode: None,
-                env: std::collections::HashMap::new(),
-                metadata: Json::Null,
-            }
-        } else {
-            let name = p
-                .get("kernel_name")
+        let kernel = if let Some(host) = p.get("host").and_then(|v| v.as_str()) {
+            // Remote kernel over SSH. jovian-core owns the tunnel; the local
+            // ZMQ sockets connect to forwarded localhost ports.
+            let remote_python = p
+                .get("remote_python")
                 .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "python3".to_string());
-            kernelspec::discover_with_fallback(&name, Some("python"))
-                .ok_or_else(|| anyhow!("no kernelspec found for '{name}'"))?
-        };
+                .unwrap_or("python3");
+            let remote_cwd = p.get("remote_cwd").and_then(|v| v.as_str());
+            Kernel::launch_remote(host, remote_python, remote_cwd).await?
+        } else {
+            let spec = if let Some(py) = p.get("python_path").and_then(|v| v.as_str()) {
+                let py = py.to_string();
+                let path_buf = PathBuf::from(&py);
+                let parent = path_buf
+                    .parent()
+                    .and_then(|p| p.parent())
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| path_buf.clone());
+                kernelspec::KernelSpec {
+                    name: "venv-python".to_string(),
+                    path: parent,
+                    argv: vec![
+                        py,
+                        "-m".to_string(),
+                        "ipykernel_launcher".to_string(),
+                        "-f".to_string(),
+                        "{connection_file}".to_string(),
+                    ],
+                    display_name: "venv python".to_string(),
+                    language: "python".to_string(),
+                    interrupt_mode: None,
+                    env: std::collections::HashMap::new(),
+                    metadata: Json::Null,
+                }
+            } else {
+                let name = p
+                    .get("kernel_name")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "python3".to_string());
+                kernelspec::discover_with_fallback(&name, Some("python"))
+                    .ok_or_else(|| anyhow!("no kernelspec found for '{name}'"))?
+            };
 
-        let cwd = session.path.parent().map(|p| p.to_path_buf());
-        let kernel = Kernel::launch(spec, cwd).await?;
+            let cwd = session.path.parent().map(|p| p.to_path_buf());
+            Kernel::launch(spec, cwd).await?
+        };
         let kernel_name = kernel.spec().name.clone();
         let mut rx = kernel
             .take_events()

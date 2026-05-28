@@ -232,7 +232,14 @@ function M.start(on_ready)
         end
         local sid = result.session_id
         local args = { session_id = sid }
-        if looks_like_path(Config.options.python_interpreter) then
+        if Config.options.ssh_host and Config.options.ssh_host ~= "" then
+            -- Remote kernel: jovian-core spawns the kernel over SSH and tunnels
+            -- its ZMQ ports back to localhost. ssh_host / ssh_python / remote_cwd
+            -- are set by hosts.use_host (:JovianConnect / :JovianUse).
+            args.host = Config.options.ssh_host
+            args.remote_python = Config.options.ssh_python or "python3"
+            args.remote_cwd = Config.options.remote_cwd
+        elseif looks_like_path(Config.options.python_interpreter) then
             args.python_path = Config.options.python_interpreter
         end
         client:request("start_kernel", args, function(err2, _)

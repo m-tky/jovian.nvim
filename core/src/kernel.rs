@@ -71,6 +71,78 @@ fn pick_ports(n: usize) -> Result<Vec<u16>> {
     Ok(ports)
 }
 
+// --- remote (SSH) kernel helpers ---
+
+/// The python program run on the remote during bootstrap: pick 5 free ports,
+/// write the kernel connection file (sharing our HMAC `key`), and print a
+/// `JOVIAN_CONN <path> p0 p1 p2 p3 p4` sentinel line. `key` is a UUID, so it
+/// embeds safely inside the double-quoted python string literal.
+fn bootstrap_script(key: &str) -> String {
+    format!(
+        r#"import socket, json, os, tempfile
+def free():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("127.0.0.1", 0))
+    p = s.getsockname()[1]
+    s.close()
+    return p
+ports = [free() for _ in range(5)]
+conn = {{"ip": "127.0.0.1", "transport": "tcp",
+        "shell_port": ports[0], "iopub_port": ports[1], "stdin_port": ports[2],
+        "control_port": ports[3], "hb_port": ports[4],
+        "key": "{key}", "signature_scheme": "hmac-sha256", "kernel_name": "python3"}}
+fd, path = tempfile.mkstemp(prefix="jovian-kernel-", suffix=".json")
+with os.fdopen(fd, "w") as f:
+    json.dump(conn, f)
+print("JOVIAN_CONN %s %s" % (path, " ".join(str(p) for p in ports)), flush=True)
+"#
+    )
+}
+
+/// Parse the bootstrap sentinel `JOVIAN_CONN <remote_conn_path> p0 p1 p2 p3 p4`.
+fn parse_bootstrap_line(line: &str) -> Option<(String, [u16; 5])> {
+    let mut it = line.split_whitespace();
+    if it.next()? != "JOVIAN_CONN" {
+        return None;
+    }
+    let path = it.next()?.to_string();
+    let mut ports = [0u16; 5];
+    for slot in ports.iter_mut() {
+        *slot = it.next()?.parse().ok()?;
+    }
+    Some((path, ports))
+}
+
+/// Build the `ssh -L 127.0.0.1:<local>:127.0.0.1:<remote>` argument list for
+/// all five ZMQ ports (10 tokens: `-L`, spec, `-L`, spec, …).
+fn forward_args(local: &[u16; 5], remote: &[u16; 5]) -> Vec<String> {
+    let mut v = Vec::with_capacity(10);
+    for i in 0..5 {
+        v.push("-L".to_string());
+        v.push(format!("127.0.0.1:{}:127.0.0.1:{}", local[i], remote[i]));
+    }
+    v
+}
+
+/// Single-quote a string for safe interpolation into the remote shell command.
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', r"'\''"))
+}
+
+/// A synthetic KernelSpec for a remote kernel (no local kernelspec discovery).
+fn remote_spec(host: &str) -> KernelSpec {
+    KernelSpec {
+        name: format!("remote:{host}"),
+        path: PathBuf::from("."),
+        argv: Vec::new(),
+        display_name: format!("remote python ({host})"),
+        language: "python".to_string(),
+        interrupt_mode: None,
+        env: std::collections::HashMap::new(),
+        metadata: Value::Null,
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum KernelEvent {
@@ -177,6 +249,125 @@ impl Kernel {
             .kill_on_drop(true);
 
         let child = cmd.spawn().with_context(|| format!("spawning {:?}", argv))?;
+        Self::from_child_and_conn(spec, conn, child).await
+    }
+
+    /// Launch a kernel on a remote host over SSH and tunnel its ZMQ ports back
+    /// to localhost. Two ssh calls: a short *bootstrap* where the remote picks
+    /// its own free ports and writes the connection file, then a long-lived
+    /// *launch* that sets up `-L` forwards (now that the remote ports are known)
+    /// and execs the kernel. The launch ssh becomes `child`; killing it closes
+    /// the forwards and EOFs the remote channel so the kernel dies with us.
+    ///
+    /// Auth is key/agent-based only (`BatchMode=yes`); there is no interactive
+    /// password prompt.
+    pub async fn launch_remote(host: &str, python: &str, cwd: Option<&str>) -> Result<Self> {
+        use tokio::io::AsyncWriteExt;
+
+        let key = Uuid::new_v4().to_string();
+
+        // --- bootstrap: remote picks ports + writes the connection file ---
+        let script = bootstrap_script(&key);
+        let mut boot = Command::new("ssh");
+        boot.arg("-o")
+            .arg("BatchMode=yes")
+            .arg(host)
+            .arg(python)
+            .arg("-") // python reads its program from stdin
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true);
+        let mut boot_child = boot.spawn().context("spawning bootstrap ssh")?;
+        {
+            let mut stdin = boot_child
+                .stdin
+                .take()
+                .ok_or_else(|| anyhow!("bootstrap ssh has no stdin"))?;
+            stdin.write_all(script.as_bytes()).await?;
+            stdin.shutdown().await?;
+        }
+        let out = boot_child
+            .wait_with_output()
+            .await
+            .context("bootstrap ssh failed")?;
+        if !out.status.success() {
+            return Err(anyhow!(
+                "remote kernel bootstrap failed ({}): {}",
+                out.status,
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let (conn_path, remote_ports) = stdout
+            .lines()
+            .find_map(parse_bootstrap_line)
+            .ok_or_else(|| {
+                anyhow!(
+                    "no JOVIAN_CONN line from remote bootstrap; stderr: {}",
+                    String::from_utf8_lossy(&out.stderr).trim()
+                )
+            })?;
+        tracing::info!(%host, ?remote_ports, %conn_path, "remote kernel bootstrapped");
+
+        // --- launch: -L forwards (local→remote) + exec the kernel ---
+        let local = pick_ports(5)?;
+        let local_ports: [u16; 5] = [local[0], local[1], local[2], local[3], local[4]];
+
+        let remote_cmd = match cwd {
+            Some(d) if !d.is_empty() => format!(
+                "cd {} && exec {} -m ipykernel_launcher -f {}",
+                shell_quote(d),
+                shell_quote(python),
+                shell_quote(&conn_path)
+            ),
+            _ => format!(
+                "exec {} -m ipykernel_launcher -f {}",
+                shell_quote(python),
+                shell_quote(&conn_path)
+            ),
+        };
+
+        let mut cmd = Command::new("ssh");
+        cmd.arg("-o")
+            .arg("BatchMode=yes")
+            .arg("-o")
+            .arg("ExitOnForwardFailure=yes")
+            .args(forward_args(&local_ports, &remote_ports))
+            .arg(host)
+            .arg(remote_cmd)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true);
+        let child = cmd.spawn().context("spawning launch ssh")?;
+
+        // Local connection points at the forwarded localhost ports; the key is
+        // shared with the connection file the remote wrote.
+        let conn = ConnectionInfo {
+            ip: "127.0.0.1".to_string(),
+            transport: "tcp".to_string(),
+            shell_port: local_ports[0],
+            iopub_port: local_ports[1],
+            stdin_port: local_ports[2],
+            control_port: local_ports[3],
+            hb_port: local_ports[4],
+            key,
+            signature_scheme: "hmac-sha256".to_string(),
+            kernel_name: "python3".to_string(),
+        };
+        Self::from_child_and_conn(remote_spec(host), conn, child).await
+    }
+
+    /// Wire up ZMQ sockets, channels, and the iopub loop around an
+    /// already-spawned child process and a *local* connection. For remote
+    /// kernels the connection points at SSH-forwarded localhost ports, so this
+    /// tail is identical for local and remote.
+    async fn from_child_and_conn(
+        spec: KernelSpec,
+        conn: ConnectionInfo,
+        child: Child,
+    ) -> Result<Self> {
         let session = Uuid::new_v4().to_string();
 
         let (shell, control, iopub) = connect_sockets(&conn).await?;
@@ -580,4 +771,54 @@ fn frames_to_zmq(frames: Vec<Bytes>) -> ZmqMessage {
 
 fn zmq_to_frames(zmsg: ZmqMessage) -> Vec<Bytes> {
     zmsg.into_vec()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_bootstrap_line_valid() {
+        let line = "JOVIAN_CONN /tmp/jovian-kernel-abc.json 51001 51002 51003 51004 51005";
+        let (path, ports) = parse_bootstrap_line(line).expect("should parse");
+        assert_eq!(path, "/tmp/jovian-kernel-abc.json");
+        assert_eq!(ports, [51001, 51002, 51003, 51004, 51005]);
+    }
+
+    #[test]
+    fn parse_bootstrap_line_ignores_other_lines_and_rejects_malformed() {
+        assert!(parse_bootstrap_line("some unrelated stdout").is_none());
+        assert!(parse_bootstrap_line("JOVIAN_CONN /tmp/x.json 1 2 3").is_none()); // too few ports
+        assert!(parse_bootstrap_line("JOVIAN_CONN /tmp/x.json a b c d e").is_none()); // non-numeric
+        assert!(parse_bootstrap_line("").is_none());
+    }
+
+    #[test]
+    fn forward_args_maps_all_five_ports() {
+        let local = [10001u16, 10002, 10003, 10004, 10005];
+        let remote = [20001u16, 20002, 20003, 20004, 20005];
+        let args = forward_args(&local, &remote);
+        assert_eq!(args.len(), 10);
+        for i in 0..5 {
+            assert_eq!(args[i * 2], "-L");
+            assert_eq!(
+                args[i * 2 + 1],
+                format!("127.0.0.1:{}:127.0.0.1:{}", local[i], remote[i])
+            );
+        }
+    }
+
+    #[test]
+    fn shell_quote_escapes_single_quotes() {
+        assert_eq!(shell_quote("/home/u/proj"), "'/home/u/proj'");
+        assert_eq!(shell_quote("a'b"), r"'a'\''b'");
+    }
+
+    #[test]
+    fn bootstrap_script_embeds_key_and_sentinel() {
+        let s = bootstrap_script("KEY-123");
+        assert!(s.contains("\"key\": \"KEY-123\""));
+        assert!(s.contains("JOVIAN_CONN"));
+        assert!(s.contains("tempfile.mkstemp"));
+    }
 }

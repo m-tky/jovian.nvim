@@ -90,7 +90,7 @@ rendered as Unicode-placeholder rows whose fg color encodes the image_id.
 | `session.lua` | Preview-on-cursor, cache cleanup, structure change tracking |
 | `commands.lua` | Registers all `:Jovian*` user commands |
 | `complete.lua` | `omnifunc` via the core `complete` RPC |
-| `hosts.lua` / `ssh_config.lua` / `tunnel.lua` | SSH host config (remote-kernel routing is not wired to the Rust path yet) |
+| `hosts.lua` / `ssh_config.lua` | SSH host discovery + config persistence. When a host is active, `rust_kernel.start` forwards it to jovian-core, which owns the SSH tunnel + remote kernel launch (`Kernel::launch_remote`). |
 | `ui.lua` | Public UI facade; re-exports from ui/ submodules |
 | `ui/layout.lua` / `ui/windows.lua` | Window/buffer orchestration |
 | `ui/virtual_text.lua` | Cell status extmarks (Running/Done/Error/Stale) |
@@ -261,14 +261,18 @@ require("jovian").setup({
 ### Remote / host
 | Command | Description |
 |---|---|
-| `:JovianConnect` | Interactive SSH/Tunnel setup wizard |
+| `:JovianConnect` | Pick an SSH/Tailscale host and activate it |
 | `:JovianAddHost` / `:JovianAddLocal` | Register host |
 | `:JovianUse [name]` / `:JovianRemoveHost [name]` | Switch / remove host |
 | `:JovianSync [path]` | rsync files to remote host |
-| `:JovianTunnelStatus` | Show active tunnel info |
+| `:JovianTunnelStatus` | Show active remote host + kernel state |
 
-> Note: remote-kernel execution is not yet routed through the Rust core;
-> these manage host config / tunnels for a future phase.
+> Remote kernels run through the Rust core: when an SSH host is active,
+> `start_kernel` calls `Kernel::launch_remote`, which bootstraps the kernel on
+> the remote (remote picks its own ports), then runs a single `ssh -L …`
+> process that both forwards the 5 ZMQ ports to localhost and execs the kernel.
+> The ZMQ layer connects to `127.0.0.1` either way. Key/agent SSH auth only;
+> no remote kernelspec discovery (assumes `<python> -m ipykernel_launcher`).
 
 ### Misc
 | Command | Description |

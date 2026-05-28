@@ -46,6 +46,7 @@ process — just a single static binary talking msgpack-RPC to Neovim.
 | **📊 Variables & DataFrames** | `:JovianVars` and `:JovianView` inspect the live namespace and paginate DataFrames. |
 | **⚡ Quick eval / REPL** | Try throwaway code against the kernel without polluting `In[]`/`Out[]` history. |
 | **🔁 Persistent outputs** | Cell output is cached to an `nbformat`-shaped JSON sidecar, so results survive restarts. |
+| **☁️ Remote kernels** | Run the kernel on an SSH host; `jovian-core` tunnels its ZMQ ports back to localhost. Key/agent auth. |
 | **🪄 Magic commands** | `%timeit`, `!ls`, and other IPython magics work, with LSP false-positives suppressed. |
 
 ---
@@ -216,6 +217,23 @@ By default the Output (REPL) window is **on-demand** — toggle it with
 `:JovianToggleOutput`. Output still accumulates in the background, so the full
 cross-cell log and live `\r` progress bars (tqdm) are there when you open it.
 Set `output_window = "always"` to dock it, or `"off"` to drop it entirely.
+
+### Remote kernels (SSH)
+
+Run the kernel on a remote host while editing locally. `jovian-core` starts the
+kernel over SSH and tunnels its ZMQ ports back to `localhost`, so everything
+else (output, plots, completion) works identically.
+
+1. `:JovianConnect` — pick a host from `~/.ssh/config` (or Tailscale), then
+   enter the remote python and working directory. The host becomes active.
+   (`:JovianAddHost` registers a host manually; `:JovianUse <name>` switches.)
+2. `:JovianRun` — the kernel launches **on the remote** and output streams back.
+3. `:JovianSync [path]` — `rsync` your local files to the remote working dir.
+4. `:JovianTunnelStatus` — show the active host and whether the kernel is up.
+
+**Requirements:** key- or `ssh-agent`-based auth (no interactive password
+prompt), and `ipykernel` installed in the remote python. Closing Neovim or
+`:JovianRestart` tears the remote kernel down cleanly.
 
 ---
 
@@ -390,6 +408,10 @@ Neovim's TreeSitter picks these up automatically.
   not tied to a markdown file format.
 - **Images** are transmitted to the terminal via the Kitty graphics protocol
   (Unicode placeholder mode); Neovim only places the placeholder glyphs.
+- **Remote kernels** are the same path with `ssh` standing in for the local
+  `python`: the remote picks its own free ports and writes the connection file,
+  then a single `ssh -L …` process both forwards those ports to `localhost` and
+  runs the kernel — so the ZMQ layer connects to `127.0.0.1` either way.
 
 Why a `.py` + `# %%` source format with IDs? Cell IDs stored in the file let
 the output sidecar correlate with specific cells across edits and sessions,
@@ -461,6 +483,19 @@ while keeping the source plain, diff-friendly, and source-controllable.
 </details>
 
 <details>
+<summary>Remote / host</summary>
+
+| Command | Description |
+| :--- | :--- |
+| `:JovianConnect` | Pick an SSH/Tailscale host and activate it |
+| `:JovianAddHost` / `:JovianAddLocal` | Register a host manually |
+| `:JovianUse [name]` / `:JovianRemoveHost [name]` | Switch / remove host |
+| `:JovianSync [path]` | `rsync` local files to the remote host |
+| `:JovianTunnelStatus` | Show the active remote host + kernel state |
+
+</details>
+
+<details>
 <summary>Cache & diagnostics</summary>
 
 | Command | Description |
@@ -504,19 +539,11 @@ require("jovian").setup({
 
 ---
 
-## 🗺️ Roadmap
-
-- **Remote kernels (SSH / Tailscale)**: the host-management commands
-  (`:JovianConnect`, `:JovianAddHost`, `:JovianUse`, `:JovianSync`, …) persist
-  configuration, but routing the kernel over an SSH tunnel is **not yet
-  reconnected** to the Rust core — kernels currently run on `localhost` only.
-  Remote-kernel support will return in a later release.
-
----
-
 ## 🙏 Acknowledgements
 
-- Inspired by **[vim-jukit](https://github.com/luk400/vim-jukit)**.
-- The Rust backend architecture (single core binary speaking the Jupyter wire
-  protocol over msgpack-RPC, Kitty placeholder image rendering) is modeled on
-  **[jupynvim](https://github.com/sheng-tse/jupynvim)**.
+- **[jupynvim](https://github.com/sheng-tse/jupynvim)** — the Rust backend
+  architecture (a single core binary speaking the Jupyter wire protocol over
+  msgpack-RPC, with Kitty placeholder image rendering) is modeled directly on
+  jupynvim. Many thanks to its author.
+- **[vim-jukit](https://github.com/luk400/vim-jukit)** — the original
+  inspiration for jovian's cell-based workflow.

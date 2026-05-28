@@ -10,9 +10,9 @@ local Config = require("jovian.config")
 local UI = require("jovian.ui")
 local Cell = require("jovian.cell")
 
--- Host management — only used for SSH config persistence at the moment.
--- Remote-kernel routing through SSH tunnel will return in a later phase
--- with the Rust core handling the wire setup directly.
+-- Host management — discovers/persists SSH host config. When a host is
+-- active, rust_kernel.start passes it to jovian-core, which owns the SSH
+-- tunnel + remote kernel launch directly (no Lua-side tunneling).
 local Hosts = require("jovian.hosts")
 
 local RustKernel = nil
@@ -71,7 +71,6 @@ end
 
 function M.stop_kernel()
     rust().stop()
-    require("jovian.tunnel").stop()
 end
 
 function M.restart_kernel()
@@ -346,8 +345,9 @@ end
 
 -- ---------- Init ----------
 
--- Load any stored host config (legacy ssh/tunnel). The Rust path doesn't
--- consume these directly yet, but the wizard / status commands still do.
+-- Load any stored host config on startup. When an SSH host is the active
+-- config, these Config.options fields are what rust_kernel.start forwards to
+-- jovian-core's remote launch.
 vim.schedule(function()
     local ok, data = pcall(Hosts.load_hosts)
     if ok and data.current and data.configs[data.current] then

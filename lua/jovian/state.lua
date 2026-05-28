@@ -42,10 +42,6 @@ M.cell_status_cache = {} -- { [cell_id] = { status, msg, bufnr } }
 
 M.dataframe_sessions = {} -- { [var_name] = { total, offset, limit, columns } }
 
-M.tunnel_job_id = nil
-M.tunnel_host = nil
-M.remote_kernel_pid = nil
-
 M.last_stream_type = nil
 M.last_stream_tail = nil
 M.vars_request_force_float = false
