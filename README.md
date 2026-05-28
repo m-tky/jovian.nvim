@@ -372,20 +372,6 @@ require("jovian").setup({
 
 ---
 
-## 🌲 TreeSitter Queries
-
-To enable **Markdown highlighting** in Python comments and **Magic Command**
-highlighting:
-
-1. Create a `queries/python` directory in your Neovim config
-   (e.g. `~/.config/nvim/queries/python/`).
-2. Copy `injections.scm` and `highlights.scm` from
-   `jovian.nvim/queries/python/` into it.
-
-Neovim's TreeSitter picks these up automatically.
-
----
-
 ## 🧠 How it Works
 
 ```
