@@ -115,6 +115,18 @@ M.defaults = {
     -- contrasting indicator, exactly like render-markdown.
     table_border = "round",
 
+    -- LaTeX math in markdown cells (render-markdown.nvim style): `$…$` inline
+    -- and `$$…$$` blocks are converted to a Unicode approximation. The
+    -- converter is built in (Greek, operators, super/subscripts, \frac, \sqrt,
+    -- … — no external dependency). For fuller coverage, set `converter` to an
+    -- external command (render-markdown's "latex2text" / "utftex", or a list
+    -- tried in order); the built-in is the fallback. Only renders when
+    -- markdown_cell_style is on.
+    math = {
+        enabled = true,
+        converter = nil,
+    },
+
     -- Render the kernel's outputs (stdout/stderr/text result/error
     -- traceback, PNG/GIF/JPEG images) below each cell as virt_lines,
     -- jupynvim-style. Reads from the nbformat-style JSON sidecar that
@@ -192,6 +204,7 @@ M.defaults = {
         md_quote = nil, -- defaults to link Comment
         md_table_divider = nil, -- defaults to link Special
         md_table_header = nil, -- defaults to bold = true
+        md_math = nil, -- inline/block math (defaults to link Special)
         -- Inline cell output rendering. JovianOutDivider styles the
         -- `├─ Out[N] ─┤` separator; JovianOutStdout / JovianOutStderr
         -- / JovianOutResult / JovianOutError tint the body lines.

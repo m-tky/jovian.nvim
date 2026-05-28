@@ -99,6 +99,7 @@ rendered as Unicode-placeholder rows whose fg color encodes the image_id.
 | `ui/cell_frame.lua` | Card-frame extmarks + inline output block (opt-in) |
 | `ui/markdown_cell.lua` | Markdown cell styling: headings/bold/code + inline images (data-URI / file-path, via Kitty) (opt-in) |
 | `ui/markdown_table.lua` | Box-drawn markdown tables, render-markdown.nvim style: overlays each source row in place (conceal raw + inline virt_text), borders as virt_lines, CJK-aware widths, `table_border` presets + alignment marks. Single line per row (no wrap/`<br>`) |
+| `ui/math.lua` | Self-contained LaTeX→Unicode converter for `$…$`/`$$…$$` math (Greek, operators, super/subscripts, `\frac`/`\sqrt`/`\mathbb`, …); optional external `math.converter` (latex2text/utftex) hook |
 | `ui/output_render.lua` | nbformat outputs → virt_lines / preview lines |
 | `ui/kitty.lua` | Kitty Unicode-placeholder generation + async transmit |
 | `diagnostics.lua` | LSP diagnostic filter for magic commands (`!ls`, `%timeit`) |
@@ -174,6 +175,7 @@ require("jovian").setup({
                                       -- to draw the frame above indent-guide plugins
     markdown_cell_style = false,      -- conceal #/**bold**/tables in markdown cells
     table_border        = "round",    -- round/none/heavy/double (render-markdown style)
+    math = { enabled = true, converter = nil },  -- $…$/$$…$$ → Unicode; converter = external tool opt-in
     inline_outputs      = false,      -- render outputs below the cell (needs cell_frame)
     folding             = false,      -- cell-based folds for Python files
 

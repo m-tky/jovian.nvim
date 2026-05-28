@@ -196,6 +196,9 @@
             echo ">>> Running Markdown Table Tests..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_markdown_table.lua
 
+            echo ">>> Running Math (LaTeX) Tests..."
+            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_math.lua
+
             echo ">>> Running Rust Backend Phase 1 Smoke Test (Real Kernel)..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_rust_phase1.lua
 

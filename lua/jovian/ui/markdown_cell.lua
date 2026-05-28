@@ -16,6 +16,7 @@ local M = {}
 local Config = require("jovian.config")
 local CellFrame = require("jovian.ui.cell_frame")
 local MarkdownTable = require("jovian.ui.markdown_table")
+local Math = require("jovian.ui.math")
 
 local NS = vim.api.nvim_create_namespace("JovianMarkdownCell")
 
@@ -33,6 +34,7 @@ local HL = {
     Quote = "JovianMdQuote",
     TableDivider = "JovianMdTableDivider",
     TableHeader = "JovianMdTableHeader",
+    Math = "JovianMdMath",
 }
 
 -- For each heading level, try Tree-sitter markdown groups first
@@ -105,6 +107,7 @@ local function set_default_hl()
     apply_hl(HL.Quote, user_hl.md_quote, "Comment")
     apply_hl(HL.TableDivider, user_hl.md_table_divider, "Special")
     apply_hl(HL.TableHeader, user_hl.md_table_header, { bold = true })
+    apply_hl(HL.Math, user_hl.md_math, "Special")
 end
 
 -- Visual badge inserted before each heading body so the eye picks up the
@@ -535,6 +538,98 @@ local function render_markdown_image(buf, lnum, content, offset)
     return true
 end
 
+local function math_enabled()
+    local m = Config.options.math
+    return m == nil or m.enabled ~= false
+end
+
+-- Inline `$…$` math: conceal the span and overlay the converted Unicode.
+local function style_math_inline(buf, lnum, content, offset)
+    if not math_enabled() then
+        return
+    end
+    local s = 1
+    while true do
+        local a, b, inner = content:find("%$([^%$\n]+)%$", s)
+        if not a then
+            break
+        end
+        conceal_range(buf, lnum, offset + a - 1, offset + b)
+        pcall(vim.api.nvim_buf_set_extmark, buf, NS, lnum, offset + a - 1, {
+            virt_text = { { Math.convert(inner), HL.Math } },
+            virt_text_pos = "inline",
+            hl_mode = "combine",
+            priority = 200,
+        })
+        s = b + 1
+    end
+end
+
+-- Detect a `$$ … $$` block starting at cell_lines[i]. Returns (end_index,
+-- inner_latex) or nil if the line doesn't open a (terminated) block.
+local function detect_math_block(cell_lines, i)
+    local first = cell_lines[i].content
+    local single = first:match("^%s*%$%$(.-)%$%$%s*$")
+    if single then
+        return i, single
+    end
+    if not first:find("%$%$", 1) then
+        return nil
+    end
+    local _, open_end = first:find("%$%$")
+    local parts = {}
+    local after = first:sub(open_end + 1)
+    if vim.trim(after) ~= "" then
+        parts[#parts + 1] = after
+    end
+    for j = i + 1, #cell_lines do
+        local cj = cell_lines[j].content
+        local close = cj:find("%$%$")
+        if close then
+            local before = cj:sub(1, close - 1)
+            if vim.trim(before) ~= "" then
+                parts[#parts + 1] = before
+            end
+            return j, table.concat(parts, " ")
+        end
+        parts[#parts + 1] = cj
+    end
+    return nil -- unterminated
+end
+
+-- Render a `$$ … $$` block: single-line blocks overlay in place; multi-line
+-- blocks collapse the source rows and draw the Unicode above (with the
+-- cell-frame `│ ` prefix so it lines up, like the table renderer).
+local function render_math_block(buf, cell_lines, start_i, end_i, inner)
+    local uni = Math.convert(inner)
+    if start_i == end_i then
+        local info = cell_lines[start_i]
+        conceal_range(buf, info.ln, info.offset, info.offset + #info.content)
+        pcall(vim.api.nvim_buf_set_extmark, buf, NS, info.ln, info.offset, {
+            virt_text = { { uni, HL.Math } },
+            virt_text_pos = "inline",
+            hl_mode = "combine",
+            priority = 201,
+        })
+        return
+    end
+    local first_ln = cell_lines[start_i].ln
+    for k = start_i, end_i do
+        pcall(vim.api.nvim_buf_set_extmark, buf, NS, cell_lines[k].ln, 0, { conceal_lines = "", priority = 200 })
+    end
+    local chunks = {}
+    if Config.options.cell_frame then
+        chunks[1] = { "│ ", "JovianCellBorderMarkdown" }
+    end
+    chunks[#chunks + 1] = { uni, HL.Math }
+    local anchor = first_ln > 0 and first_ln - 1 or first_ln
+    pcall(vim.api.nvim_buf_set_extmark, buf, NS, anchor, 0, {
+        virt_lines = { chunks },
+        virt_lines_above = anchor == first_ln,
+        priority = 200,
+    })
+end
+
 local function is_markdown_header(line)
     if not line:match("^#%s*%%%%") then
         return false
@@ -596,7 +691,14 @@ function M.render(bufnr)
             local i = 1
             while i <= #cell_lines do
                 local info = cell_lines[i]
-                if info.content ~= "" and is_table_row(info.content) then
+                local math_end, math_inner
+                if info.content ~= "" and math_enabled() and info.content:find("%$%$") then
+                    math_end, math_inner = detect_math_block(cell_lines, i)
+                end
+                if math_end then
+                    render_math_block(bufnr, cell_lines, i, math_end, math_inner)
+                    i = math_end + 1
+                elseif info.content ~= "" and is_table_row(info.content) then
                     local block_end = i
                     while block_end + 1 <= #cell_lines and is_table_row(cell_lines[block_end + 1].content) do
                         block_end = block_end + 1
@@ -622,6 +724,7 @@ function M.render(bufnr)
                                 style_bullet(bufnr, info.ln, info.content, info.offset)
                             end
                             style_inline(bufnr, info.ln, info.content, info.offset)
+                            style_math_inline(bufnr, info.ln, info.content, info.offset)
                         end
                     end
                     i = i + 1
