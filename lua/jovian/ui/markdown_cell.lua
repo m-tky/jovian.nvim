@@ -399,6 +399,141 @@ local function style_inline(buf, lnum, content, offset)
     -- `_underscore_` form if you need it (also intentionally unhandled).
 end
 
+-- Heuristic: are we on a terminal that speaks the Kitty graphics protocol?
+-- Used to avoid spawning jovian-core / reading image files when no picture
+-- could be drawn anyway. The core's kitty_attach still validates for real.
+local function has_kitty_graphics()
+    if vim.env.KITTY_WINDOW_ID and vim.env.KITTY_WINDOW_ID ~= "" then
+        return true
+    end
+    local t = ((vim.env.TERM_PROGRAM or "") .. " " .. (vim.env.TERM or "")):lower()
+    return t:find("kitty", 1, true) ~= nil or t:find("ghostty", 1, true) ~= nil or t:find("wezterm", 1, true) ~= nil
+end
+
+local function is_image_ext(target)
+    local lower = target:lower()
+    return lower:match("%.png$") ~= nil
+        or lower:match("%.jpe?g$") ~= nil
+        or lower:match("%.gif$") ~= nil
+        or lower:match("%.webp$") ~= nil
+end
+
+-- Resolve a markdown image path against the buffer's file directory.
+-- Returns an absolute, readable path or nil.
+local function resolve_image_path(buf, target)
+    local p = target
+    if p:sub(1, 1) == "~" then
+        p = vim.fn.expand(p)
+    end
+    if p:sub(1, 1) ~= "/" then
+        local base = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ":p:h")
+        if base == "" then
+            return nil
+        end
+        p = base .. "/" .. p
+    end
+    p = vim.fn.fnamemodify(p, ":p")
+    if vim.fn.filereadable(p) == 1 then
+        return p
+    end
+    return nil
+end
+
+local function file_to_b64(path)
+    local f = io.open(path, "rb")
+    if not f then
+        return nil
+    end
+    local data = f:read("*a")
+    f:close()
+    if not data or data == "" or not (vim.base64 and vim.base64.encode) then
+        return nil
+    end
+    return vim.base64.encode(data)
+end
+
+-- Whole-line conceal (conceal_lines, Neovim 0.11+) removes a line entirely.
+-- A plain char-conceal only hides the glyphs — a long data-URI's bytes still
+-- occupy the line, so it keeps wrapping over dozens of (blank) screen rows.
+local _has_conceal_lines = vim.fn.has("nvim-0.11") == 1
+
+-- Render a markdown image line identically for both source forms found in
+-- jupytext-exported notebooks: remove the `![alt](target)` source line and, in
+-- its place, show a `🖼 <name>` label with the picture directly below it.
+--   * data URI:  ![alt](data:image/png;base64,<...>)
+--   * file path: ![alt](figs/plot.png)
+-- The label name is the alt text, falling back to the file's basename (paths)
+-- or "image" (data URIs). Both forms collapse the source line with
+-- conceal_lines and hang the label+picture off the line ABOVE (conceal_lines
+-- also suppresses virt_lines on the same line) — so they render in the same
+-- place. (`attachment:` refs carry no data after jupytext and remote URLs
+-- aren't fetched, so both are left as plain markdown.) Returns true if the line
+-- was a renderable image, so the caller skips normal styling.
+local function render_markdown_image(buf, lnum, content, offset)
+    local alt, target = content:match("!%[(.-)%]%(([^%s%)]+)%)")
+    if not target then
+        return false
+    end
+
+    local b64
+    local is_datauri = false
+    if target:match("^data:image/[%w%+%.%-]+;base64,") then
+        is_datauri = true
+        b64 = target:match("^data:image/[%w%+%.%-]+;base64,(.+)$")
+    elseif target:match("^attachment:") or target:match("^%a[%w%+%.%-]*://") then
+        return false
+    elseif is_image_ext(target) and has_kitty_graphics() then
+        local path = resolve_image_path(buf, target)
+        if not path then
+            return false
+        end
+        b64 = file_to_b64(path)
+        if not b64 then
+            return false
+        end
+    else
+        return false
+    end
+
+    -- Virt_lines block: a `🖼 <name>` label row, then the picture (if Kitty).
+    local name = alt
+    if name == "" then
+        name = is_datauri and "image" or vim.fn.fnamemodify(target, ":t")
+    end
+    local virt = { { { "🖼 " .. name, HL.Quote } } }
+    if has_kitty_graphics() then
+        local Kitty = require("jovian.ui.kitty")
+        local OutRender = require("jovian.ui.output_render")
+        local cols, rows =
+            OutRender.fit_image_in_area(b64, Config.options.image_cols or 56, Config.options.image_rows or 14)
+        local id = Kitty.ensure_transmitted(b64, function()
+            M.schedule(buf)
+        end, cols, rows)
+        if id then
+            for _, prow in ipairs(Kitty.build_virt_lines(id, rows, cols)) do
+                table.insert(virt, prow)
+            end
+        end
+    end
+
+    if _has_conceal_lines then
+        -- Collapse the source line and anchor the label+picture to the line
+        -- above so conceal_lines doesn't also suppress the virt_lines.
+        pcall(vim.api.nvim_buf_set_extmark, buf, NS, lnum, 0, { conceal_lines = "", priority = 200 })
+        local anchor = lnum > 0 and lnum - 1 or lnum
+        pcall(vim.api.nvim_buf_set_extmark, buf, NS, anchor, 0, { virt_lines = virt, priority = 200 })
+    else
+        -- Fallback (Neovim < 0.11, no conceal_lines): char-conceal the span and
+        -- hang the block on the same line. A gap may remain for long data URIs.
+        local s, e = content:find("!%[.-%]%([^%s%)]+%)")
+        if s then
+            conceal_range(buf, lnum, offset + s - 1, offset + e)
+        end
+        pcall(vim.api.nvim_buf_set_extmark, buf, NS, lnum, 0, { virt_lines = virt, priority = 200 })
+    end
+    return true
+end
+
 local function is_markdown_header(line)
     if not line:match("^#%s*%%%%") then
         return false
@@ -473,13 +608,15 @@ function M.render(bufnr)
                     i = block_end + 1
                 else
                     if info.content ~= "" then
-                        if
-                            not style_heading(bufnr, info.ln, info.content, info.offset)
-                            and not style_quote(bufnr, info.ln, info.content, info.offset)
-                        then
-                            style_bullet(bufnr, info.ln, info.content, info.offset)
+                        if not render_markdown_image(bufnr, info.ln, info.content, info.offset) then
+                            if
+                                not style_heading(bufnr, info.ln, info.content, info.offset)
+                                and not style_quote(bufnr, info.ln, info.content, info.offset)
+                            then
+                                style_bullet(bufnr, info.ln, info.content, info.offset)
+                            end
+                            style_inline(bufnr, info.ln, info.content, info.offset)
                         end
-                        style_inline(bufnr, info.ln, info.content, info.offset)
                     end
                     i = i + 1
                 end

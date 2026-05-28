@@ -190,6 +190,9 @@
             echo ">>> Running Kitty Image Placeholder Tests..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_kitty_images.lua
 
+            echo ">>> Running Markdown Cell Image Tests..."
+            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_markdown_images.lua
+
             echo ">>> Running Rust Backend Phase 1 Smoke Test (Real Kernel)..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_rust_phase1.lua
 

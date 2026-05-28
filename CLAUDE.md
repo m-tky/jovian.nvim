@@ -97,7 +97,7 @@ rendered as Unicode-placeholder rows whose fg color encodes the image_id.
 | `ui/renderers.lua` | Float content: variables pane, DataFrame viewer |
 | `ui/shared.lua` | REPL terminal output + system notifications |
 | `ui/cell_frame.lua` | Card-frame extmarks + inline output block (opt-in) |
-| `ui/markdown_cell.lua` | Markdown cell styling: headings/bold/code/tables (opt-in) |
+| `ui/markdown_cell.lua` | Markdown cell styling: headings/bold/code/tables + inline images (data-URI / file-path, via Kitty) (opt-in) |
 | `ui/output_render.lua` | nbformat outputs → virt_lines / preview lines |
 | `ui/kitty.lua` | Kitty Unicode-placeholder generation + async transmit |
 | `diagnostics.lua` | LSP diagnostic filter for magic commands (`!ls`, `%timeit`) |

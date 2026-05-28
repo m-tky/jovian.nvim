@@ -685,5 +685,9 @@ end
 
 M._HL = HL
 M._process_cr = process_cr
+-- Aspect-preserving image sizing (PNG/GIF header → terminal cells, capped to
+-- max_cols × max_rows, never upscaled). Reused by markdown_cell for inline
+-- data-URI images.
+M.fit_image_in_area = fit_image_in_area
 
 return M

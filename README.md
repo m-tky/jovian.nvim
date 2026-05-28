@@ -255,7 +255,11 @@ require("jovian").setup({
 - **`markdown_cell_style`** conceals markdown punctuation (`#`, `**`, `` ` ``)
   in `# %% [markdown]` cells and renders headings, bold/italic, code spans,
   bullets, and box-drawn tables. The raw source re-appears on the cursor line
-  while you edit.
+  while you edit. It also renders **inline images** in markdown cells: a
+  `![alt](data:image/png;base64,…)` data URI (e.g. a screenshot pasted into a
+  notebook and exported with jupytext — the long base64 is hidden) or a local
+  `![alt](figs/plot.png)` file path. Images need a Kitty-graphics terminal;
+  without one the base64 is still hidden so it never shows as raw text.
 - **`inline_outputs`** renders each cell's output (stdout/stderr, text results,
   error tracebacks, and Kitty images) as virtual lines beneath the cell. Long
   text output is elided to `inline_output_max_lines` (default 20) — the full
