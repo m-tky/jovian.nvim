@@ -169,6 +169,8 @@ require("jovian").setup({
 
     -- Phase 2/3/4 visuals (opt-in)
     cell_frame          = false,      -- ┌─ Code [id] ─┐ card borders
+    cell_frame_priority = 100,        -- side-bar extmark priority; raise (e.g. 4096)
+                                      -- to draw the frame above indent-guide plugins
     markdown_cell_style = false,      -- conceal #/**bold**/tables in markdown cells
     inline_outputs      = false,      -- render outputs below the cell (needs cell_frame)
     folding             = false,      -- cell-based folds for Python files

@@ -85,6 +85,19 @@ M.defaults = {
     -- user shouldn't get without asking.
     cell_frame = false,
 
+    -- Extmark priority of the cell-frame side bars (the left/right `│`).
+    -- This decides who wins when an indent-guide plugin draws a vertical
+    -- line in the same column as the frame's left bar:
+    --   • Keep it low (default) to let the indent / scope guide win — the
+    --     cell is still bounded by the top/bottom borders, header, and the
+    --     right bar.
+    --   • Raise it (e.g. 4096, above indent-blankline's scope priority of
+    --     1024) to draw the frame on top of the indent guide instead.
+    -- Safe at any value: the bars are inline / right_align virt_text, so
+    -- they never overlay (hide) the source code — priority only orders them
+    -- against other virtual text.
+    cell_frame_priority = 100,
+
     -- Conceal markdown punctuation (**bold**, *italic*, `code`, `#`
     -- heading markers) inside `# %% [markdown]` cells and replace them
     -- with styled virt_text. Independent of cell_frame; either can be

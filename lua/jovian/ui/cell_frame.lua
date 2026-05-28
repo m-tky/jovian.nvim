@@ -24,11 +24,6 @@ local Config = require("jovian.config")
 
 local NS = vim.api.nvim_create_namespace("JovianCellFrame")
 
--- Draw the frame above indent-guide plugins (indent-blankline's scope guide
--- defaults to priority 1024, others sit far lower) so the left/right bars stay
--- visible on indented lines instead of being overdrawn by an indent line.
-local FRAME_PRIORITY = 4096
-
 local HL_BORDER_CODE = "JovianCellBorderCode"
 local HL_BORDER_MARKDOWN = "JovianCellBorderMarkdown"
 
@@ -251,21 +246,24 @@ function M.render(bufnr, winid)
         -- 3. Left + right bars on each source line of the cell.
         --    `virt_text_repeat_linebreak = true` keeps the bars visible on
         --    every wrapped continuation row (Neovim 0.10+). On older
-        --    versions the option is silently ignored.
+        --    versions the option is silently ignored. The priority is
+        --    user-tunable so the bars can be drawn above (or yield to) an
+        --    indent-guide plugin's vertical line — see `cell_frame_priority`.
+        local bar_priority = Config.options.cell_frame_priority or 100
         for ln = h.line + 1, last_src do
             pcall(vim.api.nvim_buf_set_extmark, bufnr, NS, ln, 0, {
                 virt_text = { { "│ ", hl } },
                 virt_text_pos = "inline",
                 virt_text_repeat_linebreak = true,
                 hl_mode = "combine",
-                priority = FRAME_PRIORITY,
+                priority = bar_priority,
             })
             pcall(vim.api.nvim_buf_set_extmark, bufnr, NS, ln, 0, {
                 virt_text = { { "│", hl } },
                 virt_text_pos = "right_align",
                 virt_text_repeat_linebreak = true,
                 hl_mode = "combine",
-                priority = FRAME_PRIORITY,
+                priority = bar_priority,
             })
         end
 
