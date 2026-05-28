@@ -255,6 +255,21 @@ function M.view_dataframe_page(var_name, offset, limit)
     M.view_dataframe({ args = var_name, offset = offset, limit = limit })
 end
 
+-- Quick-eval in the Output window. Runs in the live kernel (sees all
+-- cell-defined variables) but with store_history=false, so it neither
+-- bumps Out[N] nor leaves a trace in the cell sidecar.
+function M.eval(code)
+    if not code or vim.trim(code) == "" then
+        vim.ui.input({ prompt = "eval> " }, function(input)
+            if input and vim.trim(input) ~= "" then
+                with_kernel(function() rust().eval(input) end)
+            end
+        end)
+        return
+    end
+    with_kernel(function() rust().eval(code) end)
+end
+
 -- ---------- Error diagnostics ----------
 
 function M.show_error_diagnostics(bufnr, cell_id, error_info)

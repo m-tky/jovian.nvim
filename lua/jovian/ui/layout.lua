@@ -478,6 +478,18 @@ function M.open_output_window()
     vim.wo[State.win.output].winfixheight = true
     Windows.apply_window_options(State.win.output, { wrap = true })
 
+    -- In the Output window, `i` / `e` prompts for a quick eval that runs in
+    -- the kernel without touching In/Out history. (`i` would otherwise drop
+    -- into terminal insert mode, which has no use for our read-only log.)
+    local buf = State.buf.output
+    local function map(lhs)
+        vim.keymap.set("n", lhs, function()
+            require("jovian.core").eval(nil)
+        end, { buffer = buf, desc = "Jovian: quick-eval in kernel" })
+    end
+    map("i")
+    map("e")
+
     -- Scroll to the latest output.
     local count = vim.api.nvim_buf_line_count(State.buf.output)
     pcall(vim.api.nvim_win_set_cursor, State.win.output, { count, 0 })

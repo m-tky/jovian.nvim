@@ -75,6 +75,7 @@
               ipython
               ipykernel
               jupyter-client
+              jupyter-console   # provides the `jupyter console` CLI for :JovianREPL
               numpy
               pandas
               matplotlib

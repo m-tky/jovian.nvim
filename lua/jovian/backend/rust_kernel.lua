@@ -425,6 +425,71 @@ function M.show_variables(opts)
     end)
 end
 
+--- Quick-eval a snippet in the running kernel WITHOUT recording it in the
+--- In/Out history (store_history=false in execute_collect). It runs in the
+--- same kernel so all cell-defined variables are visible, but it never
+--- increments Out[N], never touches the sidecar, and never becomes a cell.
+--- The input echo + result are appended to the Output log.
+function M.eval(code)
+    if not code or vim.trim(code) == "" then return end
+    local client = Core.client()
+    if not client or not State.rust_session_id then
+        vim.notify("jovian-core not started", vim.log.levels.WARN)
+        return
+    end
+
+    require("jovian.ui.shared").ensure_output_term()
+    UI.append_to_repl({ "eval> " .. code }, "Type")
+
+    client:request("execute_collect", {
+        session_id = State.rust_session_id,
+        code = code,
+        timeout_ms = 30000,
+    }, function(err, result)
+        vim.schedule(function()
+            if err then
+                UI.append_to_repl("[eval failed] " .. err, "ErrorMsg")
+                return
+            end
+            -- msgpack null decodes to vim.NIL (which is truthy), so
+            -- normalize the optional fields before testing them.
+            local function present(v)
+                if v == nil or v == vim.NIL then return nil end
+                return v
+            end
+            local stdout = present(result.stdout)
+            local stderr = present(result.stderr)
+            local rerror = present(result.error)
+            local data = present(result.result)
+
+            if type(stdout) == "string" and stdout ~= "" then
+                UI.append_stream_text(stdout, "stdout")
+            end
+            if type(stderr) == "string" and stderr ~= "" then
+                UI.append_stream_text(stderr, "stderr")
+            end
+            if type(rerror) == "table" then
+                UI.append_to_repl(
+                    (rerror.ename or "Error") .. ": " .. (rerror.evalue or ""),
+                    "ErrorMsg"
+                )
+                for _, tb in ipairs(rerror.traceback or {}) do
+                    for _, line in ipairs(vim.split(strip_ansi(tb), "\n")) do
+                        UI.append_to_repl(line, "ErrorMsg")
+                    end
+                end
+            end
+            if type(data) == "table" then
+                local tp = data["text/plain"]
+                if type(tp) == "table" then tp = table.concat(tp, "") end
+                if type(tp) == "string" and tp ~= "" then
+                    UI.append_to_repl(vim.split(strip_ansi(tp), "\n"), "Identifier")
+                end
+            end
+        end)
+    end)
+end
+
 --- Page a DataFrame via execute_collect. opts: { name, offset, limit }.
 function M.view_dataframe(opts)
     opts = opts or {}

@@ -370,6 +370,12 @@ function M.setup()
     vim.api.nvim_create_user_command("JovianToggleOutput", UI.toggle_output_window, {
         desc = "Jovian: Toggle the Output (REPL) window",
     })
+    vim.api.nvim_create_user_command("JovianEval", function(opts)
+        require("jovian.core").eval(opts.args)
+    end, {
+        nargs = "?",
+        desc = "Jovian: Quick-eval code in the kernel (not recorded in history)",
+    })
     vim.api.nvim_create_user_command("JovianToggleStatus", function()
         UI.toggle_status_visibility(vim.api.nvim_get_current_buf())
     end, { desc = "Jovian: Toggle cell status virtual text for current buffer" })
