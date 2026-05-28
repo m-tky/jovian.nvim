@@ -6,15 +6,24 @@
 
 use anyhow::Result;
 use dashmap::DashMap;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::RwLock as AsyncRwLock;
+use tokio::sync::{oneshot, RwLock as AsyncRwLock};
 
 use crate::kernel::{Kernel, KernelEvent};
 use crate::notebook::{self, CellOutputs, OutputStoreFile, Source};
+
+/// A collector for execute_collect: accumulates kernel events for one
+/// msg_id and fires `done` with the collected list when the kernel goes
+/// idle. The Option wrapper lets `try_collect` atomically extract the
+/// sender on the terminating event without holding a mutable borrow.
+pub struct Collector {
+    pub events: Vec<KernelEvent>,
+    pub done: Option<oneshot::Sender<Vec<KernelEvent>>>,
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CellSnapshot {
@@ -35,6 +44,10 @@ pub struct Session {
     pub kernel: AsyncRwLock<Option<Kernel>>,
     /// msg_id → cell_id, for routing iopub events back to the originating cell.
     pub msg_to_cell: DashMap<String, String>,
+    /// msg_id → output collector, for hidden execute requests (Vars/View).
+    /// Events with a matching parent_msg_id are diverted into the collector
+    /// instead of going through apply_event / cell_event notifications.
+    pub collect_pending: DashMap<String, Mutex<Collector>>,
 }
 
 impl Session {
@@ -48,7 +61,51 @@ impl Session {
             outputs: RwLock::new(outputs),
             kernel: AsyncRwLock::new(None),
             msg_to_cell: DashMap::new(),
+            collect_pending: DashMap::new(),
         }))
+    }
+
+    /// Register a collector for a hidden execute. Returns the receiver
+    /// that fires when the kernel goes idle for this msg_id.
+    pub fn start_collect(&self, msg_id: String) -> oneshot::Receiver<Vec<KernelEvent>> {
+        let (tx, rx) = oneshot::channel();
+        let c = Collector {
+            events: Vec::new(),
+            done: Some(tx),
+        };
+        self.collect_pending.insert(msg_id, Mutex::new(c));
+        rx
+    }
+
+    /// If the event's parent_msg_id has a pending collector, accumulate
+    /// the event into it and (on status=idle) fire the receiver. Returns
+    /// true if the event was consumed (skip normal routing).
+    pub fn try_collect(&self, ev: &KernelEvent) -> bool {
+        let parent = match ev_parent(ev) {
+            Some(p) => p,
+            None => return false,
+        };
+        let entry = match self.collect_pending.get(&parent) {
+            Some(e) => e,
+            None => return false,
+        };
+        let mut c = entry.lock();
+        c.events.push(ev.clone());
+        // status=idle marks the end of a request's iopub stream.
+        let is_idle = matches!(
+            ev,
+            KernelEvent::Status { execution_state, .. } if execution_state == "idle"
+        );
+        if is_idle {
+            if let Some(tx) = c.done.take() {
+                let events = std::mem::take(&mut c.events);
+                let _ = tx.send(events);
+            }
+            drop(c);
+            drop(entry);
+            self.collect_pending.remove(&parent);
+        }
+        true
     }
 
     pub fn snapshot(&self) -> SessionSnapshot {
@@ -194,6 +251,22 @@ impl Session {
             tracing::warn!("persist sidecar: {e:?}");
         }
         Some((cell_id, payload))
+    }
+}
+
+// Helper: extract parent_msg_id from any KernelEvent variant.
+fn ev_parent(ev: &KernelEvent) -> Option<String> {
+    match ev {
+        KernelEvent::Stream { parent_msg_id, .. } => parent_msg_id.clone(),
+        KernelEvent::DisplayData { parent_msg_id, .. } => parent_msg_id.clone(),
+        KernelEvent::ExecuteResult { parent_msg_id, .. } => parent_msg_id.clone(),
+        KernelEvent::Error { parent_msg_id, .. } => parent_msg_id.clone(),
+        KernelEvent::Status { parent_msg_id, .. } => parent_msg_id.clone(),
+        KernelEvent::ExecuteInput { parent_msg_id, .. } => parent_msg_id.clone(),
+        KernelEvent::ExecuteReply { parent_msg_id, .. } => parent_msg_id.clone(),
+        KernelEvent::UpdateDisplayData { parent_msg_id, .. } => parent_msg_id.clone(),
+        KernelEvent::ClearOutput { parent_msg_id, .. } => parent_msg_id.clone(),
+        KernelEvent::KernelInfo { parent_msg_id, .. } => parent_msg_id.clone(),
     }
 }
 

@@ -209,6 +209,7 @@ impl Server {
             "restart_kernel" => self.restart_kernel(p).await,
             "execute" => self.execute(p).await,
             "execute_silent" => self.execute_silent(p).await,
+            "execute_collect" => self.execute_collect(p).await,
             "complete" => self.complete(p).await,
             "inspect" => self.inspect(p).await,
             "clear_outputs" => self.clear_outputs(p),
@@ -348,6 +349,12 @@ impl Server {
         let sid_clone = sid.clone();
         tokio::spawn(async move {
             while let Some(ev) = rx.recv().await {
+                // Hidden execute requests (Vars/View etc.) register a
+                // collector keyed by msg_id; their events are diverted
+                // there instead of going through cell_event routing.
+                if session_clone.try_collect(&ev) {
+                    continue;
+                }
                 if let Some((cell_id, payload)) = session_clone.apply_event(&ev) {
                     let note = json!({
                         "session_id": sid_clone,
@@ -438,6 +445,99 @@ impl Server {
             .insert(msg_id.clone(), cell_id.to_string());
         kernel.execute_with_id(&source, msg_id.clone()).await?;
         Ok(json!({ "msg_id": msg_id }))
+    }
+
+    /// Run a code snippet and collect its iopub output (stream, result,
+    /// error) into one reply. Used by hidden-execute features (Vars,
+    /// View). Doesn't increment the kernel's execution counter and isn't
+    /// routed to any cell_event subscriber.
+    async fn execute_collect(&self, p: Json) -> Result<Json> {
+        use crate::kernel::KernelEvent;
+        use serde_json::Value;
+        let sid = p
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("session_id"))?;
+        let code = p
+            .get("code")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("code"))?;
+        let timeout_ms = p
+            .get("timeout_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(5000);
+        let session = self
+            .sessions
+            .get(sid)
+            .ok_or_else(|| anyhow!("no session"))?
+            .clone();
+        let kernel_guard = session.kernel.read().await;
+        let kernel = kernel_guard
+            .as_ref()
+            .ok_or_else(|| anyhow!("kernel not started"))?;
+
+        let msg_id = uuid::Uuid::new_v4().to_string();
+        let rx = session.start_collect(msg_id.clone());
+        // store_history=false keeps Vars/View probes out of Out[N].
+        kernel
+            .execute_with_id_opts(code, msg_id.clone(), false, false)
+            .await?;
+
+        let events = match tokio::time::timeout(
+            std::time::Duration::from_millis(timeout_ms),
+            rx,
+        )
+        .await
+        {
+            Ok(Ok(evs)) => evs,
+            Ok(Err(_)) => {
+                session.collect_pending.remove(&msg_id);
+                return Err(anyhow!("execute_collect: receiver dropped"));
+            }
+            Err(_) => {
+                session.collect_pending.remove(&msg_id);
+                return Err(anyhow!("execute_collect: timeout after {timeout_ms}ms"));
+            }
+        };
+
+        // Aggregate into a single reply payload.
+        let mut stdout = String::new();
+        let mut stderr = String::new();
+        let mut result: Option<Value> = None;
+        let mut error: Option<Value> = None;
+        for ev in events {
+            match ev {
+                KernelEvent::Stream { name, text, .. } => {
+                    if name == "stderr" {
+                        stderr.push_str(&text);
+                    } else {
+                        stdout.push_str(&text);
+                    }
+                }
+                KernelEvent::ExecuteResult { data, .. } | KernelEvent::DisplayData { data, .. } => {
+                    result = Some(data);
+                }
+                KernelEvent::Error {
+                    ename,
+                    evalue,
+                    traceback,
+                    ..
+                } => {
+                    error = Some(json!({
+                        "ename": ename,
+                        "evalue": evalue,
+                        "traceback": traceback,
+                    }));
+                }
+                _ => {}
+            }
+        }
+        Ok(json!({
+            "stdout": stdout,
+            "stderr": stderr,
+            "result": result,
+            "error": error,
+        }))
     }
 
     async fn execute_silent(&self, p: Json) -> Result<Json> {

@@ -300,4 +300,176 @@ function M.restart(on_ready)
     vim.defer_fn(function() M.start(on_ready) end, 200)
 end
 
+-- ---------- Hidden execute helpers (Vars / View) ----------
+
+-- The `[==[ ... ]==]` long-string level keeps `]]` inside the Python
+-- list comprehensions (df.index[a:b]] inside outer [ ... ]) from
+-- terminating the Lua string early.
+local VARS_SNIPPET = [==[
+import json, types
+def _jovian_vars(offset, limit):
+    try:
+        from IPython import get_ipython
+        shell = get_ipython()
+        ns = shell.user_ns if shell else globals()
+        keys = [k for k in ns.keys() if not k.startswith("_")]
+        keys.sort()
+        filtered = []
+        for k in keys:
+            val = ns[k]
+            if isinstance(val, (types.ModuleType, types.FunctionType, type)):
+                continue
+            filtered.append(k)
+        total = len(filtered)
+        page = filtered[offset:offset + limit]
+        out = []
+        for name in page:
+            val = ns[name]
+            tn = type(val).__name__
+            r = repr(val).replace("\n", " ")
+            info = (r[:97] + "...") if len(r) > 100 else r
+            out.append({"name": name, "type": tn, "info": info})
+        print("__JOVIAN_VARS__" + json.dumps({
+            "variables": out, "total_vars": total,
+            "offset": offset, "limit": limit,
+        }))
+    except Exception as e:
+        print("__JOVIAN_ERR__" + json.dumps({"error": str(e)}))
+_jovian_vars(%d, %d)
+]==]
+
+local DF_SNIPPET = [==[
+import json
+def _jovian_df(name, offset, limit):
+    try:
+        from IPython import get_ipython
+        shell = get_ipython()
+        ns = shell.user_ns if shell else globals()
+        if name not in ns:
+            print("__JOVIAN_ERR__" + json.dumps({"error": "name not found: " + name}))
+            return
+        df = ns[name]
+        if not hasattr(df, "columns"):
+            print("__JOVIAN_ERR__" + json.dumps({"error": name + " is not a DataFrame"}))
+            return
+        total = len(df)
+        data = {
+            "name": name,
+            "columns": [str(c) for c in df.columns],
+            "index": [str(i) for i in df.index[offset:offset + limit]],
+            "data": df.iloc[offset:offset + limit].values.tolist(),
+            "total_rows": total,
+            "offset": offset,
+            "limit": limit,
+        }
+        print("__JOVIAN_DF__" + json.dumps(data, default=str))
+    except Exception as e:
+        print("__JOVIAN_ERR__" + json.dumps({"error": str(e)}))
+_jovian_df(%q, %d, %d)
+]==]
+
+-- Find a line in the collected stdout that starts with `marker`, return
+-- the decoded JSON suffix (or nil if marker not found / decode failed).
+local function parse_marker(stdout, marker)
+    if type(stdout) ~= "string" then return nil end
+    for _, line in ipairs(vim.split(stdout, "\n", { plain = true })) do
+        local payload = line:match("^" .. marker .. "(.*)$")
+        if payload then
+            local ok, decoded = pcall(vim.json.decode, payload)
+            if ok then return decoded end
+        end
+    end
+    return nil
+end
+
+--- Show the variables pane via execute_collect. opts may contain
+--- force_float, offset, limit.
+function M.show_variables(opts)
+    opts = opts or {}
+    local client = Core.client()
+    if not client or not State.rust_session_id then
+        vim.notify("jovian-core not started", vim.log.levels.WARN)
+        return
+    end
+    local offset = opts.offset or 0
+    local limit = opts.limit or 100
+    local code = string.format(VARS_SNIPPET, offset, limit)
+    client:request("execute_collect", {
+        session_id = State.rust_session_id,
+        code = code,
+        timeout_ms = 5000,
+    }, function(err, result)
+        if err then
+            vim.schedule(function()
+                vim.notify("jovian: variables fetch failed: " .. err, vim.log.levels.WARN)
+            end)
+            return
+        end
+        local errpayload = parse_marker(result.stdout, "__JOVIAN_ERR__")
+        if errpayload then
+            vim.schedule(function()
+                vim.notify("jovian: " .. (errpayload.error or "?"), vim.log.levels.WARN)
+            end)
+            return
+        end
+        local data = parse_marker(result.stdout, "__JOVIAN_VARS__")
+        if not data then return end
+        vim.schedule(function()
+            UI.show_variables(data, opts.force_float)
+        end)
+    end)
+end
+
+--- Page a DataFrame via execute_collect. opts: { name, offset, limit }.
+function M.view_dataframe(opts)
+    opts = opts or {}
+    local client = Core.client()
+    if not client or not State.rust_session_id then
+        vim.notify("jovian-core not started", vim.log.levels.WARN)
+        return
+    end
+    local name = opts.name
+    if not name or name == "" then
+        name = vim.fn.expand("<cword>")
+    end
+    if not name or name == "" then
+        vim.notify("jovian: no variable name", vim.log.levels.WARN)
+        return
+    end
+    local offset = opts.offset or 0
+    local limit = opts.limit or Config.options.dataframe_page_size or 50
+    local code = string.format(DF_SNIPPET, name, offset, limit)
+    client:request("execute_collect", {
+        session_id = State.rust_session_id,
+        code = code,
+        timeout_ms = 10000,
+    }, function(err, result)
+        if err then
+            vim.schedule(function()
+                vim.notify("jovian: dataframe fetch failed: " .. err, vim.log.levels.WARN)
+            end)
+            return
+        end
+        local errpayload = parse_marker(result.stdout, "__JOVIAN_ERR__")
+        if errpayload then
+            vim.schedule(function()
+                vim.notify("jovian: " .. (errpayload.error or "?"), vim.log.levels.WARN)
+            end)
+            return
+        end
+        local data = parse_marker(result.stdout, "__JOVIAN_DF__")
+        if not data then return end
+        -- Record session for paging callbacks.
+        State.dataframe_sessions[data.name] = {
+            total = data.total_rows,
+            offset = data.offset,
+            limit = data.limit,
+            columns = data.columns,
+        }
+        vim.schedule(function()
+            UI.show_dataframe(data)
+        end)
+    end)
+end
+
 return M

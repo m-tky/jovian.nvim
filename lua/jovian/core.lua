@@ -493,20 +493,7 @@ function M.send_payload(code, cell_id, filename)
     vim.api.nvim_chan_send(State.job_id, msg .. "\n")
 end
 
--- Phase 1 of the Rust core migration: kernel_bridge.py is still the only
--- backend that implements variable inspection / DataFrames. When the user
--- has flipped use_rust_core=true these warn instead of silently no-op'ing
--- on a `chan_send` to the sentinel job_id.
-local function require_python_bridge(label)
-    if State.rust_active then
-        vim.notify(
-            ("Jovian: %s is not yet supported under use_rust_core=true"):format(label),
-            vim.log.levels.WARN
-        )
-        return false
-    end
-    return true
-end
+-- (require_python_bridge gate removed; Vars/View now have Rust paths.)
 
 function M.send_cell()
     if not is_window_open() then
@@ -660,7 +647,14 @@ function M.run_cells_above()
 end
 
 function M.view_dataframe(args)
-    if not require_python_bridge("view_dataframe") then return end
+    if State.rust_active then
+        local name = type(args) == "table" and args.args or args
+        local offset = (args and type(args) == "table") and args.offset or 0
+        local limit = (args and type(args) == "table") and args.limit
+            or Config.options.dataframe_page_size
+        get_rust_kernel().view_dataframe({ name = name, offset = offset, limit = limit })
+        return
+    end
     with_kernel(function()
         local var_name = type(args) == "table" and args.args or args
         if var_name == "" or var_name == nil then
@@ -683,8 +677,11 @@ function M.view_dataframe_page(var_name, offset, limit)
 end
 
 function M.show_variables(opts)
-    if not require_python_bridge("show_variables") then return end
     opts = opts or {}
+    if State.rust_active then
+        get_rust_kernel().show_variables(opts)
+        return
+    end
     with_kernel(function()
         if opts.force_float then
             State.vars_request_force_float = true
