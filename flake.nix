@@ -73,7 +73,6 @@
             ps: with ps; [
               ipython
               ipykernel
-              jupyter-console   # provides the `jupyter console` CLI for :JovianREPL
               numpy
               pandas
               matplotlib
@@ -252,7 +251,6 @@
             ps: with ps; [
               ipython
               ipykernel
-              jupyter-console
               numpy
               pandas
               matplotlib

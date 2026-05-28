@@ -95,8 +95,10 @@ function M.setup()
     vim.api.nvim_create_user_command("JovianSendSelection", Core.send_selection, { range = true })
     vim.api.nvim_create_user_command("JovianRunAll", Core.run_all_cells, {})
     vim.api.nvim_create_user_command("JovianRestart", Core.restart_kernel, {})
-    vim.api.nvim_create_user_command("JovianREPL", Core.open_repl, {
-        desc = "Open interactive IPython REPL connected to the running kernel",
+    vim.api.nvim_create_user_command("JovianREPL", function()
+        require("jovian.core").eval_repl()
+    end, {
+        desc = "Continuous eval session in the kernel (replaces jupyter console)",
     })
 
     -- Host Management

@@ -270,6 +270,26 @@ function M.eval(code)
     with_kernel(function() rust().eval(code) end)
 end
 
+-- Continuous REPL session in the Output window: prompt → run → re-prompt.
+-- Submitting an empty line (or cancelling) exits. This is the replacement
+-- for the old :JovianREPL (jupyter console), reusing the in-Output eval
+-- so there's no jupyter-console dependency.
+function M.eval_repl()
+    with_kernel(function()
+        local function step()
+            vim.ui.input({ prompt = "eval> " }, function(input)
+                if not input or vim.trim(input) == "" then
+                    return -- empty / <Esc> ends the session
+                end
+                rust().eval(input, function()
+                    vim.schedule(step) -- loop for the next expression
+                end)
+            end)
+        end
+        step()
+    end)
+end
+
 -- ---------- Error diagnostics ----------
 
 function M.show_error_diagnostics(bufnr, cell_id, error_info)
@@ -288,44 +308,6 @@ function M.show_error_diagnostics(bufnr, cell_id, error_info)
             source = "Jovian",
         },
     })
-end
-
--- ---------- REPL attach (jupyter console) ----------
-
--- jovian-core writes its connection file to /tmp/jovian/kernel-<uuid>.json.
--- Pick the newest one as a best-effort handle for `jupyter console
--- --existing`. Falls back to a standalone IPython that won't share
--- variables with the running kernel.
-function M.open_repl()
-    if not State.job_id then
-        vim.notify("Start the kernel first with :JovianStart", vim.log.levels.WARN)
-        return
-    end
-    local function launch_console(conn_file)
-        vim.cmd("belowright split")
-        vim.api.nvim_win_set_height(0, math.floor(vim.o.lines * 0.35))
-        if conn_file then
-            vim.fn.termopen({ "jupyter", "console", "--existing", conn_file })
-        else
-            vim.notify(
-                "[Jovian] No connection file — opening standalone IPython"
-                    .. " (variables not shared with cells)",
-                vim.log.levels.WARN
-            )
-            vim.fn.termopen({ Config.options.python_interpreter, "-m", "IPython" })
-        end
-        vim.cmd("startinsert")
-    end
-
-    local files = vim.fn.glob("/tmp/jovian/kernel-*.json", false, true)
-    if #files == 0 then
-        launch_console(nil)
-        return
-    end
-    table.sort(files, function(a, b)
-        return vim.fn.getftime(a) > vim.fn.getftime(b)
-    end)
-    launch_console(files[1])
 end
 
 -- ---------- Init ----------

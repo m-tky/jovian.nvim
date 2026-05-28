@@ -430,11 +430,15 @@ end
 --- same kernel so all cell-defined variables are visible, but it never
 --- increments Out[N], never touches the sidecar, and never becomes a cell.
 --- The input echo + result are appended to the Output log.
-function M.eval(code)
-    if not code or vim.trim(code) == "" then return end
+function M.eval(code, on_done)
+    if not code or vim.trim(code) == "" then
+        if on_done then on_done() end
+        return
+    end
     local client = Core.client()
     if not client or not State.rust_session_id then
         vim.notify("jovian-core not started", vim.log.levels.WARN)
+        if on_done then on_done() end
         return
     end
 
@@ -449,6 +453,7 @@ function M.eval(code)
         vim.schedule(function()
             if err then
                 UI.append_to_repl("[eval failed] " .. err, "ErrorMsg")
+                if on_done then on_done() end
                 return
             end
             -- msgpack null decodes to vim.NIL (which is truthy), so
@@ -486,6 +491,7 @@ function M.eval(code)
                     UI.append_to_repl(vim.split(strip_ansi(tp), "\n"), "Identifier")
                 end
             end
+            if on_done then on_done() end
         end)
     end)
 end

@@ -478,14 +478,15 @@ function M.open_output_window()
     vim.wo[State.win.output].winfixheight = true
     Windows.apply_window_options(State.win.output, { wrap = true })
 
-    -- In the Output window, `i` / `e` prompts for a quick eval that runs in
-    -- the kernel without touching In/Out history. (`i` would otherwise drop
-    -- into terminal insert mode, which has no use for our read-only log.)
+    -- In the Output window, `i` / `e` starts a continuous eval session in
+    -- the kernel (prompt → run → re-prompt; empty line exits). Runs with
+    -- store_history=false so nothing pollutes In/Out. (`i` would otherwise
+    -- drop into terminal insert mode, useless for our read-only log.)
     local buf = State.buf.output
     local function map(lhs)
         vim.keymap.set("n", lhs, function()
-            require("jovian.core").eval(nil)
-        end, { buffer = buf, desc = "Jovian: quick-eval in kernel" })
+            require("jovian.core").eval_repl()
+        end, { buffer = buf, desc = "Jovian: eval session in kernel" })
     end
     map("i")
     map("e")
