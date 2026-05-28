@@ -187,6 +187,9 @@
 
             echo ">>> Running Rust Backend Phase 1 Smoke Test (Real Kernel)..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_rust_phase1.lua
+
+            echo ">>> Running Remote SSH Kernel Test (skipped unless JOVIAN_REMOTE_SSH_HOST set)..."
+            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_remote_ssh.lua
           '';
         in
         {

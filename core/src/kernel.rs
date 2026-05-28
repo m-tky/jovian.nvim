@@ -333,6 +333,12 @@ impl Kernel {
             .arg("BatchMode=yes")
             .arg("-o")
             .arg("ExitOnForwardFailure=yes")
+            // Force a PTY (-tt) so that when we kill the local ssh, the remote
+            // session receives SIGHUP and the kernel dies with us. Without a
+            // PTY the kernel orphans: it never writes to real stdout (output
+            // goes over ZMQ) so a closed channel yields neither SIGHUP nor
+            // SIGPIPE, leaving the remote process running.
+            .arg("-tt")
             .args(forward_args(&local_ports, &remote_ports))
             .arg(host)
             .arg(remote_cmd)
