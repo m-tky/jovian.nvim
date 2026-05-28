@@ -2,6 +2,21 @@ local M = {}
 local Config = require("jovian.config")
 local State = require("jovian.state")
 
+-- Ensure the output buffer + terminal channel exist so writes are captured
+-- even when the Output window isn't currently shown (output_window =
+-- "ondemand"). Returns false in "off" mode so callers skip writing.
+local function ensure_output_term()
+    if Config.options.output_window == "off" then
+        return false
+    end
+    if State.term_chan and State.buf.output and vim.api.nvim_buf_is_valid(State.buf.output) then
+        return true
+    end
+    State.buf.output = require("jovian.ui.windows").get_or_create_buf("JovianOutput")
+    return State.term_chan ~= nil
+end
+M.ensure_output_term = ensure_output_term
+
 function M.send_notification(msg, level)
     level = level or "info"
     local mode = Config.options.notify_mode
@@ -27,7 +42,7 @@ function M.send_notification(msg, level)
 end
 
 function M.append_to_repl(text, hl_group)
-    if not State.term_chan then
+    if not ensure_output_term() then
         return
     end
 
@@ -96,7 +111,7 @@ function M.append_to_repl(text, hl_group)
 end
 
 function M.append_stream_text(text, stream_type)
-    if not State.term_chan then
+    if not ensure_output_term() then
         return
     end
 

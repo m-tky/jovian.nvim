@@ -1,4 +1,4 @@
-# %% [markdown] id="yHsYAPQhwMhZ"
+# %% [markdown]
 # # Jovian.nvim Demo
 # 
 # Welcome to the demo of **jovian.nvim**!
@@ -19,7 +19,7 @@ import pandas as pd
 print("Hello from Jovian.nvim!")
 print("This is a standard print statement.")
 
-# %% [markdown] id="3UafByxVensg"
+# %% [markdown]
 # ## 1. Variables & Inspection
 # 
 # Define some variables. Open the Variables Pane (`:JovianToggleVars`) to see them.
@@ -34,7 +34,7 @@ my_dict = {"a": 1, "b": 2, "c": 3}
 
 print(f"Defined variables: x={x}, y={y}, name={name}")
 
-# %% [markdown] id="Zf4GmouZYXNz"
+# %% [markdown]
 # ## 2. Plotting
 # 
 # `jovian.nvim` supports inline plotting using `matplotlib`.
@@ -54,11 +54,15 @@ plt.grid(True, linestyle="--", alpha=0.6)
 plt.legend()
 plt.show()
 
-# %% [markdown] id="Wl8PoTgKyThx"
+# %% [markdown]
 # ## 3. DataFrames
 # 
 # You can view pandas DataFrames.
 # Use `:JovianView df` to see the dataframe in a floating window.
+# | Name  | Age|
+# | --- | --- |
+# | Alice | 30|
+# | test | 30|
 
 # %% id="GnX0A6OI-4C9"
 # Create a sample DataFrame
@@ -74,7 +78,7 @@ print(df)
 
 # Try running :JovianView df
 
-# %% [markdown] id="bjdGDpHA0bqh"
+# %% [markdown]
 # ## 4. Magic Commands
 # 
 # IPython magic commands are supported.
@@ -86,9 +90,10 @@ print(df)
 # %% id="EAhY9ljLcp88"
 # Run a shell command
 !echo "Current Directory:"
+!pip install pyqt5
 !pwd
 
-# %% [markdown] id="OPQUwmI2LBEx"
+# %% [markdown]
 # ## 5. Progress & Interactivity
 # 
 # Long-running cells show "Running..." status.
@@ -96,82 +101,22 @@ print(df)
 # %% id="ZiL5ICSQW54J"
 from tqdm import tqdm
 print("Starting long task with tqdm...")
-for i in tqdm(range(10)):
-    time.sleep(1)
+for i in tqdm(range(20)):
+    time.sleep(0.1)
 print("Done!")
-
-# %% [markdown] id="ux6cMwXWih5W"
-# ## 7. Edge Cases & Stress Tests
-# 
-# ### 7.1 Multiple Plots in One Cell
-# Each call to `plt.show()` should generate a separate entry in the preview.
-
-# %% id="rLN5J1va8q97"
-plt.figure(figsize=(5, 3))
-plt.plot(np.random.randn(50).cumsum(), label="Random Walk 1")
-plt.legend()
-plt.show()
-
-plt.figure(figsize=(5, 3))
-plt.plot(np.random.randn(50).cumsum(), label="Random Walk 2", color="red")
-plt.legend()
-plt.show()
-
-# ### 7.2 Mixed Output Streams
-# Testing real-time interleaving of stdout and stderr.
-
-# %% id="Jkbi9JrSjbMt"
-import sys
-import time
-
-for i in range(3):
-    print(f"Stdout message {i}")
-    sys.stdout.flush()
-    time.sleep(0.2)
-    print(f"Stderr error message {i}", file=sys.stderr)
-    sys.stderr.flush()
-    time.sleep(0.2)
-
-# ### 7.3 Large Volume Output
-# Stress test for the REPL buffer handling.
-
-# %% id="vpBdhEyDuTM0"
-print("Generating 100 lines of output...")
-for i in range(100):
-    print(f"Line {i:03d}: " + "ABC " * 20)
-print("Done!")
-
-# ### 7.4 Unicode Support
-# Ensuring characters from different languages and emojis render correctly.
-
-# %% id="rf4Gn4mO9zqr"
-print("Testing Unicode Rendering:")
-print("Japanese: こんにちは")
-print("Chinese:  你好")
-print("Korean:   안녕하세요")
-print("Arabic:   السلام عليكم")
-print("Emoji:    🚀 🦀 🐍 ⚛️")
-unicode_val = "乱 (Chaos)"
-
-# %% [markdown] id="ashyfKSsZJfd"
-# ### 7.6 Kernel Interruption
-# **Manual Test:** Run the cell below and press `:JovianInterrupt` (or your shortcut).
-# The status should change to "Interrupted".
-
-# %% id="uvh0PSt47tkz"
-print("This will run for 30 seconds unless interrupted...")
-for i in range(30):
-    time.sleep(1)
-    print(f"Step {i+1}/30")
-print("If you see this, it wasn't interrupted.")
 
 # %% [markdown]
+# ## 6. Error Handling
+# 
+# Errors are captured and displayed nicely in the preview.
 
-# ### 7.5 Syntax Error
-# This should be caught by the kernel and reported as a specialized error.
+# %% id="lXBTaWpt_3G8"
+# This will raise an error
+def cause_error():
+    return 1 / 0
 
-# %% id="kD8c__InW8Vt"
-def broken_function():
-    if True
-        print("Missing colon!")
-
+try:
+    cause_error()
+except ZeroDivisionError as e:
+    print("Caught an error, but here is what happens if we don't catch it:")
+    raise e

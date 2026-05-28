@@ -367,6 +367,9 @@ function M.setup()
     end, { bang = true })
     vim.api.nvim_create_user_command("JovianClearDiag", UI.clear_diagnostics, {})
     vim.api.nvim_create_user_command("JovianToggleVars", UI.toggle_variables_pane, {})
+    vim.api.nvim_create_user_command("JovianToggleOutput", UI.toggle_output_window, {
+        desc = "Jovian: Toggle the Output (REPL) window",
+    })
     vim.api.nvim_create_user_command("JovianToggleStatus", function()
         UI.toggle_status_visibility(vim.api.nvim_get_current_buf())
     end, { desc = "Jovian: Toggle cell status virtual text for current buffer" })

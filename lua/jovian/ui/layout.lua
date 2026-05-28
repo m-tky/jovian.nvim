@@ -253,6 +253,12 @@ function M.open_windows(target_win)
         M.open_layout(layout, parent_win)
     end
 
+    -- Output window is not part of the persistent layout; open it here
+    -- only when the user wants it always visible.
+    if Config.options.output_window == "always" then
+        M.open_output_window()
+    end
+
     -- Restore equalalways
     vim.o.equalalways = ea
 
@@ -423,6 +429,47 @@ function M.open_pin_window()
         vim.api.nvim_win_set_buf(State.win.pin, Windows.placeholder_buf())
         Windows.apply_window_options(State.win.pin, { wrap = true })
     end
+end
+
+-- Open the Output (REPL) window as a bottom split showing the shared
+-- output buffer. The buffer + term channel are created lazily by the
+-- writers (ui/shared.ensure_output_term), so any output produced while
+-- the window was closed is already there when it opens.
+function M.open_output_window()
+    if Config.options.output_window == "off" then return end
+    if State.win.output and vim.api.nvim_win_is_valid(State.win.output) then
+        return
+    end
+    require("jovian.ui.shared").ensure_output_term()
+    if not (State.buf.output and vim.api.nvim_buf_is_valid(State.buf.output)) then
+        return
+    end
+
+    local cur_win = vim.api.nvim_get_current_win()
+    vim.cmd("botright split")
+    State.win.output = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(State.win.output, State.buf.output)
+    local height = math.floor(get_effective_height() * 0.25)
+    vim.api.nvim_win_set_height(State.win.output, math.max(height, 5))
+    vim.wo[State.win.output].winfixheight = true
+    Windows.apply_window_options(State.win.output, { wrap = true })
+
+    -- Scroll to the latest output.
+    local count = vim.api.nvim_buf_line_count(State.buf.output)
+    pcall(vim.api.nvim_win_set_cursor, State.win.output, { count, 0 })
+
+    if cur_win and vim.api.nvim_win_is_valid(cur_win) then
+        vim.api.nvim_set_current_win(cur_win)
+    end
+end
+
+function M.toggle_output_window()
+    if State.win.output and vim.api.nvim_win_is_valid(State.win.output) then
+        vim.api.nvim_win_close(State.win.output, true)
+        State.win.output = nil
+        return
+    end
+    M.open_output_window()
 end
 
 function M.toggle_variables_pane()

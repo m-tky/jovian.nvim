@@ -19,6 +19,17 @@ M.defaults = {
     dataframe_page_size = 50,
     remote_cwd = ".",
 
+    -- Output (REPL) window visibility:
+    --   "ondemand" : not shown by default — toggle with :JovianToggleOutput.
+    --                Output still accumulates in the background buffer so the
+    --                full log is there when you open it. (default)
+    --   "always"   : opened automatically as a bottom split with the panels.
+    --   "off"      : never shown (output is dropped, not buffered).
+    -- With inline_outputs on, each cell shows its own result, so the REPL
+    -- window is mostly useful for cross-cell history and live `\r` streams
+    -- (tqdm) — hence on-demand by default to save screen space.
+    output_window = "ondemand",
+
     ui = {
         -- cell_separator_highlight:
         -- "line"  : Highlight the entire line (default).
@@ -26,6 +37,9 @@ M.defaults = {
         -- "none"  : No highlight.
         cell_separator_highlight = "text",
         -- winblend = 0,
+        -- Default persistent panels. Output + Variables are intentionally
+        -- absent: Variables shows as a float via :JovianVars (or a pane via
+        -- :JovianToggleVars), Output is governed by `output_window` above.
         layouts = {
             {
                 elements = {
@@ -35,14 +49,6 @@ M.defaults = {
                 -- position: "left", "right", "top", "bottom"
                 position = "left",
                 size = 0.35,
-            },
-            {
-                elements = {
-                    { id = "output", size = 0.55 },
-                    { id = "variables", size = 0.45 },
-                },
-                position = "bottom",
-                size = 0.25,
             },
         },
     },

@@ -139,6 +139,7 @@ local function on_cell_event(params)
             local cols = Config.options.image_cols or 56
 
             local function write_image(image_id)
+                require("jovian.ui.shared").ensure_output_term()
                 if not State.term_chan then return end
                 local r = bit.band(bit.rshift(image_id, 16), 0xff)
                 local g = bit.band(bit.rshift(image_id, 8), 0xff)

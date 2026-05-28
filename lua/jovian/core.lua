@@ -21,8 +21,22 @@ local function rust()
     return RustKernel
 end
 
+-- "Is the jovian UI set up?" The Output window is now on-demand, so this
+-- checks the persistent panels (preview / output / variables / pin) — any
+-- one being open means :JovianOpen has run and results have somewhere to go
+-- (inline rendering aside).
 local function is_window_open()
-    return State.win.output and vim.api.nvim_win_is_valid(State.win.output)
+    for _, win in ipairs({
+        State.win.preview,
+        State.win.output,
+        State.win.variables,
+        State.win.pin,
+    }) do
+        if win and vim.api.nvim_win_is_valid(win) then
+            return true
+        end
+    end
+    return false
 end
 
 -- ---------- Kernel lifecycle ----------
