@@ -216,6 +216,26 @@ function M.setup(opts)
             end,
         })
 
+        -- Anti-conceal: re-render markdown styling when the cursor changes
+        -- LINE so the rendered overlay on the line being edited is dropped
+        -- (raw source shown) and restored when the cursor leaves — matching
+        -- render-markdown.nvim. Gated on a line change so horizontal motion
+        -- within a line is free; the render is itself debounced.
+        local _md_line = {}
+        vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+            pattern = "*.py",
+            callback = function(ev)
+                if not Config.options.markdown_cell_style then
+                    return
+                end
+                local line = vim.api.nvim_win_get_cursor(0)[1]
+                if _md_line[ev.buf] ~= line then
+                    _md_line[ev.buf] = line
+                    MarkdownCell.schedule(ev.buf)
+                end
+            end,
+        })
+
         -- WinResized / VimResized: re-render every python buffer in every
         -- visible window. The original code only refreshed the current
         -- buffer, which left borders stale when the resize affected a

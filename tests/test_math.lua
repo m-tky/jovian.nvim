@@ -96,5 +96,18 @@ ok(
 )
 ok(not src_concealed, "multi-line block keeps its raw `$$` source visible (not collapsed)")
 
+-- ---------------------------- anti-conceal on the cursor line ----------------------------
+-- With the cursor ON the single-line block (row 5), its in-place overlay must
+-- be dropped so the raw `$$…$$` shows for editing (render-markdown anti_conceal).
+vim.api.nvim_win_set_cursor(0, { 6, 0 }) -- 1-indexed; row 5 == single-line block
+MC.render(0)
+local single_overlay_on_cursor = false
+for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, NS, 0, -1, { details = true })) do
+    if m[2] == 5 and m[4].virt_text and m[4].virt_text_pos == "inline" then
+        single_overlay_on_cursor = true
+    end
+end
+ok(not single_overlay_on_cursor, "cursor line's single-line block overlay is dropped (anti-conceal)")
+
 print(string.format("\n%d passed, %d failed", pass, fail))
 os.exit(fail == 0 and 0 or 1)

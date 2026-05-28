@@ -90,8 +90,11 @@ local function pad(s, width, align)
 end
 
 -- Render `block` (list of { ln, content, offset } source rows, already
--- `#`-stripped) in place. Returns true if rendered.
-function M.render(buf, ns, block)
+-- `#`-stripped) in place. Returns true if rendered. `cursor_ln` (0-indexed, or
+-- nil) is left raw — its conceal+overlay are skipped so editing that row shows
+-- the source markdown instead of doubling under the rendered row (anti-conceal,
+-- render-markdown.nvim style). The borders and other rows stay rendered.
+function M.render(buf, ns, block, cursor_ln)
     if #block == 0 then
         return false
     end
@@ -151,6 +154,9 @@ function M.render(buf, ns, block)
     -- rendered row as inline virt_text at the same column.
     for i, info in ipairs(block) do
         local r = rows[i]
+        if info.ln == cursor_ln then
+            goto continue -- anti-conceal: leave the cursor's row raw
+        end
         local chunks
         if r.sep then
             local line = seg_line(B[4], B[5], B[6], function(c)
@@ -176,6 +182,7 @@ function M.render(buf, ns, block)
             hl_mode = "combine",
             priority = 201,
         })
+        ::continue::
     end
 
     -- Top + bottom borders as virtual lines around the block. When cell_frame

@@ -631,7 +631,7 @@ end
 -- multi-line block falls back to `above`. `above`/`below`: the Unicode is drawn
 -- as a virtual line and the raw LaTeX stays visible (cell-frame `│ ` prefix so
 -- it lines up under the frame).
-local function render_math_block(buf, cell_lines, start_i, end_i, inner)
+local function render_math_block(buf, cell_lines, start_i, end_i, inner, cursor_ln)
     local uni = Math.convert(inner)
     local pos = (Config.options.math or {}).position or "center"
     if pos == "center" and start_i ~= end_i then
@@ -640,6 +640,9 @@ local function render_math_block(buf, cell_lines, start_i, end_i, inner)
 
     if pos == "center" then
         local first = cell_lines[start_i]
+        if first.ln == cursor_ln then
+            return -- anti-conceal: show the raw `$$…$$` on the cursor line
+        end
         conceal_range(buf, first.ln, first.offset, first.offset + #first.content)
         pcall(vim.api.nvim_buf_set_extmark, buf, NS, first.ln, first.offset, {
             virt_text = { { uni, HL.Math } },
@@ -678,7 +681,9 @@ local function is_markdown_header(line)
 end
 
 function M.render(bufnr)
-    bufnr = bufnr or vim.api.nvim_get_current_buf()
+    if not bufnr or bufnr == 0 then
+        bufnr = vim.api.nvim_get_current_buf()
+    end
     if not vim.api.nvim_buf_is_valid(bufnr) then
         return
     end
@@ -687,6 +692,17 @@ function M.render(bufnr)
     vim.api.nvim_buf_clear_namespace(bufnr, NS, 0, -1)
     if not Config.options.markdown_cell_style then
         return
+    end
+
+    -- Anti-conceal (render-markdown.nvim semantics): on the line the cursor is
+    -- on, skip the conceal+overlay decorations so the raw source shows for
+    -- editing rather than the rendered form doubling on top of the source
+    -- `concealcursor=""` reveals. Only meaningful when this buffer is in the
+    -- current window; a re-render is driven by the CursorMoved autocmd.
+    local cursor_ln = nil
+    local win = vim.api.nvim_get_current_win()
+    if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == bufnr then
+        cursor_ln = vim.api.nvim_win_get_cursor(win)[1] - 1
     end
 
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
@@ -720,9 +736,12 @@ function M.render(bufnr)
             end
 
             -- Conceal the Python `#` prefix on every line up front. The
-            -- buffer text is untouched (still valid Python).
+            -- buffer text is untouched (still valid Python). The cursor's own
+            -- line is left raw (anti-conceal) so editing shows the real source.
             for _, info in ipairs(cell_lines) do
-                conceal_range(bufnr, info.ln, 0, info.offset)
+                if info.ln ~= cursor_ln then
+                    conceal_range(bufnr, info.ln, 0, info.offset)
+                end
             end
 
             -- Walk lines, grouping consecutive table rows so we can align
@@ -735,7 +754,7 @@ function M.render(bufnr)
                     math_end, math_inner = detect_math_block(cell_lines, i)
                 end
                 if math_end then
-                    render_math_block(bufnr, cell_lines, i, math_end, math_inner)
+                    render_math_block(bufnr, cell_lines, i, math_end, math_inner, cursor_ln)
                     i = math_end + 1
                 elseif info.content ~= "" and is_table_row(info.content) then
                     local block_end = i
@@ -749,21 +768,26 @@ function M.render(bufnr)
                     -- Render-markdown-style in-place overlay (rows stay real,
                     -- borders added as virt_lines). Falls back to the legacy
                     -- pad renderer only if the block isn't a real table.
-                    if not MarkdownTable.render(bufnr, NS, block) then
+                    if not MarkdownTable.render(bufnr, NS, block, cursor_ln) then
                         render_table_block(bufnr, block)
                     end
                     i = block_end + 1
                 else
                     if info.content ~= "" then
+                        -- Images stay concealed even on the cursor line —
+                        -- revealing a base64 data URI mid-edit is worse than
+                        -- the doubling anti-conceal fixes for text overlays.
                         if not render_markdown_image(bufnr, info.ln, info.content, info.offset) then
-                            if
-                                not style_heading(bufnr, info.ln, info.content, info.offset)
-                                and not style_quote(bufnr, info.ln, info.content, info.offset)
-                            then
-                                style_bullet(bufnr, info.ln, info.content, info.offset)
+                            if info.ln ~= cursor_ln then
+                                if
+                                    not style_heading(bufnr, info.ln, info.content, info.offset)
+                                    and not style_quote(bufnr, info.ln, info.content, info.offset)
+                                then
+                                    style_bullet(bufnr, info.ln, info.content, info.offset)
+                                end
+                                style_inline(bufnr, info.ln, info.content, info.offset)
+                                style_math_inline(bufnr, info.ln, info.content, info.offset)
                             end
-                            style_inline(bufnr, info.ln, info.content, info.offset)
-                            style_math_inline(bufnr, info.ln, info.content, info.offset)
                         end
                     end
                     i = i + 1
