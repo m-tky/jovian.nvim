@@ -397,6 +397,12 @@ end
 
 -- ── Load ─────────────────────────────────────────────────────────────────────
 
+-- This file mocks vim.fn.jobstart/chansend to assert that the command
+-- callbacks dispatch the expected legacy-bridge payloads. The Rust path
+-- (use_rust_core=true) talks to a real jovian-core binary which the mock
+-- env can't satisfy, so explicitly opt back into the legacy path.
+require("jovian.config").options.use_rust_core = false
+
 require("jovian.commands").setup()
 local State = require("jovian.state")
 

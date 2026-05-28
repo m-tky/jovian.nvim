@@ -429,7 +429,12 @@ impl Server {
             .get(sid)
             .ok_or_else(|| anyhow!("no session"))?
             .clone();
-        let source = {
+        // Source resolution: explicit `code` param wins (used by direct
+        // code-runs, tests, scratchpad). Otherwise look up the cell by id
+        // in the most recent reparse.
+        let source = if let Some(c) = p.get("code").and_then(|v| v.as_str()) {
+            c.to_string()
+        } else {
             let src = session.source.read();
             src.cell(cell_id)
                 .map(|c| c.source.clone())

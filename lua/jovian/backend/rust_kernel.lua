@@ -245,7 +245,7 @@ end
 
 --- Send a cell's code to the kernel. Caller must have set up State.cell_buf_map
 --- and friends BEFORE calling — same contract as the legacy send_payload.
-function M.execute(_code, cell_id)
+function M.execute(code, cell_id)
     local client = Core.client()
     if not client or not State.rust_session_id then
         vim.notify("jovian-core not started", vim.log.levels.WARN)
@@ -255,9 +255,13 @@ function M.execute(_code, cell_id)
     -- (including any newly-inserted cells / freshly-assigned ids).
     local text = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
     client:notify("reparse", { session_id = State.rust_session_id, text = text })
+    -- Pass `code` explicitly so the Rust side runs exactly what the caller
+    -- intended even if the buffer doesn't carry a cell with that id
+    -- (direct send_payload calls, scratchpad lines, tests).
     client:request("execute", {
         session_id = State.rust_session_id,
         cell_id = cell_id,
+        code = code,
     }, function(err, _)
         if err then
             vim.schedule(function()

@@ -88,19 +88,15 @@
           );
 
           initLua = pkgs.writeText "init.lua" ''
-            -- Setup jovian.nvim
+            -- Setup jovian.nvim. use_rust_core defaults to true post-
+            -- Phase 5, so we just opt in to the visual upgrades and
+            -- inline outputs here; the Rust backend handles execute /
+            -- Vars / View transparently.
             require("jovian").setup({
               python_interpreter = "${pythonEnvFull}/bin/python3",
-              -- Phase 2 visual upgrades — enabled in the demo so the
-              -- nix-jovian wrapper showcases them. End users opt in via
-              -- their own setup() call.
               cell_frame = true,
               markdown_cell_style = true,
-              -- Stays on the legacy (Python bridge) path so the existing
-              -- test suite (which exercises :JovianCopy / :JovianView /
-              -- etc.) keeps passing. For the Rust-backend preview with
-              -- inline cell outputs use `nix run .#nvim-jovian-rust`.
-              use_rust_core = false,
+              inline_outputs = true,
             })
 
             -- Setup nvim-treesitter
@@ -155,60 +151,13 @@
             export XDG_STATE_HOME=$(mktemp -d)
             export JOVIAN_PYTHON="${pythonEnvFull}/bin/python3"
             export LD_LIBRARY_PATH="${pkgs.zeromq}/lib:${pkgs.openssl}/lib:$LD_LIBRARY_PATH"
-            exec ${neovimWithPlugins}/bin/nvim -u ${initLua} "$@"
-          '';
-
-          # Rust-backend preview: same demo but with use_rust_core +
-          # inline_outputs flipped on. :JovianVars / :JovianView etc.
-          # warn-and-noop on this path until Phase 5 lands those features.
-          initLuaRust = pkgs.writeText "init.lua" ''
-            require("jovian").setup({
-              python_interpreter = "${pythonEnvFull}/bin/python3",
-              cell_frame = true,
-              markdown_cell_style = true,
-              use_rust_core = true,
-              inline_outputs = true,
-            })
-
-            local ts_ok, ts_configs = pcall(require, "nvim-treesitter.configs")
-            if ts_ok then
-                ts_configs.setup({
-                    highlight = {
-                        enable = true,
-                        additional_vim_regex_highlighting = false,
-                    },
-                })
-            end
-
-            vim.opt.number = true
-            vim.opt.termguicolors = true
-            vim.cmd("colorscheme habamax")
-
-            vim.diagnostic.config({
-              virtual_text = true,
-              signs = true,
-              underline = true,
-              update_in_insert = false,
-            })
-            vim.lsp.config("pyright", {})
-            vim.lsp.config("ruff", {})
-            vim.lsp.enable("pyright")
-            vim.lsp.enable("ruff")
-          '';
-
-          nvim-jovian-rust = pkgs.writeShellScriptBin "nvim-jovian-rust" ''
-            export NVIM_APPNAME="nvim-jovian-rust"
-            export XDG_CONFIG_HOME=$(mktemp -d)
-            export XDG_DATA_HOME=$(mktemp -d)
-            export XDG_STATE_HOME=$(mktemp -d)
-            export JOVIAN_PYTHON="${pythonEnvFull}/bin/python3"
             # Resolve the controlling tty in the launching shell (where it
-            # still exists) and hand it down. Lua's /proc/self/fd fallback
-            # covers Linux without this, but on macOS /proc isn't there so
-            # the env var is the only path that works.
+            # still exists) and hand it down so the Rust core can write
+            # Kitty graphics escapes. macOS lacks /proc, so without this
+            # env var the Lua fallback can't find the tty.
             JOVIAN_TTY=$(tty 2>/dev/null) || JOVIAN_TTY=""
             export JOVIAN_TTY
-            exec ${neovimWithPlugins}/bin/nvim -u ${initLuaRust} "$@"
+            exec ${neovimWithPlugins}/bin/nvim -u ${initLua} "$@"
           '';
 
           nvim-jovian-fallback = pkgs.writeShellScriptBin "nvim-jovian-fallback" ''
@@ -263,7 +212,6 @@
           default = nvim-jovian;
           nvim-jovian = nvim-jovian;
           nvim-jovian-fallback = nvim-jovian-fallback;
-          nvim-jovian-rust = nvim-jovian-rust;
           jovian-nvim = pkgs.vimPlugins.jovian-nvim;
           jovian-core = pkgs.jovian-core;
           pythonEnv = pythonEnvFull;
