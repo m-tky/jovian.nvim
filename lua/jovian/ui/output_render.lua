@@ -303,90 +303,12 @@ end
 
 local PREVIEW_NS = vim.api.nvim_create_namespace("jovian_preview_outputs")
 
-local function outputs_to_preview_lines(outputs, refresh_cb, max_cols, max_rows)
-    local lines, hls = {}, {}
-    local function push(text, hl)
-        for _, line in ipairs(vim.split(text, "\n", { plain = true })) do
-            table.insert(lines, line)
-            table.insert(hls, hl)
-        end
-    end
-    local Kitty -- lazily required only when an image appears
-    for _, o in ipairs(outputs) do
-        local kind = o.output_type
-        if kind == "stream" then
-            local hl = (o.name == "stderr") and HL.Stderr or HL.Stdout
-            local text = strip_ansi(as_str(o.text)):gsub("\n$", "")
-            if text ~= "" then push(text, hl) end
-        elseif kind == "execute_result" or kind == "display_data" then
-            local data = o.data or {}
-            local img_b64 = find_image_b64(data)
-            local tp = as_str(data["text/plain"])
-            local has_img = img_b64 ~= nil
-            if has_img and tp ~= ""
-                and (tp:match("^<Figure ")
-                    or tp:match("^<[%w._]+ object>$")
-                    or tp:match("^<[%w._]+ object at 0x[%x]+>$"))
-            then
-                tp = ""
-            end
-            if tp ~= "" then
-                push(strip_ansi(tp):gsub("\n$", ""), HL.Result)
-            end
-            if has_img then
-                Kitty = Kitty or require("jovian.ui.kitty")
-                local cols, rows = fit_image_in_area(
-                    img_b64, max_cols or 56, max_rows or 14
-                )
-                local id = Kitty.ensure_transmitted(img_b64, refresh_cb, cols, rows)
-                if id then
-                    -- Each row of the placement is a list of per-cell chunks
-                    -- (all sharing the same JovianKittyImg_<id> hl). For the
-                    -- preview buffer we concatenate them into one string per
-                    -- line — kitty intercepts the placeholders the same way
-                    -- whether they came from virt_text or real buffer bytes.
-                    local placement = Kitty.build_virt_lines(id, rows, cols)
-                    for _, row_chunks in ipairs(placement) do
-                        local parts = {}
-                        for _, chunk in ipairs(row_chunks) do
-                            table.insert(parts, chunk[1])
-                        end
-                        table.insert(lines, table.concat(parts))
-                        table.insert(hls, row_chunks[1][2])
-                    end
-                else
-                    -- Reserve blank rows while the transmit is in flight;
-                    -- the refresh_cb re-runs render_to_buffer once the
-                    -- image_id arrives.
-                    for _ = 1, rows do
-                        table.insert(lines, "")
-                        table.insert(hls, HL.Result)
-                    end
-                end
-            end
-        elseif kind == "error" then
-            local head = as_str(o.ename) .. ": " .. as_str(o.evalue)
-            if head ~= ": " then push(head, HL.Error) end
-            for _, tb in ipairs(o.traceback or {}) do
-                push(strip_ansi(as_str(tb)), HL.Error)
-            end
-        end
-    end
-    return lines, hls
-end
-
---- Render a cell's outputs into a buffer (the side preview pane or a pin).
---- Writes text lines + applies highlight extmarks per line. Safe to call
---- on every cursor move; cheap because we don't allocate per-row chunks.
 -- Parse the dimensions (pixels) out of an image's base64 header.
 -- Returns width, height or nil for unknown formats. Only PNG and GIF
 -- carry width/height at fixed offsets close enough to the start that
 -- decoding the first 32 base64 chars (= 24 bytes) is sufficient.
 -- JPEG falls through to nil and the caller uses the default aspect.
 local function decode_b64_head(b64)
-    -- Strip whitespace and decode the first complete group (32 chars =
-    -- 24 bytes). vim.base64.decode wants a full string; we pad to a
-    -- multiple of 4 chars.
     local head = b64:sub(1, 32):gsub("[\r\n]", "")
     while #head % 4 ~= 0 do head = head .. "=" end
     local ok, raw = pcall(vim.base64.decode, head)
@@ -473,6 +395,82 @@ local function fit_image_in_area(b64, max_cols, max_rows)
     if rows < 2 then rows = 2 end
     return cols, rows
 end
+
+local function outputs_to_preview_lines(outputs, refresh_cb, max_cols, max_rows)
+    local lines, hls = {}, {}
+    local function push(text, hl)
+        for _, line in ipairs(vim.split(text, "\n", { plain = true })) do
+            table.insert(lines, line)
+            table.insert(hls, hl)
+        end
+    end
+    local Kitty -- lazily required only when an image appears
+    for _, o in ipairs(outputs) do
+        local kind = o.output_type
+        if kind == "stream" then
+            local hl = (o.name == "stderr") and HL.Stderr or HL.Stdout
+            local text = strip_ansi(as_str(o.text)):gsub("\n$", "")
+            if text ~= "" then push(text, hl) end
+        elseif kind == "execute_result" or kind == "display_data" then
+            local data = o.data or {}
+            local img_b64 = find_image_b64(data)
+            local tp = as_str(data["text/plain"])
+            local has_img = img_b64 ~= nil
+            if has_img and tp ~= ""
+                and (tp:match("^<Figure ")
+                    or tp:match("^<[%w._]+ object>$")
+                    or tp:match("^<[%w._]+ object at 0x[%x]+>$"))
+            then
+                tp = ""
+            end
+            if tp ~= "" then
+                push(strip_ansi(tp):gsub("\n$", ""), HL.Result)
+            end
+            if has_img then
+                Kitty = Kitty or require("jovian.ui.kitty")
+                local cols, rows = fit_image_in_area(
+                    img_b64, max_cols or 56, max_rows or 14
+                )
+                local id = Kitty.ensure_transmitted(img_b64, refresh_cb, cols, rows)
+                if id then
+                    -- Each row of the placement is a list of per-cell chunks
+                    -- (all sharing the same JovianKittyImg_<id> hl). For the
+                    -- preview buffer we concatenate them into one string per
+                    -- line — kitty intercepts the placeholders the same way
+                    -- whether they came from virt_text or real buffer bytes.
+                    local placement = Kitty.build_virt_lines(id, rows, cols)
+                    for _, row_chunks in ipairs(placement) do
+                        local parts = {}
+                        for _, chunk in ipairs(row_chunks) do
+                            table.insert(parts, chunk[1])
+                        end
+                        table.insert(lines, table.concat(parts))
+                        table.insert(hls, row_chunks[1][2])
+                    end
+                else
+                    -- Reserve blank rows while the transmit is in flight;
+                    -- the refresh_cb re-runs render_to_buffer once the
+                    -- image_id arrives.
+                    for _ = 1, rows do
+                        table.insert(lines, "")
+                        table.insert(hls, HL.Result)
+                    end
+                end
+            end
+        elseif kind == "error" then
+            local head = as_str(o.ename) .. ": " .. as_str(o.evalue)
+            if head ~= ": " then push(head, HL.Error) end
+            for _, tb in ipairs(o.traceback or {}) do
+                push(strip_ansi(as_str(tb)), HL.Error)
+            end
+        end
+    end
+    return lines, hls
+end
+
+--- Render a cell's outputs into a buffer (the side preview pane or a pin).
+--- Writes text lines + applies highlight extmarks per line. Safe to call
+--- on every cursor move; cheap because we don't allocate per-row chunks.
 
 function M.render_to_buffer(buf, win, source_path, cell_id, execution_count_hint)
     if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
