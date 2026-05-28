@@ -56,12 +56,27 @@ function M.setup(opts)
             end
         end,
     })
-    vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
+    -- Preview refresh on cursor move. We used to gate on CursorHold but
+    -- that waits for `updatetime` (4s default) to fire — far too sluggish
+    -- when stepping between cells. CursorMoved fires on every movement;
+    -- a 150ms uv-timer debounce keeps the rate sane and check_cursor_cell
+    -- itself early-returns when the cursor stays within the same cell.
+    local _cursor_timer = nil
+    vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
         pattern = "*",
         callback = function()
-            if vim.bo.filetype == "python" then
-                Session.check_cursor_cell()
+            if vim.bo.filetype ~= "python" then return end
+            if _cursor_timer then
+                _cursor_timer:close()
             end
+            _cursor_timer = (vim.uv or vim.loop).new_timer()
+            _cursor_timer:start(150, 0, vim.schedule_wrap(function()
+                Session.check_cursor_cell()
+                if _cursor_timer then
+                    pcall(_cursor_timer.close, _cursor_timer)
+                    _cursor_timer = nil
+                end
+            end))
         end,
     })
     vim.api.nvim_create_autocmd({ "BufWritePost", "VimLeavePre", "BufUnload", "BufWinEnter" }, {
