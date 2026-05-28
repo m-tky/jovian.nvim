@@ -19,8 +19,7 @@ local function assert_true(cond, msg)
     end
 end
 local function assert_eq(actual, expected, msg)
-    assert_true(actual == expected,
-        msg .. " (got " .. tostring(actual) .. ", want " .. tostring(expected) .. ")")
+    assert_true(actual == expected, msg .. " (got " .. tostring(actual) .. ", want " .. tostring(expected) .. ")")
 end
 
 require("jovian").setup({
@@ -51,13 +50,19 @@ local Core = require("jovian.backend.core")
 Core._kitty_attached = true
 Core._kitty_attach_error = nil
 local stub_client = {}
-function stub_client:request(method, params, cb)
+function stub_client.request(_self, method, params, cb)
     assert_eq(method, "kitty_transmit", "ensure_transmitted calls kitty_transmit")
     assert_true(params.png_b64 == "AAAA", "png_b64 forwarded verbatim")
-    vim.schedule(function() cb(nil, { image_id = 999 }) end)
+    vim.schedule(function()
+        cb(nil, { image_id = 999 })
+    end)
 end
-Core.client = function() return stub_client end
-Core.ensure = function() return stub_client end
+Core.client = function()
+    return stub_client
+end
+Core.ensure = function()
+    return stub_client
+end
 
 local cb_fired = false
 local first = Kitty.ensure_transmitted("AAAA", function(id)
@@ -65,7 +70,9 @@ local first = Kitty.ensure_transmitted("AAAA", function(id)
     cb_fired = true
 end)
 assert_true(first == nil, "first call returns nil (transmission in flight)")
-vim.wait(200, function() return cb_fired end)
+vim.wait(200, function()
+    return cb_fired
+end)
 assert_true(cb_fired, "callback fired")
 
 local second = Kitty.ensure_transmitted("AAAA")
@@ -74,8 +81,12 @@ assert_eq(second, 999, "subsequent call returns the cached image_id synchronousl
 -- ---------------------------- end-to-end via output_render ----------------------------
 print("\n-- output_render with image/png output --")
 Kitty._reset()
-Core.client = function() return stub_client end
-Core.ensure = function() return stub_client end
+Core.client = function()
+    return stub_client
+end
+Core.ensure = function()
+    return stub_client
+end
 
 local OutRender = require("jovian.ui.output_render")
 
@@ -87,7 +98,7 @@ vim.cmd("edit " .. src_path)
 local buf = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
     '# %% id="img1"',
-    'plt.show()',
+    "plt.show()",
 })
 vim.cmd("write")
 
@@ -117,10 +128,11 @@ fh:write(vim.json.encode(sidecar))
 fh:close()
 OutRender.invalidate(src_path)
 
--- Restub for the second image. Use the method form so we don't get
--- bitten by `:` passing `self` as the first arg.
-function stub_client:request(_method, _params, cb)
-    vim.schedule(function() cb(nil, { image_id = 777 }) end)
+-- Restub for the second image. `_self` absorbs the `:`-call receiver.
+function stub_client.request(_self, _method, _params, cb)
+    vim.schedule(function()
+        cb(nil, { image_id = 777 })
+    end)
 end
 
 -- First render: image transmit is still in-flight, expect reserved blank rows
@@ -129,7 +141,9 @@ CellFrame.render(buf, vim.api.nvim_get_current_win())
 local marks = vim.api.nvim_buf_get_extmarks(buf, CellFrame._namespace, 0, -1, { details = true })
 local virt_lines
 for _, m in ipairs(marks) do
-    if m[4].virt_lines and m[2] == 1 then virt_lines = m[4].virt_lines end
+    if m[4].virt_lines and m[2] == 1 then
+        virt_lines = m[4].virt_lines
+    end
 end
 assert_true(virt_lines ~= nil, "cell has virt_lines block")
 -- divider + 6 (reserved blank for image) + bottom = 8 minimum
@@ -141,7 +155,9 @@ vim.wait(200)
 CellFrame.render(buf, vim.api.nvim_get_current_win())
 marks = vim.api.nvim_buf_get_extmarks(buf, CellFrame._namespace, 0, -1, { details = true })
 for _, m in ipairs(marks) do
-    if m[4].virt_lines and m[2] == 1 then virt_lines = m[4].virt_lines end
+    if m[4].virt_lines and m[2] == 1 then
+        virt_lines = m[4].virt_lines
+    end
 end
 
 local has_placeholder_hl = false
@@ -152,7 +168,9 @@ for _, row in ipairs(virt_lines) do
             break
         end
     end
-    if has_placeholder_hl then break end
+    if has_placeholder_hl then
+        break
+    end
 end
 assert_true(has_placeholder_hl, "rendered virt_lines include Kitty placeholders for image_id=777")
 

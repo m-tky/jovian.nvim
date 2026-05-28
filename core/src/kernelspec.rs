@@ -4,7 +4,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KernelSpec {
@@ -109,7 +109,7 @@ pub fn discover_with_fallback(name: &str, language: Option<&str>) -> Option<Kern
     None
 }
 
-fn load_one(name: &str, dir: &PathBuf) -> Result<KernelSpec> {
+fn load_one(name: &str, dir: &Path) -> Result<KernelSpec> {
     let kj_path = dir.join("kernel.json");
     let raw = std::fs::read_to_string(&kj_path)
         .with_context(|| format!("reading {}", kj_path.display()))?;
@@ -117,7 +117,7 @@ fn load_one(name: &str, dir: &PathBuf) -> Result<KernelSpec> {
         .with_context(|| format!("parsing {}", kj_path.display()))?;
     Ok(KernelSpec {
         name: name.to_string(),
-        path: dir.clone(),
+        path: dir.to_path_buf(),
         argv: kj.argv,
         display_name: kj.display_name,
         language: kj.language,

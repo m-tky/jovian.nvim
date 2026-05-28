@@ -224,22 +224,21 @@ function M.check_cursor_cell()
         -- from the sidecar JSON into the preview buffer. No .md round-trip.
         if Config.options.use_rust_core then
             local src_path = vim.api.nvim_buf_get_name(0)
-            if src_path == "" then return end
+            if src_path == "" then
+                return
+            end
             if not State.buf.preview or not vim.api.nvim_buf_is_valid(State.buf.preview) then
                 return
             end
             -- Skip duplicate renders when the cursor stays on the same cell;
             -- cell_event handlers explicitly re-trigger when new output
             -- arrives so this gate doesn't starve fresh content.
-            if State.current_preview_cell_id == cell_id then return end
+            if State.current_preview_cell_id == cell_id then
+                return
+            end
             State.current_preview_cell_id = cell_id
             State.current_preview_file = nil
-            require("jovian.ui.output_render").render_to_buffer(
-                State.buf.preview,
-                State.win.preview,
-                src_path,
-                cell_id
-            )
+            require("jovian.ui.output_render").render_to_buffer(State.buf.preview, State.win.preview, src_path, cell_id)
             return
         end
 

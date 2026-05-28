@@ -1,7 +1,6 @@
 local M = {}
 local Config = require("jovian.config")
 local Session = require("jovian.session")
-local uv = vim.uv or vim.loop
 
 function M.setup(opts)
     Config.setup(opts)
@@ -56,18 +55,24 @@ function M.setup(opts)
     vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
         pattern = "*",
         callback = function()
-            if vim.bo.filetype ~= "python" then return end
+            if vim.bo.filetype ~= "python" then
+                return
+            end
             if _cursor_timer then
                 _cursor_timer:close()
             end
             _cursor_timer = (vim.uv or vim.loop).new_timer()
-            _cursor_timer:start(150, 0, vim.schedule_wrap(function()
-                Session.check_cursor_cell()
-                if _cursor_timer then
-                    pcall(_cursor_timer.close, _cursor_timer)
-                    _cursor_timer = nil
-                end
-            end))
+            _cursor_timer:start(
+                150,
+                0,
+                vim.schedule_wrap(function()
+                    Session.check_cursor_cell()
+                    if _cursor_timer then
+                        pcall(_cursor_timer.close, _cursor_timer)
+                        _cursor_timer = nil
+                    end
+                end)
+            )
         end,
     })
     vim.api.nvim_create_autocmd({ "BufWritePost", "VimLeavePre", "BufUnload", "BufWinEnter" }, {
@@ -162,7 +167,9 @@ function M.setup(opts)
         local MarkdownCell = require("jovian.ui.markdown_cell")
 
         local function refresh_buffer(bufnr, winid)
-            if vim.bo[bufnr].filetype ~= "python" then return end
+            if vim.bo[bufnr].filetype ~= "python" then
+                return
+            end
             CellFrame.schedule(bufnr, winid)
             MarkdownCell.schedule(bufnr)
         end
@@ -174,12 +181,16 @@ function M.setup(opts)
         -- line reveals raw source for editing — without that, the user
         -- can't see the `# ` prefix or `**bold**` markers they're typing.
         local function apply_window_options(winid)
-            if not vim.api.nvim_win_is_valid(winid) then return end
+            if not vim.api.nvim_win_is_valid(winid) then
+                return
+            end
             if not (Config.options.cell_frame or Config.options.markdown_cell_style) then
                 return
             end
             local buf = vim.api.nvim_win_get_buf(winid)
-            if vim.bo[buf].filetype ~= "python" then return end
+            if vim.bo[buf].filetype ~= "python" then
+                return
+            end
             local cur = vim.api.nvim_get_option_value("conceallevel", { win = winid })
             if cur < 2 then
                 vim.api.nvim_set_option_value("conceallevel", 2, { win = winid })
@@ -223,7 +234,8 @@ function M.setup(opts)
                 -- new geometry. Find a python window to know which file's
                 -- sidecar to read from.
                 local State = require("jovian.state")
-                if State.current_preview_cell_id
+                if
+                    State.current_preview_cell_id
                     and State.buf.preview
                     and vim.api.nvim_buf_is_valid(State.buf.preview)
                 then

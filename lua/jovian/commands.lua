@@ -401,10 +401,11 @@ function M.setup()
     end
 
     vim.api.nvim_create_user_command("JovianToggleCellFrame", function()
-        local Config = require("jovian.config")
         Config.options.cell_frame = not Config.options.cell_frame
         local CellFrame = require("jovian.ui.cell_frame")
-        if Config.options.cell_frame then ensure_conceallevel() end
+        if Config.options.cell_frame then
+            ensure_conceallevel()
+        end
         for _, buf in ipairs(vim.api.nvim_list_bufs()) do
             if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "python" then
                 if Config.options.cell_frame then
@@ -415,17 +416,15 @@ function M.setup()
                 end
             end
         end
-        vim.notify(
-            "Cell frame: " .. (Config.options.cell_frame and "ON" or "OFF"),
-            vim.log.levels.INFO
-        )
+        vim.notify("Cell frame: " .. (Config.options.cell_frame and "ON" or "OFF"), vim.log.levels.INFO)
     end, { desc = "Jovian: Toggle cell card frame" })
 
     vim.api.nvim_create_user_command("JovianToggleMarkdownStyle", function()
-        local Config = require("jovian.config")
         Config.options.markdown_cell_style = not Config.options.markdown_cell_style
         local MarkdownCell = require("jovian.ui.markdown_cell")
-        if Config.options.markdown_cell_style then ensure_conceallevel() end
+        if Config.options.markdown_cell_style then
+            ensure_conceallevel()
+        end
         for _, buf in ipairs(vim.api.nvim_list_bufs()) do
             if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "python" then
                 if Config.options.markdown_cell_style then
@@ -466,18 +465,22 @@ function M.setup()
     -- exact RPC error so users can see "kitty_attach not called" vs a
     -- terminal that just doesn't support graphics.
     vim.api.nvim_create_user_command("JovianDebugImages", function()
-        local Core = require("jovian.backend.core")
-        local client = Core.client() or Core.ensure()
+        local BackendCore = require("jovian.backend.core")
+        local client = BackendCore.client() or BackendCore.ensure()
         -- 1x1 transparent PNG, base64-encoded
         local one_px = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgAAIAAAUAAeImBZsAAAAASUVORK5CYII="
         vim.notify("jovian: probing kitty pipeline...", vim.log.levels.INFO)
-        Core.on_kitty_ready(function(ok, attach_err)
+        BackendCore.on_kitty_ready(function(ok, attach_err)
             if not ok then
                 vim.notify(
-                    "jovian image pipeline FAILED at kitty_attach: " .. (attach_err or "unknown")
-                    .. "\n  TERM=" .. (vim.env.TERM or "?")
-                    .. " TERM_PROGRAM=" .. (vim.env.TERM_PROGRAM or "?")
-                    .. " TMUX=" .. (vim.env.TMUX and "set" or "unset"),
+                    "jovian image pipeline FAILED at kitty_attach: "
+                        .. (attach_err or "unknown")
+                        .. "\n  TERM="
+                        .. (vim.env.TERM or "?")
+                        .. " TERM_PROGRAM="
+                        .. (vim.env.TERM_PROGRAM or "?")
+                        .. " TMUX="
+                        .. (vim.env.TMUX and "set" or "unset"),
                     vim.log.levels.ERROR
                 )
                 return
@@ -486,16 +489,19 @@ function M.setup()
                 vim.schedule(function()
                     if err then
                         vim.notify(
-                            "jovian image pipeline FAILED at kitty_transmit: " .. err
-                            .. "\n  TERM=" .. (vim.env.TERM or "?")
-                            .. " TERM_PROGRAM=" .. (vim.env.TERM_PROGRAM or "?")
-                            .. " TMUX=" .. (vim.env.TMUX and "set" or "unset"),
+                            "jovian image pipeline FAILED at kitty_transmit: "
+                                .. err
+                                .. "\n  TERM="
+                                .. (vim.env.TERM or "?")
+                                .. " TERM_PROGRAM="
+                                .. (vim.env.TERM_PROGRAM or "?")
+                                .. " TMUX="
+                                .. (vim.env.TMUX and "set" or "unset"),
                             vim.log.levels.ERROR
                         )
                     else
                         vim.notify(
-                            "jovian image pipeline OK (image_id="
-                            .. tostring(result and result.image_id) .. ")",
+                            "jovian image pipeline OK (image_id=" .. tostring(result and result.image_id) .. ")",
                             vim.log.levels.INFO
                         )
                     end

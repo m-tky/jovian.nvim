@@ -387,18 +387,9 @@ local function run(name, args)
     return true
 end
 
-local function has_payload(pat)
-    for _, p in ipairs(chan_sends) do
-        if p:match(pat) then
-            return true
-        end
-    end
-end
-
 -- ── Load ─────────────────────────────────────────────────────────────────────
 
 require("jovian.commands").setup()
-local State = require("jovian.state")
 
 -- ── Tests ────────────────────────────────────────────────────────────────────
 --

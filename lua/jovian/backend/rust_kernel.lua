@@ -26,7 +26,9 @@ local _event_handler_registered = false
 local _cell_had_error = {}
 
 local function strip_ansi(s)
-    if not s then return "" end
+    if not s then
+        return ""
+    end
     s = s:gsub("\27%[[?]?[%d;]*[a-zA-Z]", "")
     s = s:gsub("\27%][^\27]*\27\\", "")
     return s
@@ -65,7 +67,9 @@ end
 -- buffer if it's the one currently being shown.
 local function refresh_inline_outputs(cell_id)
     local buf = State.cell_buf_map[cell_id]
-    if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+    if not buf or not vim.api.nvim_buf_is_valid(buf) then
+        return
+    end
     local src_path = vim.api.nvim_buf_get_name(buf)
     local OutRender = require("jovian.ui.output_render")
     OutRender.invalidate(src_path)
@@ -75,22 +79,20 @@ local function refresh_inline_outputs(cell_id)
     end
 
     -- Refresh preview if the focused cell is the one in the preview pane.
-    if State.current_preview_cell_id == cell_id
+    if
+        State.current_preview_cell_id == cell_id
         and State.buf.preview
         and vim.api.nvim_buf_is_valid(State.buf.preview)
     then
-        OutRender.render_to_buffer(
-            State.buf.preview,
-            State.win.preview,
-            src_path,
-            cell_id
-        )
+        OutRender.render_to_buffer(State.buf.preview, State.win.preview, src_path, cell_id)
     end
 end
 
 local function on_cell_event(params)
     local cell_id = params and params.cell_id
-    if not cell_id then return end
+    if not cell_id then
+        return
+    end
     local ev = params.event or {}
     local kind = ev.kind
 
@@ -116,16 +118,18 @@ local function on_cell_event(params)
         local data = ev.data or {}
         local tp = data["text/plain"]
         local img_b64 = data["image/png"] or data["image/gif"] or data["image/jpeg"]
-        if type(img_b64) == "table" then img_b64 = table.concat(img_b64, "") end
+        if type(img_b64) == "table" then
+            img_b64 = table.concat(img_b64, "")
+        end
         local has_img = type(img_b64) == "string" and img_b64 ~= ""
 
         -- Suppress matplotlib's "<Figure size NxM with K Axes>" / generic
         -- "<X object at 0x...>" repr when an image is the real payload —
         -- the image itself is the content.
-        if has_img and type(tp) == "string"
-            and (tp:match("^<Figure ")
-                or tp:match("^<[%w._]+ object>$")
-                or tp:match("^<[%w._]+ object at 0x[%x]+>$"))
+        if
+            has_img
+            and type(tp) == "string"
+            and (tp:match("^<Figure ") or tp:match("^<[%w._]+ object>$") or tp:match("^<[%w._]+ object at 0x[%x]+>$"))
         then
             tp = ""
         end
@@ -140,11 +144,15 @@ local function on_cell_event(params)
 
             local function write_image(image_id)
                 require("jovian.ui.shared").ensure_output_term()
-                if not State.term_chan then return end
+                if not State.term_chan then
+                    return
+                end
                 local r = bit.band(bit.rshift(image_id, 16), 0xff)
                 local g = bit.band(bit.rshift(image_id, 8), 0xff)
                 local b = bit.band(image_id, 0xff)
-                if r == 0 and g == 0 and b == 0 then b = 1 end
+                if r == 0 and g == 0 and b == 0 then
+                    b = 1
+                end
                 local fg = string.format("\27[38;2;%d;%d;%dm", r, g, b)
                 local reset = "\27[0m"
                 local placement = Kitty.build_virt_lines(image_id, rows, cols)
@@ -186,9 +194,13 @@ local function on_cell_event(params)
 end
 
 local function ensure_event_handler()
-    if _event_handler_registered then return end
+    if _event_handler_registered then
+        return
+    end
     local client = Core.client()
-    if not client then return end
+    if not client then
+        return
+    end
     client:on("cell_event", on_cell_event)
     _event_handler_registered = true
 end
@@ -236,8 +248,12 @@ function M.start(on_ready)
                 -- pass this value to vim.fn.jobstop/jobpid — branch on
                 -- State.rust_active first.
                 State.job_id = "rust"
-                if on_ready then pcall(on_ready) end
-                for _, cb in ipairs(State.on_ready_callbacks) do pcall(cb) end
+                if on_ready then
+                    pcall(on_ready)
+                end
+                for _, cb in ipairs(State.on_ready_callbacks) do
+                    pcall(cb)
+                end
                 State.on_ready_callbacks = {}
             end)
         end)
@@ -275,7 +291,9 @@ end
 
 function M.interrupt()
     local client = Core.client()
-    if not client or not State.rust_session_id then return end
+    if not client or not State.rust_session_id then
+        return
+    end
     client:notify("interrupt_kernel", { session_id = State.rust_session_id })
     UI.append_to_repl("[Kernel Interrupted!]", "WarningMsg")
     for cell_id, buf in pairs(State.cell_buf_map) do
@@ -302,7 +320,9 @@ end
 
 function M.restart(on_ready)
     M.stop()
-    vim.defer_fn(function() M.start(on_ready) end, 200)
+    vim.defer_fn(function()
+        M.start(on_ready)
+    end, 200)
 end
 
 -- ---------- Hidden execute helpers (Vars / View) ----------
@@ -376,12 +396,16 @@ _jovian_df(%q, %d, %d)
 -- Find a line in the collected stdout that starts with `marker`, return
 -- the decoded JSON suffix (or nil if marker not found / decode failed).
 local function parse_marker(stdout, marker)
-    if type(stdout) ~= "string" then return nil end
+    if type(stdout) ~= "string" then
+        return nil
+    end
     for _, line in ipairs(vim.split(stdout, "\n", { plain = true })) do
         local payload = line:match("^" .. marker .. "(.*)$")
         if payload then
             local ok, decoded = pcall(vim.json.decode, payload)
-            if ok then return decoded end
+            if ok then
+                return decoded
+            end
         end
     end
     return nil
@@ -418,7 +442,9 @@ function M.show_variables(opts)
             return
         end
         local data = parse_marker(result.stdout, "__JOVIAN_VARS__")
-        if not data then return end
+        if not data then
+            return
+        end
         vim.schedule(function()
             UI.show_variables(data, opts.force_float)
         end)
@@ -432,13 +458,17 @@ end
 --- The input echo + result are appended to the Output log.
 function M.eval(code, on_done)
     if not code or vim.trim(code) == "" then
-        if on_done then on_done() end
+        if on_done then
+            on_done()
+        end
         return
     end
     local client = Core.client()
     if not client or not State.rust_session_id then
         vim.notify("jovian-core not started", vim.log.levels.WARN)
-        if on_done then on_done() end
+        if on_done then
+            on_done()
+        end
         return
     end
 
@@ -453,13 +483,17 @@ function M.eval(code, on_done)
         vim.schedule(function()
             if err then
                 UI.append_to_repl("[eval failed] " .. err, "ErrorMsg")
-                if on_done then on_done() end
+                if on_done then
+                    on_done()
+                end
                 return
             end
             -- msgpack null decodes to vim.NIL (which is truthy), so
             -- normalize the optional fields before testing them.
             local function present(v)
-                if v == nil or v == vim.NIL then return nil end
+                if v == nil or v == vim.NIL then
+                    return nil
+                end
                 return v
             end
             local stdout = present(result.stdout)
@@ -474,10 +508,7 @@ function M.eval(code, on_done)
                 UI.append_stream_text(stderr, "stderr")
             end
             if type(rerror) == "table" then
-                UI.append_to_repl(
-                    (rerror.ename or "Error") .. ": " .. (rerror.evalue or ""),
-                    "ErrorMsg"
-                )
+                UI.append_to_repl((rerror.ename or "Error") .. ": " .. (rerror.evalue or ""), "ErrorMsg")
                 for _, tb in ipairs(rerror.traceback or {}) do
                     for _, line in ipairs(vim.split(strip_ansi(tb), "\n")) do
                         UI.append_to_repl(line, "ErrorMsg")
@@ -486,12 +517,16 @@ function M.eval(code, on_done)
             end
             if type(data) == "table" then
                 local tp = data["text/plain"]
-                if type(tp) == "table" then tp = table.concat(tp, "") end
+                if type(tp) == "table" then
+                    tp = table.concat(tp, "")
+                end
                 if type(tp) == "string" and tp ~= "" then
                     UI.append_to_repl(vim.split(strip_ansi(tp), "\n"), "Identifier")
                 end
             end
-            if on_done then on_done() end
+            if on_done then
+                on_done()
+            end
         end)
     end)
 end
@@ -534,7 +569,9 @@ function M.view_dataframe(opts)
             return
         end
         local data = parse_marker(result.stdout, "__JOVIAN_DF__")
-        if not data then return end
+        if not data then
+            return
+        end
         -- Record session for paging callbacks.
         State.dataframe_sessions[data.name] = {
             total = data.total_rows,

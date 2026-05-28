@@ -198,7 +198,7 @@ impl Kernel {
             "shell",
             Some(pending.clone()),
         ));
-        let _ = tokio::spawn(socket_owner(control, control_rx, key, tx, "control", None));
+        tokio::spawn(socket_owner(control, control_rx, key, tx, "control", None));
 
         Ok(Self {
             spec,
@@ -216,16 +216,9 @@ impl Kernel {
     pub fn spec(&self) -> &KernelSpec {
         &self.spec
     }
-    pub fn session(&self) -> &str {
-        &self.session
-    }
 
     pub async fn take_events(&self) -> Option<mpsc::UnboundedReceiver<KernelEvent>> {
         self.events.lock().await.take()
-    }
-
-    pub async fn execute(&self, code: &str) -> Result<String> {
-        self.execute_with_id(code, Uuid::new_v4().to_string()).await
     }
 
     pub async fn execute_with_id(&self, code: &str, msg_id: String) -> Result<String> {
@@ -298,39 +291,11 @@ impl Kernel {
         }
     }
 
-    pub async fn kernel_info(&self) -> Result<()> {
-        let msg = Message::new(
-            "kernel_info_request",
-            self.session.clone(),
-            protocol::kernel_info_request(),
-        );
-        let key = self.conn.key.as_bytes();
-        let frames = msg.to_frames(key)?;
-        self.shell_tx
-            .send(frames_to_zmq(frames))
-            .map_err(|_| anyhow!("shell closed"))?;
-        Ok(())
-    }
-
     pub async fn interrupt(&self) -> Result<()> {
         let msg = Message::new(
             "interrupt_request",
             self.session.clone(),
             protocol::interrupt_request(),
-        );
-        let key = self.conn.key.as_bytes();
-        let frames = msg.to_frames(key)?;
-        self.control_tx
-            .send(frames_to_zmq(frames))
-            .map_err(|_| anyhow!("control closed"))?;
-        Ok(())
-    }
-
-    pub async fn shutdown(&self, restart: bool) -> Result<()> {
-        let msg = Message::new(
-            "shutdown_request",
-            self.session.clone(),
-            protocol::shutdown_request(restart),
         );
         let key = self.conn.key.as_bytes();
         let frames = msg.to_frames(key)?;

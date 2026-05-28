@@ -162,16 +162,8 @@ pub fn execute_request(code: &str, silent: bool, store_history: bool) -> Value {
     })
 }
 
-pub fn kernel_info_request() -> Value {
-    json!({})
-}
-
 pub fn interrupt_request() -> Value {
     json!({})
-}
-
-pub fn shutdown_request(restart: bool) -> Value {
-    json!({ "restart": restart })
 }
 
 #[cfg(test)]

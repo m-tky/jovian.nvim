@@ -14,9 +14,13 @@ function M.complete(findstart, _)
         return vim.fn.match(line_to_cursor, [[\k*$]])
     end
 
-    if not State.rust_session_id then return {} end
+    if not State.rust_session_id then
+        return {}
+    end
     local client = Core.client()
-    if not client then return {} end
+    if not client then
+        return {}
+    end
 
     local line = vim.api.nvim_get_current_line()
     local col = vim.api.nvim_win_get_cursor(0)[2]
@@ -25,7 +29,9 @@ function M.complete(findstart, _)
         code = line,
         cursor_pos = col,
     }, 500)
-    if err or not result then return {} end
+    if err or not result then
+        return {}
+    end
 
     local matches = result.matches or {}
     local formatted = {}

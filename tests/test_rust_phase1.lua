@@ -16,9 +16,13 @@ local function resolve_python()
     if not p or p == "" then
         p = vim.trim(vim.fn.system("command -v python3"))
     end
-    if not p or p == "" or vim.fn.executable(p) == 0 then return nil end
+    if not p or p == "" or vim.fn.executable(p) == 0 then
+        return nil
+    end
     local ok = os.execute(p .. " -c 'import ipykernel' 2>/dev/null")
-    if not (ok == 0 or ok == true) then return nil end
+    if not (ok == 0 or ok == true) then
+        return nil
+    end
     return p
 end
 
@@ -57,7 +61,9 @@ local captured = {}
 local original_append = UI.append_to_repl
 UI.append_to_repl = function(text, hl)
     if type(text) == "table" then
-        for _, l in ipairs(text) do table.insert(captured, l) end
+        for _, l in ipairs(text) do
+            table.insert(captured, l)
+        end
     else
         table.insert(captured, tostring(text))
     end
@@ -85,7 +91,9 @@ end
 
 -- Wait for kernel to be ready, then run the cell
 local ready = false
-table.insert(State.on_ready_callbacks, function() ready = true end)
+table.insert(State.on_ready_callbacks, function()
+    ready = true
+end)
 Core.start_kernel()
 
 local deadline = vim.uv.now() + 15000

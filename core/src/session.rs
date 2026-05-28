@@ -14,7 +14,7 @@ use std::sync::Arc;
 use tokio::sync::{oneshot, RwLock as AsyncRwLock};
 
 use crate::kernel::{Kernel, KernelEvent};
-use crate::notebook::{self, CellOutputs, OutputStoreFile, Source};
+use crate::notebook::{self, OutputStoreFile, Source};
 
 /// A collector for execute_collect: accumulates kernel events for one
 /// msg_id and fires `done` with the collected list when the kernel goes
@@ -139,7 +139,7 @@ impl Session {
     /// later restores them.
     pub fn reparse(&self, text: &str) {
         let mut src = self.source.write();
-        *src = Source::parse(self.path.clone(), text);
+        *src = Source::parse(text);
     }
 
     pub fn persist_outputs(&self) -> Result<()> {
@@ -176,7 +176,7 @@ impl Session {
         let cell_id = self.msg_to_cell.get(&parent)?.clone();
 
         let mut outs = self.outputs.write();
-        let cell = outs.cells.entry(cell_id.clone()).or_insert_with(CellOutputs::default);
+        let cell = outs.cells.entry(cell_id.clone()).or_default();
 
         let payload = match ev {
             KernelEvent::Stream { name, text, .. } => {

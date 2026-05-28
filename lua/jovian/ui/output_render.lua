@@ -23,8 +23,12 @@ local HL = {
 
 local function apply_hl(target, user_val, fallback)
     local val = user_val
-    if val == nil then val = fallback end
-    if val == nil then return end
+    if val == nil then
+        val = fallback
+    end
+    if val == nil then
+        return
+    end
     if type(val) == "string" then
         vim.api.nvim_set_hl(0, target, { link = val, force = true })
     elseif type(val) == "table" then
@@ -38,7 +42,7 @@ function M.setup_hl(border_hl)
     -- border_hl is whichever cell_frame chose for the current cell type;
     -- the divider line inherits it so the `├` and `┤` corners align
     -- visually with the cell box.
-    local user_hl = (Config.options.highlights) or {}
+    local user_hl = Config.options.highlights or {}
     apply_hl(HL.Divider, user_hl.out_divider, border_hl or "Comment")
     apply_hl(HL.Stdout, user_hl.out_stdout, "Normal")
     apply_hl(HL.Stderr, user_hl.out_stderr, "WarningMsg")
@@ -49,8 +53,12 @@ end
 -- nbformat allows text fields to be either a string or an array of strings.
 -- Normalize to one flat string.
 local function as_str(v)
-    if type(v) == "table" then return table.concat(v, "") end
-    if type(v) == "string" then return v end
+    if type(v) == "table" then
+        return table.concat(v, "")
+    end
+    if type(v) == "string" then
+        return v
+    end
     return ""
 end
 
@@ -67,7 +75,9 @@ end
 -- instead of rendering every intermediate state concatenated. The REPL
 -- terminal buffer handles \r natively; this is for the text renderers.
 local function process_cr(s)
-    if not s:find("\r", 1, true) then return s end
+    if not s:find("\r", 1, true) then
+        return s
+    end
     local out = {}
     for chunk in (s .. "\n"):gmatch("([^\n]*)\n") do
         local last = ""
@@ -76,17 +86,25 @@ local function process_cr(s)
         end
         table.insert(out, last)
     end
-    if out[#out] == "" then table.remove(out) end
+    if out[#out] == "" then
+        table.remove(out)
+    end
     return table.concat(out, "\n")
 end
 
-local function dw(s) return vim.fn.strdisplaywidth(s) end
+local function dw(s)
+    return vim.fn.strdisplaywidth(s)
+end
 
 -- Wrap a single logical line into chunks of at most `max_w` display cells.
 -- Breaks at spaces when possible, hard-breaks otherwise.
 local function wrap(line, max_w)
-    if max_w <= 0 then return { line } end
-    if dw(line) <= max_w then return { line } end
+    if max_w <= 0 then
+        return { line }
+    end
+    if dw(line) <= max_w then
+        return { line }
+    end
     local out, n = {}, vim.fn.strchars(line)
     local pos = 0
     while pos < n do
@@ -95,8 +113,12 @@ local function wrap(line, max_w)
         while pos < n do
             local ch = vim.fn.strcharpart(line, pos, 1)
             local cw = dw(ch)
-            if cur_w + cw > max_w then break end
-            if ch == " " then last_space = pos end
+            if cur_w + cw > max_w then
+                break
+            end
+            if ch == " " then
+                last_space = pos
+            end
             cur_w = cur_w + cw
             pos = pos + 1
         end
@@ -104,7 +126,9 @@ local function wrap(line, max_w)
             table.insert(out, vim.fn.strcharpart(line, start, last_space - start))
             pos = last_space + 1
         else
-            if pos == start then pos = pos + 1 end
+            if pos == start then
+                pos = pos + 1
+            end
             table.insert(out, vim.fn.strcharpart(line, start, pos - start))
         end
     end
@@ -137,11 +161,17 @@ end
 -- emits; GIF is preferred over JPEG for animated payloads.
 local IMAGE_MIMES = { "image/png", "image/gif", "image/jpeg" }
 local function find_image_b64(data)
-    if type(data) ~= "table" then return nil end
+    if type(data) ~= "table" then
+        return nil
+    end
     for _, m in ipairs(IMAGE_MIMES) do
         local v = data[m]
-        if type(v) == "table" then v = table.concat(v, "") end
-        if type(v) == "string" and v ~= "" then return v end
+        if type(v) == "table" then
+            v = table.concat(v, "")
+        end
+        if type(v) == "string" and v ~= "" then
+            return v
+        end
     end
     return nil
 end
@@ -170,9 +200,13 @@ end
 ---   completes, so the cell_frame caller can re-render with the image
 --- @return table list of virt_line chunk arrays
 function M.build_virt_lines(outputs, execution_count, width, border_hl, refresh_cb, cell_id)
-    if not outputs or #outputs == 0 then return {} end
+    if not outputs or #outputs == 0 then
+        return {}
+    end
     local inner_w = width - 4 -- "│ " + content + " │"
-    if inner_w < 1 then inner_w = 1 end
+    if inner_w < 1 then
+        inner_w = 1
+    end
 
     local exec_label = execution_count and tostring(execution_count) or " "
     -- Outputs loaded from the sidecar JSON without a fresh re-run in the
@@ -184,9 +218,6 @@ function M.build_virt_lines(outputs, execution_count, width, border_hl, refresh_
         label = label .. " (cached)"
     end
 
-    -- Lazy-require Config so build_virt_lines stays usable in tests that
-    -- haven't called setup().
-    local Config = require("jovian.config")
     local Kitty -- lazily required only when an image output appears
 
     -- Collect the output rows into `body` (the divider is prepended after
@@ -194,7 +225,9 @@ function M.build_virt_lines(outputs, execution_count, width, border_hl, refresh_
     -- rarely sit next to thousands of text lines.
     local body = {}
     local has_image = false
-    local function emit(row) body[#body + 1] = row end
+    local function emit(row)
+        body[#body + 1] = row
+    end
 
     for _, o in ipairs(outputs) do
         local kind = o.output_type
@@ -212,10 +245,14 @@ function M.build_virt_lines(outputs, execution_count, width, border_hl, refresh_
             local img_b64 = find_image_b64(data)
             local tp = as_str(data["text/plain"])
             local img = img_b64 ~= nil
-            if img and (tp == ""
-                or tp:match("^<Figure ")
-                or tp:match("^<[%w._]+ object>$")
-                or tp:match("^<[%w._]+ object at 0x[%x]+>$"))
+            if
+                img
+                and (
+                    tp == ""
+                    or tp:match("^<Figure ")
+                    or tp:match("^<[%w._]+ object>$")
+                    or tp:match("^<[%w._]+ object at 0x[%x]+>$")
+                )
             then
                 tp = ""
             end
@@ -246,7 +283,9 @@ function M.build_virt_lines(outputs, execution_count, width, border_hl, refresh_
             end
         elseif kind == "error" then
             local head = as_str(o.ename) .. ": " .. as_str(o.evalue)
-            if head == ": " then head = "Error" end
+            if head == ": " then
+                head = "Error"
+            end
             for _, w in ipairs(wrap(head, inner_w)) do
                 emit(side_wrap(w, HL.Error, inner_w, border_hl))
             end
@@ -268,30 +307,44 @@ function M.build_virt_lines(outputs, execution_count, width, border_hl, refresh_
     if not has_image and max > 0 and #body > max then
         local tail = math.min(3, math.max(1, math.floor(max / 4)))
         local head = max - tail - 1 -- 1 row for the notice
-        if head < 1 then head = 1 end
+        if head < 1 then
+            head = 1
+        end
         local hidden = #body - head - tail
         local capped = {}
-        for i = 1, head do capped[#capped + 1] = body[i] end
+        for i = 1, head do
+            capped[#capped + 1] = body[i]
+        end
         capped[#capped + 1] = side_wrap(
             ("… %d more line(s) — open preview / :JovianToggleOutput …"):format(hidden),
-            HL.Divider, inner_w, border_hl
+            HL.Divider,
+            inner_w,
+            border_hl
         )
-        for i = #body - tail + 1, #body do capped[#capped + 1] = body[i] end
+        for i = #body - tail + 1, #body do
+            capped[#capped + 1] = body[i]
+        end
         body = capped
     end
 
     local rows = { { { divider_line(label, width), HL.Divider } } }
-    for _, r in ipairs(body) do rows[#rows + 1] = r end
+    for _, r in ipairs(body) do
+        rows[#rows + 1] = r
+    end
     return rows
 end
 
 -- ---------- Sidecar JSON reader ----------
 
 local function sidecar_path(source_path)
-    if not source_path or source_path == "" then return nil end
+    if not source_path or source_path == "" then
+        return nil
+    end
     local dir = vim.fn.fnamemodify(source_path, ":p:h")
     local fname = vim.fn.fnamemodify(source_path, ":t")
-    if fname == "" then return nil end
+    if fname == "" then
+        return nil
+    end
     return dir .. "/.jovian_cache/" .. fname .. "/outputs.json"
 end
 
@@ -302,7 +355,9 @@ local _cache = {} -- path → { mtime = number, data = table }
 --- TextChanged tick.
 function M.read_sidecar(source_path)
     local path = sidecar_path(source_path)
-    if not path then return nil end
+    if not path then
+        return nil
+    end
     local uv = vim.uv or vim.loop
     local stat = uv.fs_stat(path)
     if not stat then
@@ -314,12 +369,18 @@ function M.read_sidecar(source_path)
         return cached.data
     end
     local f = io.open(path, "r")
-    if not f then return nil end
+    if not f then
+        return nil
+    end
     local raw = f:read("*a")
     f:close()
-    if not raw or raw == "" then return nil end
+    if not raw or raw == "" then
+        return nil
+    end
     local ok, decoded = pcall(vim.json.decode, raw)
-    if not ok or type(decoded) ~= "table" then return nil end
+    if not ok or type(decoded) ~= "table" then
+        return nil
+    end
     _cache[path] = { mtime = stat.mtime.sec, data = decoded }
     return decoded
 end
@@ -327,7 +388,9 @@ end
 --- Convenience: fetch one cell's { execution_count, outputs }.
 function M.cell_outputs(source_path, cell_id)
     local sidecar = M.read_sidecar(source_path)
-    if not sidecar or not sidecar.cells then return nil end
+    if not sidecar or not sidecar.cells then
+        return nil
+    end
     return sidecar.cells[cell_id]
 end
 
@@ -336,7 +399,9 @@ end
 --- granularity would reveal.
 function M.invalidate(source_path)
     local path = sidecar_path(source_path)
-    if path then _cache[path] = nil end
+    if path then
+        _cache[path] = nil
+    end
 end
 
 -- ---------- Preview buffer renderer ----------
@@ -356,28 +421,42 @@ local PREVIEW_NS = vim.api.nvim_create_namespace("jovian_preview_outputs")
 -- JPEG falls through to nil and the caller uses the default aspect.
 local function decode_b64_head(b64)
     local head = b64:sub(1, 32):gsub("[\r\n]", "")
-    while #head % 4 ~= 0 do head = head .. "=" end
+    while #head % 4 ~= 0 do
+        head = head .. "="
+    end
     local ok, raw = pcall(vim.base64.decode, head)
-    if not ok or type(raw) ~= "string" then return nil end
+    if not ok or type(raw) ~= "string" then
+        return nil
+    end
     return raw
 end
 
 local function image_pixel_dims(b64)
-    if not b64 or #b64 < 32 then return nil end
+    if not b64 or #b64 < 32 then
+        return nil
+    end
     local raw = decode_b64_head(b64)
-    if not raw or #raw < 24 then return nil end
-    local b = function(i) return raw:byte(i) or 0 end
+    if not raw or #raw < 24 then
+        return nil
+    end
+    local b = function(i)
+        return raw:byte(i) or 0
+    end
     -- PNG: 89 50 4E 47 ... then IHDR at byte 13, width/height at 17/21.
     if b(1) == 0x89 and b(2) == 0x50 and b(3) == 0x4E and b(4) == 0x47 then
         local w = b(17) * 0x1000000 + b(18) * 0x10000 + b(19) * 0x100 + b(20)
         local h = b(21) * 0x1000000 + b(22) * 0x10000 + b(23) * 0x100 + b(24)
-        if w > 0 and h > 0 then return w, h end
+        if w > 0 and h > 0 then
+            return w, h
+        end
     end
     -- GIF: "GIF" then version then width/height (little-endian u16).
     if b(1) == 0x47 and b(2) == 0x49 and b(3) == 0x46 then
         local w = b(7) + b(8) * 256
         local h = b(9) + b(10) * 256
-        if w > 0 and h > 0 then return w, h end
+        if w > 0 and h > 0 then
+            return w, h
+        end
     end
     return nil
 end
@@ -386,7 +465,6 @@ end
 -- We reserve 4 rows for the Out[N] header + breathing room and 2 cols
 -- of side margin so the image doesn't kiss the edge.
 local function preview_available_area(win)
-    local Config = require("jovian.config")
     local max_cols_cap = Config.options.preview_image_max_cols
     local max_rows_cap = Config.options.preview_image_max_rows
 
@@ -407,7 +485,6 @@ end
 -- the image's native cell footprint so a 200×100 png isn't stretched
 -- to fill a 200×60 cell pane.
 local function fit_image_in_area(b64, max_cols, max_rows)
-    local Config = require("jovian.config")
     local cell_pixel_aspect = Config.options.preview_cell_pixel_aspect or 0.5
     local cell_pixel_height = Config.options.preview_cell_pixel_height or 16
     local cell_pixel_width = cell_pixel_height * cell_pixel_aspect
@@ -437,8 +514,12 @@ local function fit_image_in_area(b64, max_cols, max_rows)
         rows = upper_h
         cols = math.floor(upper_h * cell_aspect)
     end
-    if cols < 4 then cols = 4 end
-    if rows < 2 then rows = 2 end
+    if cols < 4 then
+        cols = 4
+    end
+    if rows < 2 then
+        rows = 2
+    end
     return cols, rows
 end
 
@@ -456,16 +537,22 @@ local function outputs_to_preview_lines(outputs, refresh_cb, max_cols, max_rows)
         if kind == "stream" then
             local hl = (o.name == "stderr") and HL.Stderr or HL.Stdout
             local text = process_cr(strip_ansi(as_str(o.text))):gsub("\n$", "")
-            if text ~= "" then push(text, hl) end
+            if text ~= "" then
+                push(text, hl)
+            end
         elseif kind == "execute_result" or kind == "display_data" then
             local data = o.data or {}
             local img_b64 = find_image_b64(data)
             local tp = as_str(data["text/plain"])
             local has_img = img_b64 ~= nil
-            if has_img and tp ~= ""
-                and (tp:match("^<Figure ")
+            if
+                has_img
+                and tp ~= ""
+                and (
+                    tp:match("^<Figure ")
                     or tp:match("^<[%w._]+ object>$")
-                    or tp:match("^<[%w._]+ object at 0x[%x]+>$"))
+                    or tp:match("^<[%w._]+ object at 0x[%x]+>$")
+                )
             then
                 tp = ""
             end
@@ -474,9 +561,7 @@ local function outputs_to_preview_lines(outputs, refresh_cb, max_cols, max_rows)
             end
             if has_img then
                 Kitty = Kitty or require("jovian.ui.kitty")
-                local cols, rows = fit_image_in_area(
-                    img_b64, max_cols or 56, max_rows or 14
-                )
+                local cols, rows = fit_image_in_area(img_b64, max_cols or 56, max_rows or 14)
                 local id = Kitty.ensure_transmitted(img_b64, refresh_cb, cols, rows)
                 if id then
                     -- Each row of the placement is a list of per-cell chunks
@@ -505,7 +590,9 @@ local function outputs_to_preview_lines(outputs, refresh_cb, max_cols, max_rows)
             end
         elseif kind == "error" then
             local head = as_str(o.ename) .. ": " .. as_str(o.evalue)
-            if head ~= ": " then push(head, HL.Error) end
+            if head ~= ": " then
+                push(head, HL.Error)
+            end
             for _, tb in ipairs(o.traceback or {}) do
                 push(strip_ansi(as_str(tb)), HL.Error)
             end
@@ -519,7 +606,9 @@ end
 --- on every cursor move; cheap because we don't allocate per-row chunks.
 
 function M.render_to_buffer(buf, win, source_path, cell_id, execution_count_hint)
-    if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+    if not buf or not vim.api.nvim_buf_is_valid(buf) then
+        return
+    end
     M.setup_hl(nil)
 
     local max_cols, max_rows = preview_available_area(win)
@@ -539,11 +628,11 @@ function M.render_to_buffer(buf, win, source_path, cell_id, execution_count_hint
     local body_lines, body_hls = {}, {}
     if co then
         exec = co.execution_count
-        body_lines, body_hls = outputs_to_preview_lines(
-            co.outputs or {}, refresh_cb, max_cols, max_rows
-        )
+        body_lines, body_hls = outputs_to_preview_lines(co.outputs or {}, refresh_cb, max_cols, max_rows)
     end
-    if exec == nil then exec = execution_count_hint end
+    if exec == nil then
+        exec = execution_count_hint
+    end
 
     -- Header: "Out[N]" + an underline. Falls back to a hint if the cell
     -- has no outputs yet so the user still gets the cell identifier.

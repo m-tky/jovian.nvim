@@ -165,19 +165,19 @@ M.defaults = {
         md_h6 = nil,
         md_bold = nil,
         md_em = nil,
-        md_code = nil,          -- defaults to link String
-        md_bullet = nil,        -- defaults to link Special
-        md_quote = nil,         -- defaults to link Comment
+        md_code = nil, -- defaults to link String
+        md_bullet = nil, -- defaults to link Special
+        md_quote = nil, -- defaults to link Comment
         md_table_divider = nil, -- defaults to link Special
-        md_table_header = nil,  -- defaults to bold = true
+        md_table_header = nil, -- defaults to bold = true
         -- Inline cell output rendering. JovianOutDivider styles the
         -- `├─ Out[N] ─┤` separator; JovianOutStdout / JovianOutStderr
         -- / JovianOutResult / JovianOutError tint the body lines.
         out_divider = nil, -- defaults to link the cell border color
-        out_stdout = nil,  -- defaults to link Normal
-        out_stderr = nil,  -- defaults to link WarningMsg
-        out_result = nil,  -- defaults to link Identifier
-        out_error = nil,   -- defaults to link ErrorMsg
+        out_stdout = nil, -- defaults to link Normal
+        out_stderr = nil, -- defaults to link WarningMsg
+        out_result = nil, -- defaults to link Identifier
+        out_error = nil, -- defaults to link ErrorMsg
     },
 }
 

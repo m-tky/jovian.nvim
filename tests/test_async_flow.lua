@@ -92,7 +92,6 @@ package.loaded["jovian.ui"] = Mocks.UI
 
 -- Load Modules
 local Hosts = require("jovian.hosts")
-local Core = require("jovian.core")
 
 -- Tests
 local fail_count = 0

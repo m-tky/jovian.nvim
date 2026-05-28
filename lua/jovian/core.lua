@@ -42,10 +42,14 @@ end
 -- ---------- Kernel lifecycle ----------
 
 function M.start_kernel(on_ready)
-    if type(on_ready) ~= "function" then on_ready = nil end
+    if type(on_ready) ~= "function" then
+        on_ready = nil
+    end
 
     if State.job_id then
-        if on_ready then on_ready() end
+        if on_ready then
+            on_ready()
+        end
         return
     end
 
@@ -84,14 +88,20 @@ function M.interrupt_kernel()
 end
 
 local function with_kernel(fn)
-    if State.job_id then fn() else M.start_kernel(fn) end
+    if State.job_id then
+        fn()
+    else
+        M.start_kernel(fn)
+    end
 end
 
 -- ---------- Cell execution ----------
 
 function M.send_payload(code, cell_id, filename)
     if not State.job_id then
-        with_kernel(function() M.send_payload(code, cell_id, filename) end)
+        with_kernel(function()
+            M.send_payload(code, cell_id, filename)
+        end)
         return
     end
 
@@ -118,12 +128,11 @@ end
 
 function M.send_cell()
     if not is_window_open() then
-        return vim.notify(
-            "Jovian windows are closed. Use :JovianOpen or :JovianToggle first.",
-            vim.log.levels.WARN
-        )
+        return vim.notify("Jovian windows are closed. Use :JovianOpen or :JovianToggle first.", vim.log.levels.WARN)
     end
-    if not State.job_id then M.start_kernel() end
+    if not State.job_id then
+        M.start_kernel()
+    end
     local s, e = Cell.get_cell_range()
     UI.flash_range(s, e)
     local lines = vim.api.nvim_buf_get_lines(0, s - 1, e, false)
@@ -135,7 +144,9 @@ function M.send_cell()
     end
     local id = Cell.get_current_cell_id(s, true)
     local fn = vim.fn.expand("%:t")
-    if fn == "" then fn = "untitled" end
+    if fn == "" then
+        fn = "untitled"
+    end
     M.send_payload(table.concat(lines, "\n"), id, fn)
 end
 
@@ -143,15 +154,21 @@ function M.send_selection()
     if not is_window_open() then
         return vim.notify("Jovian windows are closed.", vim.log.levels.WARN)
     end
-    if not State.job_id then M.start_kernel() end
+    if not State.job_id then
+        M.start_kernel()
+    end
     local _, csrow, _, _ = unpack(vim.fn.getpos("'<"))
     local _, cerow, _, _ = unpack(vim.fn.getpos("'>"))
     local lines = vim.api.nvim_buf_get_lines(0, csrow - 1, cerow, false)
-    if #lines == 0 then return end
+    if #lines == 0 then
+        return
+    end
     UI.flash_range(csrow, cerow)
     local id = Cell.get_current_cell_id(csrow, true)
     local fn = vim.fn.expand("%:t")
-    if fn == "" then fn = "untitled" end
+    if fn == "" then
+        fn = "untitled"
+    end
     M.send_payload(table.concat(lines, "\n"), id, fn)
 end
 
@@ -159,9 +176,13 @@ function M.run_line()
     if not is_window_open() then
         return vim.notify("Jovian windows are closed.", vim.log.levels.WARN)
     end
-    if not State.job_id then M.start_kernel() end
+    if not State.job_id then
+        M.start_kernel()
+    end
     local line = vim.api.nvim_get_current_line()
-    if line == "" then return end
+    if line == "" then
+        return
+    end
     UI.flash_range(vim.fn.line("."), vim.fn.line("."))
     local id = "line_" .. os.time()
     local fn = vim.fn.expand("%:t")
@@ -198,7 +219,9 @@ function M._execute_lines(lines, batch_name)
         table.insert(cells_to_run, { code = table.concat(blk, "\n"), id = current_bid })
     end
 
-    if #cells_to_run == 0 then return end
+    if #cells_to_run == 0 then
+        return
+    end
 
     if batch_name then
         State.batch_execution = {
@@ -215,7 +238,9 @@ function M._execute_lines(lines, batch_name)
 end
 
 function M.run_all_cells()
-    if not is_window_open() then return end
+    if not is_window_open() then
+        return
+    end
     with_kernel(function()
         local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
         M._execute_lines(lines, "RunAll")
@@ -223,7 +248,9 @@ function M.run_all_cells()
 end
 
 function M.run_cells_above()
-    if not is_window_open() then return end
+    if not is_window_open() then
+        return
+    end
     with_kernel(function()
         local cursor_line = vim.fn.line(".")
         local cur_s, _ = Cell.get_cell_range(cursor_line)
@@ -245,8 +272,7 @@ function M.view_dataframe(args)
     with_kernel(function()
         local name = type(args) == "table" and args.args or args
         local offset = (args and type(args) == "table") and args.offset or 0
-        local limit = (args and type(args) == "table") and args.limit
-            or Config.options.dataframe_page_size
+        local limit = (args and type(args) == "table") and args.limit or Config.options.dataframe_page_size
         rust().view_dataframe({ name = name, offset = offset, limit = limit })
     end)
 end
@@ -262,12 +288,16 @@ function M.eval(code)
     if not code or vim.trim(code) == "" then
         vim.ui.input({ prompt = "eval> " }, function(input)
             if input and vim.trim(input) ~= "" then
-                with_kernel(function() rust().eval(input) end)
+                with_kernel(function()
+                    rust().eval(input)
+                end)
             end
         end)
         return
     end
-    with_kernel(function() rust().eval(code) end)
+    with_kernel(function()
+        rust().eval(code)
+    end)
 end
 
 -- Continuous REPL session in the Output window: prompt → run → re-prompt.
@@ -297,8 +327,12 @@ function M.show_error_diagnostics(bufnr, cell_id, error_info)
     local err_line = error_info.line or 1
     local target_line = (start_line - 1) + (err_line - 1)
     local line_count = vim.api.nvim_buf_line_count(bufnr)
-    if target_line >= line_count then target_line = line_count - 1 end
-    if target_line < 0 then target_line = 0 end
+    if target_line >= line_count then
+        target_line = line_count - 1
+    end
+    if target_line < 0 then
+        target_line = 0
+    end
     vim.diagnostic.set(State.diag_ns, bufnr, {
         {
             lnum = target_line,

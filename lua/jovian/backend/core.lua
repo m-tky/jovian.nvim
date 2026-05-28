@@ -18,7 +18,9 @@ local function plugin_dir()
     -- This file: <plugin_dir>/lua/jovian/backend/core.lua
     -- → strip three levels for plugin root
     local src = debug.getinfo(1, "S").source
-    if src:sub(1, 1) == "@" then src = src:sub(2) end
+    if src:sub(1, 1) == "@" then
+        src = src:sub(2)
+    end
     return vim.fn.fnamemodify(src, ":h:h:h:h")
 end
 
@@ -42,7 +44,9 @@ end
 
 --- Get the shared client, spawning the core process on first call.
 function M.ensure(opts)
-    if _client and _client.running then return _client end
+    if _client and _client.running then
+        return _client
+    end
 
     local bin = M.locate_binary()
     if not bin then
@@ -69,10 +73,7 @@ function M.ensure(opts)
         _client = nil
         if code and code ~= 0 then
             vim.schedule(function()
-                vim.notify(
-                    ("jovian-core exited (code=%s signal=%s)"):format(code, signal),
-                    vim.log.levels.WARN
-                )
+                vim.notify(("jovian-core exited (code=%s signal=%s)"):format(code, signal), vim.log.levels.WARN)
             end)
         end
     end)
@@ -127,16 +128,20 @@ function M.ensure(opts)
             M._kitty_attach_error = err
             vim.schedule(function()
                 vim.notify(
-                    "jovian: kitty_attach failed (" .. err .. "). "
-                    .. "Inline images will not render. "
-                    .. "Run `:checkhealth jovian` to diagnose.",
+                    "jovian: kitty_attach failed ("
+                        .. err
+                        .. "). "
+                        .. "Inline images will not render. "
+                        .. "Run `:checkhealth jovian` to diagnose.",
                     vim.log.levels.WARN
                 )
                 flush_ready(false, err)
             end)
         else
             M._kitty_attached = true
-            vim.schedule(function() flush_ready(true, nil) end)
+            vim.schedule(function()
+                flush_ready(true, nil)
+            end)
         end
     end)
 
@@ -147,9 +152,13 @@ end
 --- if it already has; queues the cb otherwise.
 function M.on_kitty_ready(cb)
     if M._kitty_attached then
-        vim.schedule(function() cb(true, nil) end)
+        vim.schedule(function()
+            cb(true, nil)
+        end)
     elseif M._kitty_attach_error then
-        vim.schedule(function() cb(false, M._kitty_attach_error) end)
+        vim.schedule(function()
+            cb(false, M._kitty_attach_error)
+        end)
     else
         M._kitty_ready_cbs = M._kitty_ready_cbs or {}
         table.insert(M._kitty_ready_cbs, cb)

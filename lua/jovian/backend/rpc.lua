@@ -20,12 +20,7 @@ local Client = {}
 Client.__index = Client
 
 local function pack_u32_be(n)
-    return string.char(
-        math.floor(n / 16777216) % 256,
-        math.floor(n / 65536) % 256,
-        math.floor(n / 256) % 256,
-        n % 256
-    )
+    return string.char(math.floor(n / 16777216) % 256, math.floor(n / 65536) % 256, math.floor(n / 256) % 256, n % 256)
 end
 
 local function unpack_u32_be(s)
@@ -58,7 +53,9 @@ function M.spawn(opts)
     }, Client)
 
     local spawn_args = { args = args, stdio = { stdin, stdout, stderr } }
-    if env then spawn_args.env = env end
+    if env then
+        spawn_args.env = env
+    end
 
     local handle, pid_or_err = uv.spawn(cmd, spawn_args, function(code, signal)
         self.running = false
@@ -68,7 +65,9 @@ function M.spawn(opts)
     end)
 
     if not handle then
-        stdin:close(); stdout:close(); stderr:close()
+        stdin:close()
+        stdout:close()
+        stderr:close()
         error("rpc.spawn: failed to spawn " .. cmd .. ": " .. tostring(pid_or_err))
     end
 
@@ -78,10 +77,14 @@ function M.spawn(opts)
 
     uv.read_start(stdout, function(err, chunk)
         if err then
-            vim.schedule(function() vim.notify("jovian rpc stdout err: " .. err, vim.log.levels.ERROR) end)
+            vim.schedule(function()
+                vim.notify("jovian rpc stdout err: " .. err, vim.log.levels.ERROR)
+            end)
             return
         end
-        if not chunk then return end
+        if not chunk then
+            return
+        end
         self.out_acc = self.out_acc .. chunk
         self:_drain()
     end)
@@ -89,7 +92,9 @@ function M.spawn(opts)
     uv.read_start(stderr, function(_, chunk)
         if chunk and chunk ~= "" then
             -- core writes tracing logs to a file; anything on stderr is unusual
-            vim.schedule(function() vim.notify("jovian-core: " .. chunk, vim.log.levels.WARN) end)
+            vim.schedule(function()
+                vim.notify("jovian-core: " .. chunk, vim.log.levels.WARN)
+            end)
         end
     end)
 
@@ -99,7 +104,9 @@ end
 function Client:_drain()
     while #self.out_acc >= 4 do
         local n = unpack_u32_be(self.out_acc:sub(1, 4))
-        if #self.out_acc < 4 + n then return end
+        if #self.out_acc < 4 + n then
+            return
+        end
         local payload = self.out_acc:sub(5, 4 + n)
         self.out_acc = self.out_acc:sub(5 + n)
         local ok, val = pcall(vim.mpack.decode, payload)
@@ -112,9 +119,13 @@ function Client:_drain()
                 if cb then
                     vim.schedule(function()
                         local err = val[3]
-                        if err == vim.NIL then err = nil end
+                        if err == vim.NIL then
+                            err = nil
+                        end
                         local res = val[4]
-                        if res == vim.NIL then res = nil end
+                        if res == vim.NIL then
+                            res = nil
+                        end
                         pcall(cb, err, res)
                     end)
                 end
@@ -161,7 +172,11 @@ function Client:request(method, params, cb)
     local ok, err = self:_send(payload)
     if not ok then
         self.pending[id] = nil
-        if cb then vim.schedule(function() cb(err, nil) end) end
+        if cb then
+            vim.schedule(function()
+                cb(err, nil)
+            end)
+        end
     end
     return id
 end
@@ -172,8 +187,12 @@ function Client:request_sync(method, params, timeout_ms)
     self:request(method, params, function(e, r)
         err, result, done = e, r, true
     end)
-    local ok = vim.wait(timeout_ms or 5000, function() return done end, 10)
-    if not ok then return nil, "rpc timeout: " .. method end
+    local ok = vim.wait(timeout_ms or 5000, function()
+        return done
+    end, 10)
+    if not ok then
+        return nil, "rpc timeout: " .. method
+    end
     return result, err
 end
 
@@ -193,7 +212,9 @@ function Client:on_exit(cb)
 end
 
 function Client:stop()
-    if not self.running then return end
+    if not self.running then
+        return
+    end
     local uv = vim.uv or vim.loop
     -- Closing stdin signals EOF to core's reader loop; it then exits cleanly.
     -- Fall back to SIGTERM if it ignores us.

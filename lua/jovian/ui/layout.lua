@@ -438,12 +438,18 @@ end
 local function find_code_win()
     local panel = {}
     for _, w in ipairs({ State.win.preview, State.win.output, State.win.variables, State.win.pin }) do
-        if w then panel[w] = true end
+        if w then
+            panel[w] = true
+        end
     end
     local cur = vim.api.nvim_get_current_win()
-    if not panel[cur] then return cur end
+    if not panel[cur] then
+        return cur
+    end
     for _, w in ipairs(vim.api.nvim_list_wins()) do
-        if not panel[w] then return w end
+        if not panel[w] then
+            return w
+        end
     end
     return cur
 end
@@ -454,7 +460,9 @@ end
 -- the writers (ui/shared.ensure_output_term), so output produced while
 -- the window was closed is already there when it opens.
 function M.open_output_window()
-    if Config.options.output_window == "off" then return end
+    if Config.options.output_window == "off" then
+        return
+    end
     if State.win.output and vim.api.nvim_win_is_valid(State.win.output) then
         return
     end

@@ -52,13 +52,17 @@ local HEADING_FALLBACKS = {
 -- table), we treat it as "not really defined".
 local function group_has_styling(name)
     local h = vim.api.nvim_get_hl(0, { name = name, link = false })
-    if not h then return false end
+    if not h then
+        return false
+    end
     return h.fg ~= nil or h.bg ~= nil or h.bold or h.italic or h.underline
 end
 
 local function pick_existing(candidates)
     for _, name in ipairs(candidates) do
-        if group_has_styling(name) then return name end
+        if group_has_styling(name) then
+            return name
+        end
     end
     return nil
 end
@@ -69,8 +73,12 @@ end
 --   nil    → use the supplied fallback (string link or table of attrs)
 local function apply_hl(target, user_val, fallback)
     local val = user_val
-    if val == nil then val = fallback end
-    if val == nil then return end
+    if val == nil then
+        val = fallback
+    end
+    if val == nil then
+        return
+    end
     if type(val) == "string" then
         vim.api.nvim_set_hl(0, target, { link = val, force = true })
     elseif type(val) == "table" then
@@ -81,7 +89,7 @@ local function apply_hl(target, user_val, fallback)
 end
 
 local function set_default_hl()
-    local user_hl = (Config.options.highlights) or {}
+    local user_hl = Config.options.highlights or {}
     -- Headings: explicit config wins; otherwise pick whichever group from
     -- the fallback chain is actually defined by the colorscheme.
     for level = 1, 6 do
@@ -138,7 +146,9 @@ end
 
 local function style_heading(buf, lnum, content, offset)
     local hashes, rest_offset = content:match("^(#+)()%s")
-    if not hashes then return false end
+    if not hashes then
+        return false
+    end
     local level = math.min(#hashes, 6)
     local hl = HL["H" .. level] or HL.H6
     -- Conceal the `#`/`##`/... marker AND its trailing space.
@@ -156,8 +166,10 @@ local function style_heading(buf, lnum, content, offset)
 end
 
 local function style_bullet(buf, lnum, content, offset)
-    local indent_end, _marker, body_start = content:match("^(%s*)([-*])()%s")
-    if not indent_end then return false end
+    local indent_end, _, body_start = content:match("^(%s*)([-*])()%s")
+    if not indent_end then
+        return false
+    end
     local marker_col = #indent_end
     pcall(vim.api.nvim_buf_set_extmark, buf, NS, lnum, offset + marker_col, {
         end_col = offset + marker_col + 1,
@@ -176,7 +188,9 @@ end
 
 local function style_quote(buf, lnum, content, offset)
     local prefix_end = content:match("^>()%s") or content:match("^>()$")
-    if not prefix_end then return false end
+    if not prefix_end then
+        return false
+    end
     conceal_range(buf, lnum, offset, offset + prefix_end)
     hl_range(buf, lnum, offset + prefix_end, offset + #content, HL.Quote)
     return true
@@ -187,11 +201,15 @@ end
 -- right side, and pipes inside code spans are rare enough to ignore for
 -- now (no escape handling).
 local function is_table_row(content)
-    if content:sub(1, 1) ~= "|" then return false end
+    if content:sub(1, 1) ~= "|" then
+        return false
+    end
     local count = 0
     for _ in content:gmatch("|") do
         count = count + 1
-        if count >= 2 then return true end
+        if count >= 2 then
+            return true
+        end
     end
     return false
 end
@@ -200,8 +218,12 @@ end
 -- spaces around the dashes. They contain only pipes, dashes, colons and
 -- whitespace — no letters or digits.
 local function is_separator_row(content)
-    if content:sub(1, 1) ~= "|" then return false end
-    if not content:match("|[%s%-:]+|") then return false end
+    if content:sub(1, 1) ~= "|" then
+        return false
+    end
+    if not content:match("|[%s%-:]+|") then
+        return false
+    end
     return content:match("[%w]") == nil
 end
 
@@ -223,7 +245,9 @@ local function find_pipe_positions(content)
     local s = 1
     while true do
         local p = content:find("|", s)
-        if not p then break end
+        if not p then
+            break
+        end
         table.insert(out, p)
         s = p + 1
     end
@@ -235,7 +259,9 @@ end
 -- inline virt_text so columns line up — independently of the user's
 -- whitespace in the source. The buffer text is never edited.
 local function render_table_block(buf, rows)
-    if #rows == 0 then return end
+    if #rows == 0 then
+        return
+    end
 
     -- Parse: for each row, find pipe positions and per-cell width.
     local parsed = {}
@@ -244,10 +270,12 @@ local function render_table_block(buf, rows)
         local pipes = find_pipe_positions(info.content)
         local cells = {}
         for c = 1, #pipes - 1 do
-            local from = pipes[c] + 1     -- byte pos after the | (1-indexed)
-            local to = pipes[c + 1] - 1   -- byte pos before next | (1-indexed)
+            local from = pipes[c] + 1 -- byte pos after the | (1-indexed)
+            local to = pipes[c + 1] - 1 -- byte pos before next | (1-indexed)
             local width = to - from + 1
-            if width < 0 then width = 0 end
+            if width < 0 then
+                width = 0
+            end
             cells[c] = { from = from, to = to, width = width }
         end
         table.insert(parsed, {
@@ -256,12 +284,16 @@ local function render_table_block(buf, rows)
             cells = cells,
             is_sep = is_separator_row(info.content),
         })
-        if #cells > n_cols then n_cols = #cells end
+        if #cells > n_cols then
+            n_cols = #cells
+        end
     end
 
     -- Per-column max width across all rows.
     local max_widths = {}
-    for c = 1, n_cols do max_widths[c] = 0 end
+    for c = 1, n_cols do
+        max_widths[c] = 0
+    end
     for _, r in ipairs(parsed) do
         for c, cell in ipairs(r.cells) do
             if cell.width > max_widths[c] then
@@ -299,7 +331,9 @@ local function render_table_block(buf, rows)
         -- rule is continuous (no gaps around the junctions).
         if r.is_sep then
             local pipe_set = {}
-            for _, p in ipairs(r.pipes) do pipe_set[p] = true end
+            for _, p in ipairs(r.pipes) do
+                pipe_set[p] = true
+            end
             for col = 1, #info.content do
                 if not pipe_set[col] then
                     conceal_replace(buf, info.ln, info.offset + col - 1, "─", HL.TableDivider)
@@ -338,7 +372,9 @@ local function style_inline(buf, lnum, content, offset)
     local s = 1
     while true do
         local a, b = content:find("%*%*[^%*]+%*%*", s)
-        if not a then break end
+        if not a then
+            break
+        end
         conceal_range(buf, lnum, offset + a - 1, offset + a + 1)
         hl_range(buf, lnum, offset + a + 1, offset + b - 2, HL.Bold)
         conceal_range(buf, lnum, offset + b - 2, offset + b)
@@ -349,7 +385,9 @@ local function style_inline(buf, lnum, content, offset)
     s = 1
     while true do
         local a, b = content:find("`([^`]+)`", s)
-        if not a then break end
+        if not a then
+            break
+        end
         conceal_range(buf, lnum, offset + a - 1, offset + a)
         hl_range(buf, lnum, offset + a, offset + b - 1, HL.Code)
         conceal_range(buf, lnum, offset + b - 1, offset + b)
@@ -362,25 +400,32 @@ local function style_inline(buf, lnum, content, offset)
 end
 
 local function is_markdown_header(line)
-    if not line:match("^#%s*%%%%") then return false end
+    if not line:match("^#%s*%%%%") then
+        return false
+    end
     local lower = line:lower()
-    return lower:find("%[markdown%]", 1, false) ~= nil
-        or lower:find("%[md%]", 1, false) ~= nil
+    return lower:find("%[markdown%]", 1, false) ~= nil or lower:find("%[md%]", 1, false) ~= nil
 end
 
 function M.render(bufnr)
     bufnr = bufnr or vim.api.nvim_get_current_buf()
-    if not vim.api.nvim_buf_is_valid(bufnr) then return end
+    if not vim.api.nvim_buf_is_valid(bufnr) then
+        return
+    end
     set_default_hl()
 
     vim.api.nvim_buf_clear_namespace(bufnr, NS, 0, -1)
-    if not Config.options.markdown_cell_style then return end
+    if not Config.options.markdown_cell_style then
+        return
+    end
 
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     -- Walk cells via the cell_frame parser so we agree on cell boundaries
     -- (especially the implicit "scratchpad" top-of-file region).
     local headers = CellFrame._parse_cells(bufnr)
-    if #headers == 0 then return end
+    if #headers == 0 then
+        return
+    end
 
     for idx, h in ipairs(headers) do
         local next_line = headers[idx + 1] and headers[idx + 1].line or #lines
@@ -417,9 +462,7 @@ function M.render(bufnr)
                 local info = cell_lines[i]
                 if info.content ~= "" and is_table_row(info.content) then
                     local block_end = i
-                    while block_end + 1 <= #cell_lines
-                        and is_table_row(cell_lines[block_end + 1].content)
-                    do
+                    while block_end + 1 <= #cell_lines and is_table_row(cell_lines[block_end + 1].content) do
                         block_end = block_end + 1
                     end
                     local block = {}
@@ -430,7 +473,8 @@ function M.render(bufnr)
                     i = block_end + 1
                 else
                     if info.content ~= "" then
-                        if not style_heading(bufnr, info.ln, info.content, info.offset)
+                        if
+                            not style_heading(bufnr, info.ln, info.content, info.offset)
                             and not style_quote(bufnr, info.ln, info.content, info.offset)
                         then
                             style_bullet(bufnr, info.ln, info.content, info.offset)
@@ -464,15 +508,19 @@ function M.schedule(bufnr)
         t = uv.new_timer()
         _timers[bufnr] = t
     end
-    t:start(60, 0, vim.schedule_wrap(function()
-        if vim.api.nvim_buf_is_valid(bufnr) then
-            M.render(bufnr)
-        end
-        if _timers[bufnr] then
-            _timers[bufnr]:close()
-            _timers[bufnr] = nil
-        end
-    end))
+    t:start(
+        60,
+        0,
+        vim.schedule_wrap(function()
+            if vim.api.nvim_buf_is_valid(bufnr) then
+                M.render(bufnr)
+            end
+            if _timers[bufnr] then
+                _timers[bufnr]:close()
+                _timers[bufnr] = nil
+            end
+        end)
+    )
 end
 
 M._namespace = NS

@@ -14,20 +14,32 @@ local function detect_target()
     local u = (vim.uv or vim.loop).os_uname()
     local sys, mach = u.sysname, u.machine
     if sys == "Darwin" then
-        if mach == "arm64" then return "aarch64-apple-darwin" end
-        if mach == "x86_64" then return "x86_64-apple-darwin" end
+        if mach == "arm64" then
+            return "aarch64-apple-darwin"
+        end
+        if mach == "x86_64" then
+            return "x86_64-apple-darwin"
+        end
     elseif sys == "Linux" then
-        if mach == "x86_64" then return "x86_64-unknown-linux-gnu" end
-        if mach == "aarch64" then return "aarch64-unknown-linux-gnu" end
+        if mach == "x86_64" then
+            return "x86_64-unknown-linux-gnu"
+        end
+        if mach == "aarch64" then
+            return "aarch64-unknown-linux-gnu"
+        end
     end
     return nil
 end
 
 local function detect_tag(plugin_dir)
     local out = vim.fn.system({ "git", "-C", plugin_dir, "describe", "--tags", "--exact-match" })
-    if vim.v.shell_error == 0 then return vim.trim(out) end
+    if vim.v.shell_error == 0 then
+        return vim.trim(out)
+    end
     out = vim.fn.system({ "git", "-C", plugin_dir, "describe", "--tags", "--abbrev=0" })
-    if vim.v.shell_error == 0 then return vim.trim(out) end
+    if vim.v.shell_error == 0 then
+        return vim.trim(out)
+    end
     return nil
 end
 
@@ -47,8 +59,7 @@ local function build_from_source(plugin_dir)
 end
 
 function M.run(plugin)
-    local plugin_dir = (plugin and plugin.dir)
-        or vim.fn.expand("~/.local/share/nvim/lazy/jovian.nvim")
+    local plugin_dir = (plugin and plugin.dir) or vim.fn.expand("~/.local/share/nvim/lazy/jovian.nvim")
 
     local target = detect_target()
     local tag = target and detect_tag(plugin_dir)
@@ -57,26 +68,25 @@ function M.run(plugin)
         return false
     end
 
-    local url = string.format(
-        "https://github.com/%s/releases/download/%s/jovian-core-%s",
-        REPO,
-        tag,
-        target
-    )
+    local url = string.format("https://github.com/%s/releases/download/%s/jovian-core-%s", REPO, tag, target)
     local dest_dir = plugin_dir .. "/core/target/release"
     vim.fn.mkdir(dest_dir, "p")
     local dest = dest_dir .. "/jovian-core"
 
     vim.notify(("jovian: downloading prebuilt %s..."):format(tag), vim.log.levels.INFO)
     local out = vim.fn.system({
-        "curl", "-fsSL", "--retry", "3", "--retry-delay", "2",
-        "-o", dest, url,
+        "curl",
+        "-fsSL",
+        "--retry",
+        "3",
+        "--retry-delay",
+        "2",
+        "-o",
+        dest,
+        url,
     })
     if vim.v.shell_error ~= 0 then
-        vim.notify(
-            ("jovian: download failed (%s), falling back to cargo"):format(out),
-            vim.log.levels.WARN
-        )
+        vim.notify(("jovian: download failed (%s), falling back to cargo"):format(out), vim.log.levels.WARN)
         build_from_source(plugin_dir)
         return false
     end

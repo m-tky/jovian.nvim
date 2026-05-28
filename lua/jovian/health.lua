@@ -25,14 +25,14 @@ function M.check()
     -- Kitty graphics support (jovian-core writes Kitty escapes directly to
     -- /dev/tty; works on Kitty / Ghostty 1.3+ / WezTerm).
     local term = vim.env.TERM_PROGRAM or vim.env.TERM or ""
-    if term:match("kitty") or term:match("ghostty") or term:match("wezterm")
-        or vim.env.KITTY_WINDOW_ID
-    then
+    if term:match("kitty") or term:match("ghostty") or term:match("wezterm") or vim.env.KITTY_WINDOW_ID then
         vim.health.ok("Kitty graphics terminal detected (" .. term .. ")")
     else
         vim.health.warn(
-            "Kitty graphics support unclear (TERM=" .. term .. ")"
-            .. " — inline images may render as placeholder glyphs only"
+            "Kitty graphics support unclear (TERM="
+                .. term
+                .. ")"
+                .. " — inline images may render as placeholder glyphs only"
         )
     end
 

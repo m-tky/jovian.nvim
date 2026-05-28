@@ -20,7 +20,7 @@ use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -62,7 +62,6 @@ pub struct Cell {
 
 #[derive(Debug, Clone)]
 pub struct Source {
-    pub path: PathBuf,
     pub cells: Vec<Cell>,
 }
 
@@ -83,7 +82,7 @@ static ID_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"id="(?P<id>[A-Za-z0-9_\-]
 
 impl Source {
     /// Parse a source buffer (as the user sees it in Neovim) into cells.
-    pub fn parse(path: PathBuf, text: &str) -> Self {
+    pub fn parse(text: &str) -> Self {
         let lines: Vec<&str> = text.split('\n').collect();
         let mut headers: Vec<(usize, CellType, Option<String>)> = Vec::new();
         for (i, line) in lines.iter().enumerate() {
@@ -141,13 +140,12 @@ impl Source {
             });
         }
 
-        Source { path, cells }
+        Source { cells }
     }
 
     pub fn read(path: &Path) -> Result<Self> {
         if !path.exists() {
             return Ok(Self {
-                path: path.to_path_buf(),
                 cells: vec![Cell {
                     id: "scratchpad".to_string(),
                     cell_type: CellType::Code,
@@ -159,7 +157,7 @@ impl Source {
         }
         let raw = std::fs::read_to_string(path)
             .with_context(|| format!("read {}", path.display()))?;
-        Ok(Self::parse(path.to_path_buf(), &raw))
+        Ok(Self::parse(&raw))
     }
 
     pub fn cell(&self, id: &str) -> Option<&Cell> {
@@ -240,12 +238,6 @@ pub fn write_sidecar(source_path: &Path, store: &OutputStoreFile) -> Result<()> 
     Ok(())
 }
 
-/// Convenience: load just a single cell's outputs.
-pub fn read_cell_outputs(source_path: &Path, cell_id: &str) -> Result<CellOutputs> {
-    let store = read_sidecar(source_path)?;
-    Ok(store.cells.get(cell_id).cloned().unwrap_or_default())
-}
-
 // ----- Mime / output helpers (kept here so all output mutations stay in one place) -----
 
 /// Append a stream output, coalescing with the previous entry if it's the
@@ -303,11 +295,6 @@ pub fn append_error(outputs: &mut Vec<Value>, ename: &str, evalue: &str, traceba
     }));
 }
 
-// Re-export so callers can construct empty maps without depending on serde_json directly
-pub fn empty_metadata() -> Value {
-    Value::Object(Map::new())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -315,7 +302,7 @@ mod tests {
     #[test]
     fn parse_simple_cells() {
         let src = "# %% id=\"a1\"\nprint(1)\n\n# %% id=\"a2\"\nprint(2)\n";
-        let s = Source::parse(PathBuf::from("test.py"), src);
+        let s = Source::parse(src);
         assert_eq!(s.cells.len(), 2);
         assert_eq!(s.cells[0].id, "a1");
         assert!(s.cells[0].source.contains("print(1)"));
@@ -326,7 +313,7 @@ mod tests {
     #[test]
     fn implicit_scratchpad_for_leading_code() {
         let src = "import os\n\n# %% id=\"a1\"\nprint(1)\n";
-        let s = Source::parse(PathBuf::from("test.py"), src);
+        let s = Source::parse(src);
         assert_eq!(s.cells.len(), 2);
         assert_eq!(s.cells[0].id, "scratchpad");
         assert!(s.cells[0].source.starts_with("import os"));
@@ -335,7 +322,7 @@ mod tests {
     #[test]
     fn markdown_cell_type() {
         let src = "# %% [markdown] id=\"m1\"\n# heading\n";
-        let s = Source::parse(PathBuf::from("test.py"), src);
+        let s = Source::parse(src);
         assert_eq!(s.cells.len(), 1);
         assert_eq!(s.cells[0].cell_type, CellType::Markdown);
     }
@@ -343,7 +330,7 @@ mod tests {
     #[test]
     fn missing_id_gets_generated() {
         let src = "# %%\nprint(1)\n";
-        let s = Source::parse(PathBuf::from("test.py"), src);
+        let s = Source::parse(src);
         assert_eq!(s.cells.len(), 1);
         assert!(!s.cells[0].id.is_empty());
         assert_ne!(s.cells[0].id, "scratchpad");

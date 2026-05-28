@@ -28,7 +28,9 @@ local HL_BORDER_CODE = "JovianCellBorderCode"
 local HL_BORDER_MARKDOWN = "JovianCellBorderMarkdown"
 
 local function frame_hl_for(kind)
-    if kind == "Markdown" then return HL_BORDER_MARKDOWN end
+    if kind == "Markdown" then
+        return HL_BORDER_MARKDOWN
+    end
     return HL_BORDER_CODE
 end
 
@@ -41,8 +43,12 @@ local HEADER_RE = "^#%s*%%%%"
 -- helper here to keep ui/cell_frame.lua independent of ui/markdown_cell.lua.
 local function apply_hl(target, user_val, fallback)
     local val = user_val
-    if val == nil then val = fallback end
-    if val == nil then return end
+    if val == nil then
+        val = fallback
+    end
+    if val == nil then
+        return
+    end
     if type(val) == "string" then
         vim.api.nvim_set_hl(0, target, { link = val, force = true })
     elseif type(val) == "table" then
@@ -58,27 +64,41 @@ end
 -- give `WarningMsg` an orange-ish fg get orange markdown borders, themes
 -- that give `Function` a blue-ish fg get blue code borders, etc.
 local CODE_BORDER_FALLBACKS = {
-    "Function", "@function", "Identifier", "DiagnosticInfo", "Type", "Comment",
+    "Function",
+    "@function",
+    "Identifier",
+    "DiagnosticInfo",
+    "Type",
+    "Comment",
 }
 local MD_BORDER_FALLBACKS = {
-    "WarningMsg", "DiagnosticWarn", "@number", "Number", "Constant", "Special",
+    "WarningMsg",
+    "DiagnosticWarn",
+    "@number",
+    "Number",
+    "Constant",
+    "Special",
 }
 
 local function group_has_styling(name)
     local h = vim.api.nvim_get_hl(0, { name = name, link = false })
-    if not h then return false end
+    if not h then
+        return false
+    end
     return h.fg ~= nil or h.bg ~= nil or h.bold or h.italic or h.underline
 end
 
 local function pick_existing(candidates)
     for _, name in ipairs(candidates) do
-        if group_has_styling(name) then return name end
+        if group_has_styling(name) then
+            return name
+        end
     end
     return candidates[#candidates]
 end
 
 local function set_default_hl()
-    local user_hl = (Config.options.highlights) or {}
+    local user_hl = Config.options.highlights or {}
     -- Pull from the active colorscheme so the outline tracks the theme.
     -- User overrides (string link / table attrs) still win.
     apply_hl(HL_BORDER_CODE, user_hl.cell_border_code, pick_existing(CODE_BORDER_FALLBACKS))
@@ -90,7 +110,9 @@ local function dw(s)
 end
 
 local function repeat_dash(n)
-    if n <= 0 then return "" end
+    if n <= 0 then
+        return ""
+    end
     return string.rep("─", n)
 end
 
@@ -109,7 +131,9 @@ end
 
 local function parse_header(line)
     -- Returns (cell_type, id) or nil if not a header line.
-    if not line:match(HEADER_RE) then return nil end
+    if not line:match(HEADER_RE) then
+        return nil
+    end
     local lower = line:lower()
     local kind = "Code"
     if lower:find("%[markdown%]", 1, false) or lower:find("%[md%]", 1, false) then
@@ -150,7 +174,9 @@ local function text_area_width(winid)
     local info = vim.fn.getwininfo(winid)[1] or {}
     local textoff = info.textoff or 0
     local w = total - textoff
-    if w < 20 then w = 20 end
+    if w < 20 then
+        w = 20
+    end
     -- No upper cap: the right_align side bar lives at the actual text-area
     -- edge, so the top/bottom dashes must reach there too — otherwise
     -- the frame looks like ┌──── ─┐  │  with a visible gap on wide windows.
@@ -162,22 +188,30 @@ end
 function M.render(bufnr, winid)
     bufnr = bufnr or vim.api.nvim_get_current_buf()
     winid = winid or vim.api.nvim_get_current_win()
-    if not vim.api.nvim_buf_is_valid(bufnr) then return end
+    if not vim.api.nvim_buf_is_valid(bufnr) then
+        return
+    end
     set_default_hl()
 
     vim.api.nvim_buf_clear_namespace(bufnr, NS, 0, -1)
 
-    if not Config.options.cell_frame then return end
+    if not Config.options.cell_frame then
+        return
+    end
 
     local headers, total = parse_cells(bufnr)
-    if #headers == 0 then return end
+    if #headers == 0 then
+        return
+    end
 
     local width = text_area_width(winid)
 
     for idx, h in ipairs(headers) do
         local next_line = headers[idx + 1] and headers[idx + 1].line or total
         local last_src = next_line - 1
-        if last_src < h.line then last_src = h.line end
+        if last_src < h.line then
+            last_src = h.line
+        end
 
         local label = h.kind
         if h.id then
@@ -251,14 +285,7 @@ function M.render(bufnr, winid)
                         M.schedule(bufnr)
                     end
                 end
-                local out_rows = OutRender.build_virt_lines(
-                    co.outputs,
-                    co.execution_count,
-                    width,
-                    hl,
-                    refresh,
-                    h.id
-                )
+                local out_rows = OutRender.build_virt_lines(co.outputs, co.execution_count, width, hl, refresh, h.id)
                 for _, row in ipairs(out_rows) do
                     table.insert(lines_below, row)
                 end
@@ -294,28 +321,32 @@ function M.schedule(bufnr, winid)
         t = uv.new_timer()
         _timers[bufnr] = t
     end
-    t:start(60, 0, vim.schedule_wrap(function()
-        if not vim.api.nvim_buf_is_valid(bufnr) then
+    t:start(
+        60,
+        0,
+        vim.schedule_wrap(function()
+            if not vim.api.nvim_buf_is_valid(bufnr) then
+                if _timers[bufnr] then
+                    _timers[bufnr]:close()
+                    _timers[bufnr] = nil
+                end
+                return
+            end
+            -- Resolve the winid AT FIRE TIME, not at schedule time. After a
+            -- resize the window's textoff/width can shift; using the live
+            -- winid means we render against the final geometry.
+            local w = winid
+            if not w or not vim.api.nvim_win_is_valid(w) then
+                local wins = vim.fn.win_findbuf(bufnr)
+                w = wins[1] or vim.api.nvim_get_current_win()
+            end
+            M.render(bufnr, w)
             if _timers[bufnr] then
                 _timers[bufnr]:close()
                 _timers[bufnr] = nil
             end
-            return
-        end
-        -- Resolve the winid AT FIRE TIME, not at schedule time. After a
-        -- resize the window's textoff/width can shift; using the live
-        -- winid means we render against the final geometry.
-        local w = winid
-        if not w or not vim.api.nvim_win_is_valid(w) then
-            local wins = vim.fn.win_findbuf(bufnr)
-            w = wins[1] or vim.api.nvim_get_current_win()
-        end
-        M.render(bufnr, w)
-        if _timers[bufnr] then
-            _timers[bufnr]:close()
-            _timers[bufnr] = nil
-        end
-    end))
+        end)
+    )
 end
 
 -- Public for tests.

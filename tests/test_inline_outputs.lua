@@ -12,8 +12,7 @@ local function assert_eq(actual, expected, msg)
         print("  PASS " .. msg)
     else
         fail = fail + 1
-        print(string.format("  FAIL %s — expected %s, got %s",
-            msg, tostring(expected), tostring(actual)))
+        print(string.format("  FAIL %s — expected %s, got %s", msg, tostring(expected), tostring(actual)))
     end
 end
 local function assert_true(cond, msg)
@@ -97,10 +96,15 @@ for _, m in ipairs(marks) do
     end
 end
 assert_true(virt_lines ~= nil, "cell has a virt_lines extmark on its last source line")
-assert_true(#virt_lines >= 6, "virt_lines includes divider + 2 stream + 1 result + 3 traceback + bottom (got " .. tostring(#virt_lines) .. ")")
+assert_true(
+    #virt_lines >= 6,
+    "virt_lines >= divider+2 stream+1 result+3 trace+bottom (got " .. tostring(#virt_lines) .. ")"
+)
 
 local function joined_line(line_idx)
-    if not virt_lines[line_idx] then return nil end
+    if not virt_lines[line_idx] then
+        return nil
+    end
     local parts = {}
     for _, chunk in ipairs(virt_lines[line_idx]) do
         table.insert(parts, chunk[1])
@@ -109,14 +113,17 @@ local function joined_line(line_idx)
 end
 
 local divider = joined_line(1)
-assert_true(divider and divider:match("├") and divider:match("Out%[7%]"),
-    "first virt_line is the Out[7] divider")
+assert_true(divider and divider:match("├") and divider:match("Out%[7%]"), "first virt_line is the Out[7] divider")
 
 -- Lookup the highlight group on the stream/result/error rows.
 local function row_has_hl(line_idx, hl_name)
-    if not virt_lines[line_idx] then return false end
+    if not virt_lines[line_idx] then
+        return false
+    end
     for _, chunk in ipairs(virt_lines[line_idx]) do
-        if chunk[2] == hl_name then return true end
+        if chunk[2] == hl_name then
+            return true
+        end
     end
     return false
 end
@@ -129,8 +136,7 @@ assert_true(row_has_hl(4, "JovianOutResult"), "result row tagged JovianOutResult
 
 -- Error rows: ename:evalue header + 3 traceback lines → indices 5..8
 local err_head = joined_line(5)
-assert_true(err_head and err_head:find("ValueError: no good", 1, true),
-    "error header has ename: evalue")
+assert_true(err_head and err_head:find("ValueError: no good", 1, true), "error header has ename: evalue")
 assert_true(row_has_hl(5, "JovianOutError"), "error row tagged JovianOutError")
 
 -- The final virt_line is the bottom border
@@ -165,45 +171,48 @@ local preview_lines = vim.api.nvim_buf_get_lines(preview_buf, 0, -1, false)
 assert_true(preview_lines[1]:match("Out%[7%]"), "preview header is Out[7]")
 -- The underline is a row of `─` (3-byte UTF-8 each). Lua patterns are
 -- byte-oriented, so check via find + no other content.
-assert_true(preview_lines[2]:find("─", 1, true) ~= nil
-    and not preview_lines[2]:match("[%w]"),
-    "second line is a `─` underline (no other content)")
+assert_true(
+    preview_lines[2]:find("─", 1, true) ~= nil and not preview_lines[2]:match("[%w]"),
+    "second line is a `─` underline (no other content)"
+)
 
 local joined_preview = table.concat(preview_lines, "\n")
 assert_true(joined_preview:find("hello", 1, true), "preview includes stdout line")
 assert_true(joined_preview:find("world", 1, true), "preview includes second stdout line")
 assert_true(joined_preview:find("42", 1, true), "preview includes execute_result text/plain")
-assert_true(joined_preview:find("ValueError: no good", 1, true),
-    "preview includes error header")
+assert_true(joined_preview:find("ValueError: no good", 1, true), "preview includes error header")
 
 -- An empty cell (no entry in sidecar) should still produce a "no output" placeholder.
 local empty_buf = vim.api.nvim_create_buf(false, true)
 OutRender.render_to_buffer(empty_buf, nil, src_path, "does_not_exist")
 local empty_lines = vim.api.nvim_buf_get_lines(empty_buf, 0, -1, false)
-assert_true(empty_lines[3] and empty_lines[3]:match("no output"),
-    "preview shows '(no output)' placeholder for an empty cell")
+assert_true(
+    empty_lines[3] and empty_lines[3]:match("no output"),
+    "preview shows '(no output)' placeholder for an empty cell"
+)
 
 -- ---------------------------- carriage-return (tqdm) handling ----------------------------
 print("\n-- process_cr (tqdm \\r overwrite) --")
 local pc = OutRender._process_cr
 assert_eq(pc("plain text"), "plain text", "no \\r passes through unchanged")
 -- Progress bar: each \r reprints; only the final frame should survive.
-assert_eq(pc(" 0%|  |\r 50%|## |\r100%|####|"), "100%|####|",
-    "carriage returns collapse to the last frame")
+assert_eq(pc(" 0%|  |\r 50%|## |\r100%|####|"), "100%|####|", "carriage returns collapse to the last frame")
 -- Multi-line with \r on one of them.
-assert_eq(pc("start\rgo\nfinal\n"), "go\nfinal",
-    "\\r overwrite is per logical line; trailing blank dropped")
+assert_eq(pc("start\rgo\nfinal\n"), "go\nfinal", "\\r overwrite is per logical line; trailing blank dropped")
 -- A real tqdm cell renders ONE progress row, not many.
 local tqdm_rows = OutRender.build_virt_lines({
-    { output_type = "stream", name = "stderr",
-      text = " 10%|#   | 2/20\r 50%|##  | 10/20\r100%|####| 20/20\n" },
+    { output_type = "stream", name = "stderr", text = " 10%|#   | 2/20\r 50%|##  | 10/20\r100%|####| 20/20\n" },
 }, 3, 40, "JovianCellBorderCode")
 -- divider + exactly one stream row + ... (no per-frame rows)
 local stream_row_count = 0
 for i = 2, #tqdm_rows do
     local parts = {}
-    for _, c in ipairs(tqdm_rows[i]) do parts[#parts + 1] = c[1] end
-    if table.concat(parts):find("%d+/20") then stream_row_count = stream_row_count + 1 end
+    for _, c in ipairs(tqdm_rows[i]) do
+        parts[#parts + 1] = c[1]
+    end
+    if table.concat(parts):find("%d+/20") then
+        stream_row_count = stream_row_count + 1
+    end
 end
 assert_eq(stream_row_count, 1, "tqdm renders a single (final) progress row inline")
 
@@ -211,16 +220,19 @@ assert_eq(stream_row_count, 1, "tqdm renders a single (final) progress row inlin
 print("\n-- long output capping --")
 require("jovian.config").options.inline_output_max_lines = 10
 local big = {}
-for i = 1, 100 do big[#big + 1] = "line " .. i end
+for i = 1, 100 do
+    big[#big + 1] = "line " .. i
+end
 local long_rows = OutRender.build_virt_lines({
     { output_type = "stream", name = "stdout", text = table.concat(big, "\n") .. "\n" },
 }, 1, 40, "JovianCellBorderCode")
 -- divider + at most 10 capped rows
-assert_true(#long_rows <= 1 + 10,
-    "100-line output capped to <= max+divider (got " .. #long_rows .. ")")
+assert_true(#long_rows <= 1 + 10, "100-line output capped to <= max+divider (got " .. #long_rows .. ")")
 local joined_long = ""
 for _, row in ipairs(long_rows) do
-    for _, c in ipairs(row) do joined_long = joined_long .. c[1] end
+    for _, c in ipairs(row) do
+        joined_long = joined_long .. c[1]
+    end
     joined_long = joined_long .. "\n"
 end
 assert_true(joined_long:find("more line", 1, true), "shows a '… N more …' notice")
@@ -238,13 +250,17 @@ local img_rows = OutRender.build_virt_lines({
 local function has_text_row(rows, want)
     for _, row in ipairs(rows) do
         for _, c in ipairs(row) do
-            if c[1] == want then return true end
+            if c[1] == want then
+                return true
+            end
         end
     end
     return false
 end
-assert_true(has_text_row(img_rows, "a") and has_text_row(img_rows, "e"),
-    "image cell keeps all text rows (no cap when an image is present)")
+assert_true(
+    has_text_row(img_rows, "a") and has_text_row(img_rows, "e"),
+    "image cell keeps all text rows (no cap when an image is present)"
+)
 
 vim.fn.delete(src_dir, "rf")
 

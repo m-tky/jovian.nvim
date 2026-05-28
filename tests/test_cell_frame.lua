@@ -47,18 +47,18 @@ vim.api.nvim_buf_set_option(buf, "filetype", "python")
 local lines = {
     '# %% id="code1"',
     'print("hello")',
-    'x = 1',
-    '',
+    "x = 1",
+    "",
     '# %% [markdown] id="md1"',
-    '# # Heading',
-    '# plain **bold** text',
-    '# - item',
-    '# | Name | Age |',
-    '# |------|-----|',
-    '# | Alice | 30 |',
-    '',
+    "# # Heading",
+    "# plain **bold** text",
+    "# - item",
+    "# | Name | Age |",
+    "# |------|-----|",
+    "# | Alice | 30 |",
+    "",
     '# %% id="code2"',
-    'y = 2',
+    "y = 2",
 }
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
@@ -101,15 +101,21 @@ end
 local function has_side_bars_on(ln)
     local left, right = false, false
     for _, det in ipairs(by_line[ln] or {}) do
-        if det.virt_text_pos == "inline" then left = true end
-        if det.virt_text_pos == "right_align" then right = true end
+        if det.virt_text_pos == "inline" then
+            left = true
+        end
+        if det.virt_text_pos == "right_align" then
+            right = true
+        end
     end
     return left, right
 end
 
 local function has_virt_lines_on(ln)
     for _, det in ipairs(by_line[ln] or {}) do
-        if det.virt_lines and #det.virt_lines > 0 then return true end
+        if det.virt_lines and #det.virt_lines > 0 then
+            return true
+        end
     end
     return false
 end
@@ -184,9 +190,7 @@ local function has_table_extmarks(ln)
     for _, m in ipairs(md_marks) do
         if m[2] == ln then
             local det = m[4]
-            if det.hl_group == "JovianMdTableDivider"
-                or det.hl_group == "JovianMdTableHeader"
-            then
+            if det.hl_group == "JovianMdTableDivider" or det.hl_group == "JovianMdTableHeader" then
                 return true
             end
         end
