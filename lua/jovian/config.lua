@@ -108,13 +108,16 @@ M.defaults = {
     image_rows = 14,
     image_cols = 56,
 
-    -- Preview-pane image sizing. The preview window has its own
-    -- geometry so we scale the picture to fit. Pixel-to-cell ratio of
-    -- matplotlib's default 6.4x4.8 figure on an 8x16 cell font lands
-    -- near 2.0 (wider than tall in cells), so that's our default.
-    preview_image_aspect = 2.0,
-    -- Upper bounds. nil = "fill the preview window's text area" — the
-    -- renderer picks whichever fits both axes without clipping.
+    -- Preview-pane image sizing. The renderer parses the PNG/GIF
+    -- header to read each image's actual pixel dimensions and scales
+    -- the placement so neither axis is clipped — letterbox-free.
+    -- preview_cell_pixel_aspect is the pixel ratio of one terminal
+    -- cell (width / height). Most monospace fonts land around 0.5
+    -- (cells are roughly twice as tall as wide); change this if your
+    -- font has different cell proportions and images come out
+    -- stretched.
+    preview_cell_pixel_aspect = 0.5,
+    -- Upper bounds. nil = "fill the preview window's text area".
     preview_image_max_cols = nil,
     preview_image_max_rows = nil,
 
