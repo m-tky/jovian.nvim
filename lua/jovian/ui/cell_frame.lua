@@ -87,17 +87,29 @@ local function repeat_dash(n)
     return string.rep("─", n)
 end
 
+local CORNERS = {
+    square = { tl = "┌", tr = "┐", bl = "└", br = "┘" },
+    rounded = { tl = "╭", tr = "╮", bl = "╰", br = "╯" },
+}
+
+local function corners()
+    local style = Config.options.cell_frame_style or "square"
+    return CORNERS[style] or CORNERS.square
+end
+
 -- Build the top border as a single colored string. The label inherits
 -- the same highlight as the frame so the whole outline reads as one
 -- coherent box (no contrast band at the top edge).
 local function top_border(width, label)
-    local main = "┌─ " .. label .. " "
-    local pad = width - dw(main) - 1 -- 1 for the closing "┐"
-    return main .. repeat_dash(math.max(pad, 0)) .. "┐"
+    local c = corners()
+    local main = c.tl .. "─ " .. label .. " "
+    local pad = width - dw(main) - 1 -- 1 for the closing corner
+    return main .. repeat_dash(math.max(pad, 0)) .. c.tr
 end
 
 local function bottom_border(width)
-    return "└" .. repeat_dash(math.max(width - 2, 0)) .. "┘"
+    local c = corners()
+    return c.bl .. repeat_dash(math.max(width - 2, 0)) .. c.br
 end
 
 -- Public: classify a single line as a `# %%` cell header. Returns

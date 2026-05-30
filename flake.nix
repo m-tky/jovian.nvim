@@ -63,10 +63,12 @@
           };
         };
         # Provide the minimal python environment as a top-level attribute in pkgs
-        jovian-minimal-python = final.python3.withPackages (ps: with ps; [
-          ipython
-          ipykernel
-        ]);
+        jovian-minimal-python = final.python3.withPackages (
+          ps: with ps; [
+            ipython
+            ipykernel
+          ]
+        );
       };
 
       packages = forAllSystems (
@@ -100,6 +102,7 @@
               cell_frame = true,
               markdown_cell_style = true,
               inline_outputs = true,
+              cell_frame_style="rounded"
             })
 
             -- Setup nvim-treesitter
@@ -217,7 +220,8 @@
         }
       );
 
-      checks = forAllSystems (system:
+      checks = forAllSystems (
+        system:
         let
           pkgs = import nixpkgs {
             inherit system;
@@ -237,11 +241,13 @@
             installPhase = "touch $out";
           };
 
-
           lua-lint = pkgs.stdenv.mkDerivation {
             name = "jovian-lua-lint";
             src = self;
-            nativeBuildInputs = [ pkgs.stylua pkgs.lua51Packages.luacheck ];
+            nativeBuildInputs = [
+              pkgs.stylua
+              pkgs.lua51Packages.luacheck
+            ];
             buildPhase = ''
               stylua --check .
               luacheck .

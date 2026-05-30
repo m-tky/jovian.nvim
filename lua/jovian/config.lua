@@ -77,13 +77,25 @@ M.defaults = {
     use_rust_core = true,
 
     -- Render each `# %%` cell as a bordered card via extmarks:
-    --   ┌─ [3] Code ────┐
+    --   ┌─ [3] Code ────┐   (cell_frame_style = "square", default)
     --   │ print("hi")   │
     --   └───────────────┘
+    --
+    --   ╭─ [3] Code ────╮   (cell_frame_style = "rounded")
+    --   │ print("hi")   │
+    --   ╰───────────────╯
+    --
     -- Opt-in because it shifts the right edge of cell lines and overlays
     -- the `# %%` header line — both meaningful visual changes a long-time
     -- user shouldn't get without asking.
     cell_frame = false,
+
+    -- Corner style for the cell card frame. Naming follows Neovim's
+    -- `nvim_open_win` border vocabulary ("rounded", not "round") so users
+    -- who already set `float_border = "rounded"` see the same key here.
+    --   "square"  : ┌┐└┘  (default)
+    --   "rounded" : ╭╮╰╯
+    cell_frame_style = "square",
 
     -- Extmark priority of the cell-frame side bars (the left/right `│`).
     -- This decides who wins when an indent-guide plugin draws a vertical
