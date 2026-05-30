@@ -190,6 +190,9 @@
             echo ">>> Running Inline Output Rendering Tests..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_inline_outputs.lua
 
+            echo ">>> Running outputs.json Resilience Tests..."
+            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_outputs_json_resilience.lua
+
             echo ">>> Running Kitty Image Placeholder Tests..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_kitty_images.lua
 
