@@ -460,23 +460,50 @@ local function render_markdown_image(buf, lnum, content, offset)
         return false
     end
 
+    -- When cell_frame is on, the image and label have to live INSIDE the
+    -- markdown cell box, otherwise they bleed past the `│ ... │` side bars
+    -- the frame draws on each source line. We:
+    --   1. cap the image cell-width to the cell's inner width
+    --   2. wrap the label row and each placeholder row with CellFrame's
+    --      `│ … │` helpers (same ones that frame Out[N] images), so the
+    --      bars stay continuous and aligned.
+    local OutRender = require("jovian.ui.output_render")
+    local frame_on = Config.options.cell_frame
+    local inner_w
+    if frame_on then
+        inner_w = CellFrame.inner_text_width(vim.api.nvim_get_current_win())
+    end
+
     -- Virt_lines block: a `🖼 <name>` label row, then the picture (if Kitty).
     local name = alt
     if name == "" then
         name = is_datauri and "image" or vim.fn.fnamemodify(target, ":t")
     end
-    local virt = { { { "🖼 " .. name, HL.Quote } } }
+    local label_text = "🖼 " .. name
+    local virt
+    if frame_on then
+        virt = { CellFrame.frame_wrap(label_text, HL.Quote, inner_w, CellFrame.HL.BORDER_MARKDOWN) }
+    else
+        virt = { { { label_text, HL.Quote } } }
+    end
+
     if has_kitty_graphics() then
         local Kitty = require("jovian.ui.kitty")
-        local OutRender = require("jovian.ui.output_render")
-        local cols, rows =
-            OutRender.fit_image_in_area(b64, Config.options.image_cols or 56, Config.options.image_rows or 14)
+        local max_cols = Config.options.image_cols or 56
+        if frame_on then
+            max_cols = math.min(max_cols, inner_w)
+        end
+        local cols, rows = OutRender.fit_image_in_area(b64, max_cols, Config.options.image_rows or 14)
         local id = Kitty.ensure_transmitted(b64, function()
             M.schedule(buf)
         end, cols, rows)
         if id then
             for _, prow in ipairs(Kitty.build_virt_lines(id, rows, cols)) do
-                table.insert(virt, prow)
+                if frame_on then
+                    table.insert(virt, CellFrame.frame_image_row(prow, cols, inner_w, CellFrame.HL.BORDER_MARKDOWN))
+                else
+                    table.insert(virt, prow)
+                end
             end
         end
     end
@@ -614,11 +641,13 @@ local function render_math_block(buf, cell_lines, start_i, end_i, inner, cursor_
         return
     end
 
-    local chunks = {}
+    local chunks
     if Config.options.cell_frame then
-        chunks[1] = { "│ ", "JovianCellBorderMarkdown" }
+        local inner_w = CellFrame.inner_text_width(vim.api.nvim_get_current_win())
+        chunks = CellFrame.frame_wrap(uni, HL.Math, inner_w, CellFrame.HL.BORDER_MARKDOWN)
+    else
+        chunks = { { uni, HL.Math } }
     end
-    chunks[#chunks + 1] = { uni, HL.Math }
     if pos == "below" then
         pcall(vim.api.nvim_buf_set_extmark, buf, NS, cell_lines[end_i].ln, 0, {
             virt_lines = { chunks },

@@ -130,6 +130,10 @@ assert_true(
     "with cell_frame on, the top border carries the `│ ` frame bar (aligns + continuous edge)"
 )
 assert_true(f.bottom and vim.startswith(f.bottom, "│ "), "bottom border carries the frame bar too")
+assert_true(
+    f.top and vim.endswith(f.top, "│") and vim.endswith(f.bottom, "│"),
+    "top + bottom borders also close on the right with `│` (frame's right edge stays continuous)"
+)
 
 print(string.format("\n%d passed, %d failed", pass, fail))
 os.exit(fail == 0 and 0 or 1)

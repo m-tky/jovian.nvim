@@ -11,6 +11,7 @@
 local M = {}
 
 local Highlights = require("jovian.ui.highlights")
+local CellFrame = require("jovian.ui.cell_frame")
 
 local HL_DIVIDER = "JovianMdTableDivider"
 local HL_HEADER = "JovianMdTableHeader"
@@ -186,16 +187,20 @@ function M.render(buf, ns, block, cursor_ln)
     end
 
     -- Top + bottom borders as virtual lines around the block. When cell_frame
-    -- is on, each source row carries an inline `│ ` left bar (and the `#`
-    -- prefix is concealed), shifting the overlaid rows right; virtual lines
-    -- don't inherit that, so prepend the same bar to keep the frame's left edge
-    -- continuous and the borders aligned with the rows.
-    local frame_prefix = require("jovian.config").options.cell_frame and { "│ ", "JovianCellBorderMarkdown" } or nil
-    local function border_line(s)
-        if frame_prefix then
-            return { frame_prefix, { s, HL_DIVIDER } }
+    -- is on, each source row carries inline `│ ` / right_align `│` bars (and
+    -- the `#` prefix is concealed), but virtual lines don't inherit them, so
+    -- wrap the border with `│ … │` padded to the frame's inner width — same
+    -- trick output_render uses for inline Out[N] blocks.
+    local border_line
+    if require("jovian.config").options.cell_frame then
+        local inner_w = CellFrame.inner_text_width(vim.api.nvim_get_current_win())
+        border_line = function(s)
+            return CellFrame.frame_wrap(s, HL_DIVIDER, inner_w, CellFrame.HL.BORDER_MARKDOWN)
         end
-        return { { s, HL_DIVIDER } }
+    else
+        border_line = function(s)
+            return { { s, HL_DIVIDER } }
+        end
     end
     pcall(vim.api.nvim_buf_set_extmark, buf, ns, block[1].ln, 0, {
         virt_lines = { border_line(seg_line(B[1], B[2], B[3], fill)) },

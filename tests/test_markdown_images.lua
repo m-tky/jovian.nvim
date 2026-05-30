@@ -153,6 +153,73 @@ assert_true(
     "file-path shows the same `🖼 <name>` label (got " .. tostring(fp_label) .. ")"
 )
 
+-- ---------------------------- cell_frame border continuity ----------------------------
+-- When cell_frame is on, the markdown image's virt_lines must be wrapped
+-- with `│ ... │` so the cell card's side bars stay continuous through the
+-- label row and the image rows. Without this, the image bleeds from the
+-- left edge of the window and clobbers the frame.
+print("\n-- cell_frame: image block carries `│ ... │` side bars --")
+require("jovian.config").options.cell_frame = true
+Kitty._reset()
+
+vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+    '# %% [markdown] id="m3"',
+    "# ![framed](data:image/png;base64," .. PNG .. ")",
+})
+vim.cmd("write")
+
+MarkdownCell.render(buf)
+vim.wait(200)
+MarkdownCell.render(buf) -- second pass: image_id is now cached, placeholders emit
+
+local function rows_for(image_lnum)
+    for _, m in ipairs(marks_on(image_lnum - 1)) do
+        if m[4].virt_lines then
+            return m[4].virt_lines
+        end
+    end
+    return nil
+end
+
+local function first_chunk_text(row)
+    return row and row[1] and row[1][1] or ""
+end
+local function last_chunk_text(row)
+    return row and row[#row] and row[#row][1] or ""
+end
+
+local rows = rows_for(1)
+assert_true(rows ~= nil and #rows >= 2, "image block has >= label + 1 image row when framed")
+
+local frame_label_ok = first_chunk_text(rows[1]) == "│ " and last_chunk_text(rows[1]):find("│$") ~= nil
+assert_true(frame_label_ok, "label row starts with `│ ` and ends with `│` (cell frame bars)")
+
+-- Every image placeholder row should also be wrapped.
+local image_rows_ok = true
+for i = 2, #rows do
+    local row = rows[i]
+    if first_chunk_text(row) ~= "│ " then
+        image_rows_ok = false
+        break
+    end
+    if not last_chunk_text(row):find("│$") then
+        image_rows_ok = false
+        break
+    end
+end
+assert_true(image_rows_ok, "every placeholder row is wrapped with `│ ... │`")
+
+-- With cell_frame off, the wrapping must NOT be added (otherwise standalone
+-- markdown previews would show stray vertical bars around images).
+require("jovian.config").options.cell_frame = false
+Kitty._reset()
+MarkdownCell.render(buf)
+vim.wait(200)
+MarkdownCell.render(buf)
+local plain_rows = rows_for(1)
+local plain_first = plain_rows and first_chunk_text(plain_rows[1]) or ""
+assert_true(not plain_first:find("│", 1, true), "without cell_frame, label row has no `│` prefix")
+
 vim.fn.delete(dir, "rf")
 
 print(string.format("\n%d passed, %d failed", pass, fail))
