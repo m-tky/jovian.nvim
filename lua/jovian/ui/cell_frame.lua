@@ -21,11 +21,22 @@
 local M = {}
 
 local Config = require("jovian.config")
+local Highlights = require("jovian.ui.highlights")
+local Debounce = require("jovian.ui.debounce")
+
+local dw = Highlights.dw
 
 local NS = vim.api.nvim_create_namespace("JovianCellFrame")
 
-local HL_BORDER_CODE = "JovianCellBorderCode"
-local HL_BORDER_MARKDOWN = "JovianCellBorderMarkdown"
+-- Public highlight group names so other UI modules can reference them
+-- without re-typing the string literal (which would silently rot under a
+-- rename). Also doubles as the contract for what `set_default_hl` defines.
+M.HL = {
+    BORDER_CODE = "JovianCellBorderCode",
+    BORDER_MARKDOWN = "JovianCellBorderMarkdown",
+}
+local HL_BORDER_CODE = M.HL.BORDER_CODE
+local HL_BORDER_MARKDOWN = M.HL.BORDER_MARKDOWN
 
 local function frame_hl_for(kind)
     if kind == "Markdown" then
@@ -38,25 +49,6 @@ end
 -- cell.lua's regex (which uses Vim's pattern syntax; the Lua form is
 -- equivalent for the leading marker only).
 local HEADER_RE = "^#%s*%%%%"
-
--- See markdown_cell.apply_hl for the value contract. We replicate the
--- helper here to keep ui/cell_frame.lua independent of ui/markdown_cell.lua.
-local function apply_hl(target, user_val, fallback)
-    local val = user_val
-    if val == nil then
-        val = fallback
-    end
-    if val == nil then
-        return
-    end
-    if type(val) == "string" then
-        vim.api.nvim_set_hl(0, target, { link = val, force = true })
-    elseif type(val) == "table" then
-        local attrs = vim.deepcopy(val)
-        attrs.force = true
-        vim.api.nvim_set_hl(0, target, attrs)
-    end
-end
 
 -- For each cell type, walk a fallback chain of standard / Tree-sitter
 -- highlight groups and pick the first one the active colorscheme actually
@@ -80,33 +72,12 @@ local MD_BORDER_FALLBACKS = {
     "Special",
 }
 
-local function group_has_styling(name)
-    local h = vim.api.nvim_get_hl(0, { name = name, link = false })
-    if not h then
-        return false
-    end
-    return h.fg ~= nil or h.bg ~= nil or h.bold or h.italic or h.underline
-end
-
-local function pick_existing(candidates)
-    for _, name in ipairs(candidates) do
-        if group_has_styling(name) then
-            return name
-        end
-    end
-    return candidates[#candidates]
-end
-
 local function set_default_hl()
     local user_hl = Config.options.highlights or {}
     -- Pull from the active colorscheme so the outline tracks the theme.
     -- User overrides (string link / table attrs) still win.
-    apply_hl(HL_BORDER_CODE, user_hl.cell_border_code, pick_existing(CODE_BORDER_FALLBACKS))
-    apply_hl(HL_BORDER_MARKDOWN, user_hl.cell_border_markdown, pick_existing(MD_BORDER_FALLBACKS))
-end
-
-local function dw(s)
-    return vim.fn.strdisplaywidth(s)
+    Highlights.apply(HL_BORDER_CODE, user_hl.cell_border_code, Highlights.pick_existing(CODE_BORDER_FALLBACKS))
+    Highlights.apply(HL_BORDER_MARKDOWN, user_hl.cell_border_markdown, Highlights.pick_existing(MD_BORDER_FALLBACKS))
 end
 
 local function repeat_dash(n)
@@ -129,8 +100,10 @@ local function bottom_border(width)
     return "└" .. repeat_dash(math.max(width - 2, 0)) .. "┘"
 end
 
-local function parse_header(line)
-    -- Returns (cell_type, id) or nil if not a header line.
+-- Public: classify a single line as a `# %%` cell header. Returns
+-- (cell_type, id) or nil. Other UI modules (markdown_cell, etc.) call this
+-- so we have one source of truth for the header syntax.
+function M.parse_header(line)
     if not line:match(HEADER_RE) then
         return nil
     end
@@ -144,6 +117,7 @@ local function parse_header(line)
     local id = line:match('id="([%w%-_]+)"')
     return kind, id
 end
+local parse_header = M.parse_header
 
 local function parse_cells(bufnr)
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
@@ -162,7 +136,10 @@ local function parse_cells(bufnr)
     return headers, #lines
 end
 
-local function text_area_width(winid)
+-- Exposed so other UI modules (e.g. markdown_cell's image renderer) can
+-- size content to the same cell-box width the frame uses, keeping the
+-- right border aligned.
+function M.text_area_width(winid)
     if not winid or not vim.api.nvim_win_is_valid(winid) then
         return 80
     end
@@ -181,6 +158,41 @@ local function text_area_width(winid)
     -- edge, so the top/bottom dashes must reach there too — otherwise
     -- the frame looks like ┌──── ─┐  │  with a visible gap on wide windows.
     return w
+end
+
+-- Inner content width = total text-area width minus 4 columns reserved for
+-- the `│ ` left bar and the ` │` right bar. Centralised so the `-4` magic
+-- number lives in one place (was scattered across markdown_table /
+-- markdown_cell / output_render).
+function M.inner_text_width(winid)
+    return math.max(M.text_area_width(winid) - 4, 1)
+end
+
+-- Wrap an arbitrary text chunk so it fits inside the cell frame:
+--   │ <text padded to inner_w> │
+-- virt_lines don't honour `right_align`, so renderers that add a virt_line
+-- inside a cell (output blocks, math blocks, markdown table borders, image
+-- labels, …) must build the side bars themselves. This is that builder.
+function M.frame_wrap(text, hl, inner_w, border_hl)
+    local pad = math.max(inner_w - dw(text), 0)
+    return {
+        { "│ ", border_hl },
+        { text, hl },
+        { string.rep(" ", pad) .. " │", border_hl },
+    }
+end
+
+-- Same idea as frame_wrap but for a Kitty placeholder row (already chunked
+-- into one chunk per cell column by jovian.ui.kitty). `cols` is the
+-- placeholder's display width; we right-pad to `inner_w`.
+function M.frame_image_row(placeholder_chunks, cols, inner_w, border_hl)
+    local pad = math.max(inner_w - cols, 0)
+    local out = { { "│ ", border_hl } }
+    for _, c in ipairs(placeholder_chunks) do
+        table.insert(out, c)
+    end
+    table.insert(out, { string.rep(" ", pad) .. " │", border_hl })
+    return out
 end
 
 -- Render all cell frames in `bufnr` against the given window's text width.
@@ -204,7 +216,7 @@ function M.render(bufnr, winid)
         return
     end
 
-    local width = text_area_width(winid)
+    local width = M.text_area_width(winid)
 
     for idx, h in ipairs(headers) do
         local next_line = headers[idx + 1] and headers[idx + 1].line or total
@@ -308,49 +320,21 @@ function M.clear(bufnr)
     end
 end
 
--- Trailing debounce: each schedule call resets a 60 ms timer per buffer.
--- The render fires once, after the last event in a burst. The previous
--- LEADING-edge guard (`_pending = true`, ignore subsequent calls) meant a
--- fast resize drag rendered at an intermediate width and then dropped
--- events; trailing-edge fires at the FINAL width.
-local uv = vim.uv or vim.loop
-local _timers = {}
-function M.schedule(bufnr, winid)
-    bufnr = bufnr or vim.api.nvim_get_current_buf()
-    local t = _timers[bufnr]
-    if t then
-        t:stop()
-    else
-        t = uv.new_timer()
-        _timers[bufnr] = t
-    end
-    t:start(
-        60,
-        0,
-        vim.schedule_wrap(function()
-            if not vim.api.nvim_buf_is_valid(bufnr) then
-                if _timers[bufnr] then
-                    _timers[bufnr]:close()
-                    _timers[bufnr] = nil
-                end
-                return
-            end
-            -- Resolve the winid AT FIRE TIME, not at schedule time. After a
-            -- resize the window's textoff/width can shift; using the live
-            -- winid means we render against the final geometry.
-            local w = winid
-            if not w or not vim.api.nvim_win_is_valid(w) then
-                local wins = vim.fn.win_findbuf(bufnr)
-                w = wins[1] or vim.api.nvim_get_current_win()
-            end
-            M.render(bufnr, w)
-            if _timers[bufnr] then
-                _timers[bufnr]:close()
-                _timers[bufnr] = nil
-            end
-        end)
-    )
-end
+-- Per-buffer trailing-edge debounce around M.render. The `resolve` hook
+-- runs AT FIRE TIME so the winid is re-checked against current geometry —
+-- important after a resize where textoff/width may have shifted between the
+-- schedule call and the actual render.
+M.schedule = Debounce.make(function(bufnr, winid)
+    M.render(bufnr, winid)
+end, {
+    resolve = function(bufnr, winid)
+        if not winid or not vim.api.nvim_win_is_valid(winid) then
+            local wins = vim.fn.win_findbuf(bufnr)
+            winid = wins[1] or vim.api.nvim_get_current_win()
+        end
+        return winid
+    end,
+})
 
 -- Public for tests.
 M._parse_cells = parse_cells

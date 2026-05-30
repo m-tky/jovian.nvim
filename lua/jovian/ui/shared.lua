@@ -2,6 +2,19 @@ local M = {}
 local Config = require("jovian.config")
 local State = require("jovian.state")
 
+-- Strip CSI (ESC [ … letter) and OSC (ESC ] … ESC \) escape sequences from
+-- a kernel-produced string. Used wherever raw text from the kernel ends up
+-- in a non-terminal buffer (extmarks, preview pane), since those surfaces
+-- don't interpret ANSI and would otherwise show the literal bytes.
+function M.strip_ansi(s)
+    if not s then
+        return ""
+    end
+    s = s:gsub("\27%[[?]?[%d;]*[a-zA-Z]", "")
+    s = s:gsub("\27%][^\27]*\27\\", "")
+    return s
+end
+
 -- Ensure the output buffer + terminal channel exist so writes are captured
 -- even when the Output window isn't currently shown (output_window =
 -- "ondemand"). Returns false in "off" mode so callers skip writing.

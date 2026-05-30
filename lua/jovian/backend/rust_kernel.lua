@@ -17,6 +17,7 @@ local Core = require("jovian.backend.core")
 local State = require("jovian.state")
 local UI = require("jovian.ui")
 local Config = require("jovian.config")
+local strip_ansi = require("jovian.ui.shared").strip_ansi
 
 local M = {}
 
@@ -24,15 +25,6 @@ local _event_handler_registered = false
 -- Per-execution flag: an `error` event arrived between execute_input and the
 -- final reply, so we should land the cell in "error" state when the reply hits.
 local _cell_had_error = {}
-
-local function strip_ansi(s)
-    if not s then
-        return ""
-    end
-    s = s:gsub("\27%[[?]?[%d;]*[a-zA-Z]", "")
-    s = s:gsub("\27%][^\27]*\27\\", "")
-    return s
-end
 
 local function set_busy(cell_id)
     local buf = State.cell_buf_map[cell_id]

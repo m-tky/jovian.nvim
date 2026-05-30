@@ -10,13 +10,13 @@
 
 local M = {}
 
+local Highlights = require("jovian.ui.highlights")
+
 local HL_DIVIDER = "JovianMdTableDivider"
 local HL_HEADER = "JovianMdTableHeader"
 local HL_BODY = "Normal"
 
-local function dw(s)
-    return vim.fn.strdisplaywidth(s)
-end
+local dw = Highlights.dw
 
 -- Split a row into trimmed cell strings; optional leading/trailing `|`.
 local function split_cells(content)

@@ -12,6 +12,11 @@
 local M = {}
 
 local Config = require("jovian.config")
+local Shared = require("jovian.ui.shared")
+local Highlights = require("jovian.ui.highlights")
+local CellFrame = require("jovian.ui.cell_frame")
+local strip_ansi = Shared.strip_ansi
+local dw = Highlights.dw
 
 local HL = {
     Divider = "JovianOutDivider",
@@ -21,33 +26,16 @@ local HL = {
     Error = "JovianOutError",
 }
 
-local function apply_hl(target, user_val, fallback)
-    local val = user_val
-    if val == nil then
-        val = fallback
-    end
-    if val == nil then
-        return
-    end
-    if type(val) == "string" then
-        vim.api.nvim_set_hl(0, target, { link = val, force = true })
-    elseif type(val) == "table" then
-        local attrs = vim.deepcopy(val)
-        attrs.force = true
-        vim.api.nvim_set_hl(0, target, attrs)
-    end
-end
-
 function M.setup_hl(border_hl)
     -- border_hl is whichever cell_frame chose for the current cell type;
     -- the divider line inherits it so the `├` and `┤` corners align
     -- visually with the cell box.
     local user_hl = Config.options.highlights or {}
-    apply_hl(HL.Divider, user_hl.out_divider, border_hl or "Comment")
-    apply_hl(HL.Stdout, user_hl.out_stdout, "Normal")
-    apply_hl(HL.Stderr, user_hl.out_stderr, "WarningMsg")
-    apply_hl(HL.Result, user_hl.out_result, "Identifier")
-    apply_hl(HL.Error, user_hl.out_error, "ErrorMsg")
+    Highlights.apply(HL.Divider, user_hl.out_divider, border_hl or "Comment")
+    Highlights.apply(HL.Stdout, user_hl.out_stdout, "Normal")
+    Highlights.apply(HL.Stderr, user_hl.out_stderr, "WarningMsg")
+    Highlights.apply(HL.Result, user_hl.out_result, "Identifier")
+    Highlights.apply(HL.Error, user_hl.out_error, "ErrorMsg")
 end
 
 -- nbformat allows text fields to be either a string or an array of strings.
@@ -60,12 +48,6 @@ local function as_str(v)
         return v
     end
     return ""
-end
-
-local function strip_ansi(s)
-    s = s:gsub("\27%[[?]?[%d;]*[a-zA-Z]", "")
-    s = s:gsub("\27%][^\27]*\27\\", "")
-    return s
 end
 
 -- Apply carriage-return overwrite semantics: within each logical (\n)
@@ -90,10 +72,6 @@ local function process_cr(s)
         table.remove(out)
     end
     return table.concat(out, "\n")
-end
-
-local function dw(s)
-    return vim.fn.strdisplaywidth(s)
 end
 
 -- Wrap a single logical line into chunks of at most `max_w` display cells.
@@ -135,18 +113,11 @@ local function wrap(line, max_w)
     return out
 end
 
--- Wrap content text into a single virt_line: `│ <content padded> │`.
--- The cell_frame's right-side bar lives at the window edge via right_align,
--- but virt_lines are full-line text that don't honor right_align. We pad
--- with spaces to the requested inner width and append our own `│`.
-local function side_wrap(text, hl, inner_w, border_hl)
-    local pad = math.max(inner_w - dw(text), 0)
-    return {
-        { "│ ", border_hl },
-        { text, hl },
-        { string.rep(" ", pad) .. " │", border_hl },
-    }
-end
+-- The frame chrome helpers (left+right side bars padded to a width) live in
+-- cell_frame.lua — they're the same trick markdown_table / markdown_cell use
+-- for any virt_line that has to sit inside a cell's frame.
+local side_wrap = CellFrame.frame_wrap
+local image_row_with_sides = CellFrame.frame_image_row
 
 -- The divider line between the cell source and its outputs:
 --   ├─ Out[N] ──────────┤
@@ -176,19 +147,6 @@ local function find_image_b64(data)
     return nil
 end
 
--- Wrap a Kitty placeholder row (already chunked by jovian.ui.kitty into
--- one chunk per cell column) with the box-drawing side bars + right-pad
--- so it sits inside the cell frame at `inner_w` wide.
-local function image_row_with_sides(placeholder_chunks, cols, inner_w, border_hl)
-    local pad = math.max(inner_w - cols, 0)
-    local out = { { "│ ", border_hl } }
-    for _, c in ipairs(placeholder_chunks) do
-        table.insert(out, c)
-    end
-    table.insert(out, { string.rep(" ", pad) .. " │", border_hl })
-    return out
-end
-
 --- Build the virt_lines for a cell's outputs.
 --- Returns an empty list when the cell has no outputs.
 ---
@@ -203,10 +161,7 @@ function M.build_virt_lines(outputs, execution_count, width, border_hl, refresh_
     if not outputs or #outputs == 0 then
         return {}
     end
-    local inner_w = width - 4 -- "│ " + content + " │"
-    if inner_w < 1 then
-        inner_w = 1
-    end
+    local inner_w = math.max(width - 4, 1) -- "│ " + content + " │"
 
     local exec_label = execution_count and tostring(execution_count) or " "
     -- Outputs loaded from the sidecar JSON without a fresh re-run in the

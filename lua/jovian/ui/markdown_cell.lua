@@ -17,6 +17,8 @@ local Config = require("jovian.config")
 local CellFrame = require("jovian.ui.cell_frame")
 local MarkdownTable = require("jovian.ui.markdown_table")
 local Math = require("jovian.ui.math")
+local Highlights = require("jovian.ui.highlights")
+local Debounce = require("jovian.ui.debounce")
 
 local NS = vim.api.nvim_create_namespace("JovianMarkdownCell")
 
@@ -50,64 +52,23 @@ local HEADING_FALLBACKS = {
     [6] = { "@markup.heading.6.markdown", "@markup.heading.6", "markdownH6", "Identifier" },
 }
 
--- `nvim_get_hl(..., { link = false })` resolves links and returns the
--- actual attrs. If a group exists but has no visible attrs (empty
--- table), we treat it as "not really defined".
-local function group_has_styling(name)
-    local h = vim.api.nvim_get_hl(0, { name = name, link = false })
-    if not h then
-        return false
-    end
-    return h.fg ~= nil or h.bg ~= nil or h.bold or h.italic or h.underline
-end
-
-local function pick_existing(candidates)
-    for _, name in ipairs(candidates) do
-        if group_has_styling(name) then
-            return name
-        end
-    end
-    return nil
-end
-
--- Apply a user-config value to a highlight group. The value may be:
---   string → treat as `:hi link` target
---   table  → forwarded as `nvim_set_hl` attrs
---   nil    → use the supplied fallback (string link or table of attrs)
-local function apply_hl(target, user_val, fallback)
-    local val = user_val
-    if val == nil then
-        val = fallback
-    end
-    if val == nil then
-        return
-    end
-    if type(val) == "string" then
-        vim.api.nvim_set_hl(0, target, { link = val, force = true })
-    elseif type(val) == "table" then
-        local attrs = vim.deepcopy(val)
-        attrs.force = true
-        vim.api.nvim_set_hl(0, target, attrs)
-    end
-end
-
 local function set_default_hl()
     local user_hl = Config.options.highlights or {}
     -- Headings: explicit config wins; otherwise pick whichever group from
     -- the fallback chain is actually defined by the colorscheme.
     for level = 1, 6 do
         local key = "md_h" .. level
-        local fallback = pick_existing(HEADING_FALLBACKS[level])
-        apply_hl(HL["H" .. level], user_hl[key], fallback)
+        local fallback = Highlights.pick_existing(HEADING_FALLBACKS[level])
+        Highlights.apply(HL["H" .. level], user_hl[key], fallback)
     end
-    apply_hl(HL.Bold, user_hl.md_bold, { bold = true })
-    apply_hl(HL.Em, user_hl.md_em, { italic = true })
-    apply_hl(HL.Code, user_hl.md_code, "String")
-    apply_hl(HL.Bullet, user_hl.md_bullet, "Special")
-    apply_hl(HL.Quote, user_hl.md_quote, "Comment")
-    apply_hl(HL.TableDivider, user_hl.md_table_divider, "Special")
-    apply_hl(HL.TableHeader, user_hl.md_table_header, { bold = true })
-    apply_hl(HL.Math, user_hl.md_math, "Special")
+    Highlights.apply(HL.Bold, user_hl.md_bold, { bold = true })
+    Highlights.apply(HL.Em, user_hl.md_em, { italic = true })
+    Highlights.apply(HL.Code, user_hl.md_code, "String")
+    Highlights.apply(HL.Bullet, user_hl.md_bullet, "Special")
+    Highlights.apply(HL.Quote, user_hl.md_quote, "Comment")
+    Highlights.apply(HL.TableDivider, user_hl.md_table_divider, "Special")
+    Highlights.apply(HL.TableHeader, user_hl.md_table_header, { bold = true })
+    Highlights.apply(HL.Math, user_hl.md_math, "Special")
 end
 
 -- Visual badge inserted before each heading body so the eye picks up the
@@ -804,33 +765,7 @@ function M.clear(bufnr)
     end
 end
 
--- Trailing debounce — same rationale as cell_frame.schedule. See its
--- comment for the reasoning vs the LEADING-edge variant we used before.
-local uv = vim.uv or vim.loop
-local _timers = {}
-function M.schedule(bufnr)
-    bufnr = bufnr or vim.api.nvim_get_current_buf()
-    local t = _timers[bufnr]
-    if t then
-        t:stop()
-    else
-        t = uv.new_timer()
-        _timers[bufnr] = t
-    end
-    t:start(
-        60,
-        0,
-        vim.schedule_wrap(function()
-            if vim.api.nvim_buf_is_valid(bufnr) then
-                M.render(bufnr)
-            end
-            if _timers[bufnr] then
-                _timers[bufnr]:close()
-                _timers[bufnr] = nil
-            end
-        end)
-    )
-end
+M.schedule = Debounce.make(M.render)
 
 M._namespace = NS
 
