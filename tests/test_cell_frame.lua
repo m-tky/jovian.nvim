@@ -211,14 +211,18 @@ local wrap_buf = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_buf_set_option(wrap_buf, "filetype", "python")
 vim.api.nvim_buf_set_lines(wrap_buf, 0, -1, false, {
     '# %% id="wc1"',
-    'x = 1',
+    "x = 1",
     '# %% [markdown] id="wm1"',
     "# # heading",
     '# %% id="wc2"',
-    'y = 2',
+    "y = 2",
 })
 local wrap_win = vim.api.nvim_open_win(wrap_buf, true, {
-    relative = "editor", row = 0, col = 0, width = 40, height = 10,
+    relative = "editor",
+    row = 0,
+    col = 0,
+    width = 40,
+    height = 10,
 })
 
 local function wrap_winhl_for(cursor_line)
