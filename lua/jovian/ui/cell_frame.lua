@@ -207,6 +207,86 @@ function M.frame_image_row(placeholder_chunks, cols, inner_w, border_hl)
     return out
 end
 
+-- Locate which cell the cursor sits inside so the wrap-chrome can match the
+-- bar color of THAT cell type. Returns "Code" / "Markdown" / "Raw" — falls
+-- back to "Markdown" when the cell type is indeterminate (invalid win/buf,
+-- pre-first-header area, etc.). Markdown is the practical default because
+-- prose cells wrap far more often than code cells, so optimising the
+-- fallback for them minimises the case where a wrap shows the "wrong"
+-- color before the user moves the cursor into the cell.
+local function active_cell_kind(bufnr, winid)
+    if not vim.api.nvim_buf_is_valid(bufnr) or not vim.api.nvim_win_is_valid(winid) then
+        return "Markdown"
+    end
+    local ok, cursor = pcall(vim.api.nvim_win_get_cursor, winid)
+    if not ok then
+        return "Markdown"
+    end
+    local cursor_ln = cursor[1] - 1
+    local headers = parse_cells(bufnr)
+    local kind = "Markdown"
+    for _, h in ipairs(headers) do
+        if h.line <= cursor_ln then
+            kind = h.kind
+        else
+            break
+        end
+    end
+    return kind
+end
+
+-- Window options needed so wrapped continuation rows still carry the left
+-- `│ ` bar. `virt_text_repeat_linebreak = true` only honours `right_align`
+-- — for `inline` virt_text at column 0 (the column we'd need it on) the
+-- option is silently ignored, so the left bar would disappear from every
+-- wrapped continuation. We work around that with `showbreak = "│ "` +
+-- `breakindentopt = "sbr"` (sbr = show the showbreak char *before* the
+-- indent), and recolor `NonText` per window so the `│ ` inherits the
+-- frame's border highlight rather than the dim NonText default.
+--
+-- showbreak is a window-global setting — it can only carry one color at a
+-- time — so we follow the cell the cursor is in. Wraps in OTHER cells on
+-- screen may temporarily show the cursor-cell's color until the user moves
+-- into them; that's the unavoidable trade-off, but the cell being edited
+-- always reads correctly.
+local function apply_wrap_chrome(winid, bufnr)
+    if not winid or not vim.api.nvim_win_is_valid(winid) then
+        return
+    end
+    pcall(vim.api.nvim_set_option_value, "showbreak", "│ ", { win = winid })
+    pcall(vim.api.nvim_set_option_value, "breakindent", true, { win = winid })
+    -- Preserve any sibling settings the user may have (e.g. `min:20`); only
+    -- ensure `sbr` is present.
+    local ok, cur = pcall(vim.api.nvim_get_option_value, "breakindentopt", { win = winid })
+    if ok then
+        if cur == "" then
+            pcall(vim.api.nvim_set_option_value, "breakindentopt", "sbr", { win = winid })
+        elseif not cur:find("sbr", 1, true) then
+            pcall(vim.api.nvim_set_option_value, "breakindentopt", cur .. ",sbr", { win = winid })
+        end
+    end
+    -- Pick the target color from the cursor's cell so the wrap bar matches
+    -- the source-line bars of the cell the user is actually editing.
+    local kind = active_cell_kind(bufnr or vim.api.nvim_win_get_buf(winid), winid)
+    local target = (kind == "Markdown") and "JovianCellBorderMarkdown" or "JovianCellBorderCode"
+
+    -- Update the NonText mapping in winhighlight. Strip any previous Jovian
+    -- mapping first so the color follows the cursor without piling up stale
+    -- entries.
+    local ok2, wh = pcall(vim.api.nvim_get_option_value, "winhighlight", { win = winid })
+    if not ok2 then
+        return
+    end
+    local parts = {}
+    for item in (wh .. ","):gmatch("([^,]+),") do
+        if item ~= "" and not item:match("^NonText:JovianCellBorder") then
+            parts[#parts + 1] = item
+        end
+    end
+    parts[#parts + 1] = "NonText:" .. target
+    pcall(vim.api.nvim_set_option_value, "winhighlight", table.concat(parts, ","), { win = winid })
+end
+
 -- Render all cell frames in `bufnr` against the given window's text width.
 -- Safe to call on every TextChanged; the whole namespace is wiped first.
 function M.render(bufnr, winid)
@@ -222,6 +302,8 @@ function M.render(bufnr, winid)
     if not Config.options.cell_frame then
         return
     end
+
+    apply_wrap_chrome(winid, bufnr)
 
     local headers, total = parse_cells(bufnr)
     if #headers == 0 then
@@ -348,10 +430,28 @@ end, {
     end,
 })
 
+-- Re-apply only the wrap-chrome window options for `winid` against the
+-- cursor's current cell. Cheap enough to wire into CursorMoved: it does
+-- one parse_cells pass and a few option writes. Use this instead of a
+-- full render when the buffer didn't change — only the cursor moved.
+function M.refresh_wrap_chrome(bufnr, winid)
+    bufnr = bufnr or vim.api.nvim_get_current_buf()
+    winid = winid or vim.api.nvim_get_current_win()
+    if not Config.options.cell_frame then
+        return
+    end
+    if not vim.api.nvim_buf_is_valid(bufnr) or not vim.api.nvim_win_is_valid(winid) then
+        return
+    end
+    apply_wrap_chrome(winid, bufnr)
+end
+
 -- Public for tests.
 M._parse_cells = parse_cells
 M._namespace = NS
 M._top_border = top_border
 M._bottom_border = bottom_border
+M._apply_wrap_chrome = apply_wrap_chrome
+M._active_cell_kind = active_cell_kind
 
 return M

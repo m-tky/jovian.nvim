@@ -221,16 +221,24 @@ function M.setup(opts)
         -- (raw source shown) and restored when the cursor leaves — matching
         -- render-markdown.nvim. Gated on a line change so horizontal motion
         -- within a line is free; the render is itself debounced.
+        --
+        -- Same hook re-applies the cell_frame wrap-chrome winhighlight so
+        -- the `showbreak = "│ "` color follows the cursor between code and
+        -- markdown cells (showbreak is window-global, so we update it on
+        -- cell-boundary crossings).
         local _md_line = {}
         vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
             pattern = "*.py",
             callback = function(ev)
-                if not Config.options.markdown_cell_style then
+                local line = vim.api.nvim_win_get_cursor(0)[1]
+                if _md_line[ev.buf] == line then
                     return
                 end
-                local line = vim.api.nvim_win_get_cursor(0)[1]
-                if _md_line[ev.buf] ~= line then
-                    _md_line[ev.buf] = line
+                _md_line[ev.buf] = line
+                if Config.options.cell_frame then
+                    CellFrame.refresh_wrap_chrome(ev.buf, vim.api.nvim_get_current_win())
+                end
+                if Config.options.markdown_cell_style then
                     MarkdownCell.schedule(ev.buf)
                 end
             end,

@@ -202,6 +202,66 @@ assert_true(has_table_overlay(8), "table header row is overlaid in place")
 assert_true(has_table_overlay(9), "table separator row is overlaid in place")
 assert_true(has_table_overlay(10), "table data row is overlaid in place")
 
+-- ---------------------------- wrap chrome follows cell type ----------------------------
+-- showbreak is window-global, so the wrap bar color has to chase the
+-- cursor between cell types. Verify the NonText mapping in winhighlight
+-- swaps between code and markdown border groups as the cursor moves.
+print("\n-- wrap chrome follows cell type --")
+local wrap_buf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_buf_set_option(wrap_buf, "filetype", "python")
+vim.api.nvim_buf_set_lines(wrap_buf, 0, -1, false, {
+    '# %% id="wc1"',
+    'x = 1',
+    '# %% [markdown] id="wm1"',
+    "# # heading",
+    '# %% id="wc2"',
+    'y = 2',
+})
+local wrap_win = vim.api.nvim_open_win(wrap_buf, true, {
+    relative = "editor", row = 0, col = 0, width = 40, height = 10,
+})
+
+local function wrap_winhl_for(cursor_line)
+    vim.api.nvim_win_set_cursor(wrap_win, { cursor_line, 0 })
+    CellFrame.refresh_wrap_chrome(wrap_buf, wrap_win)
+    return vim.api.nvim_get_option_value("winhighlight", { win = wrap_win })
+end
+
+-- cursor in a code cell → NonText linked to the code border
+assert_true(
+    wrap_winhl_for(2):find("NonText:JovianCellBorderCode", 1, true) ~= nil,
+    "code-cell cursor → NonText:JovianCellBorderCode"
+)
+-- cursor in a markdown cell → NonText linked to the markdown border
+assert_true(
+    wrap_winhl_for(4):find("NonText:JovianCellBorderMarkdown", 1, true) ~= nil,
+    "markdown-cell cursor → NonText:JovianCellBorderMarkdown"
+)
+-- moving back to a code cell flips it back (the stale Markdown entry must
+-- be stripped, not just appended after)
+local back = wrap_winhl_for(6)
+assert_true(
+    back:find("NonText:JovianCellBorderCode", 1, true) ~= nil,
+    "back to code cell → NonText:JovianCellBorderCode again"
+)
+assert_true(
+    not back:find("NonText:JovianCellBorderMarkdown", 1, true),
+    "stale markdown entry stripped from winhighlight"
+)
+
+-- showbreak and breakindentopt sbr should be set window-locally
+assert_eq(
+    vim.api.nvim_get_option_value("showbreak", { win = wrap_win }),
+    "│ ",
+    "showbreak is `│ ` (wrap continuation marker)"
+)
+assert_true(
+    vim.api.nvim_get_option_value("breakindentopt", { win = wrap_win }):find("sbr", 1, true) ~= nil,
+    "breakindentopt includes `sbr` so showbreak shows before the indent"
+)
+
+vim.api.nvim_win_close(wrap_win, true)
+
 -- ---------------------------- clear ----------------------------
 print("\n-- clear --")
 CellFrame.clear(buf)
