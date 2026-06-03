@@ -15,7 +15,7 @@ function M.check()
                 vim.health.ok("ipykernel importable")
             else
                 vim.health.error(
-                    ("Active python cannot import ipykernel — install it (e.g. `pip install ipykernel`) "):format(active)
+                    "Active python cannot import ipykernel — install it (e.g. `pip install ipykernel`) "
                         .. "or run :JovianPickPython to pick another."
                 )
             end
