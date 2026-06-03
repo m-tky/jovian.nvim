@@ -97,6 +97,16 @@ M.defaults = {
     --   "rounded" : ╭╮╰╯
     cell_frame_style = "square",
 
+    -- Reserve N columns of empty space to the right of the cell frame's
+    -- right border (the `│`). Useful when a scrollbar plugin like
+    -- nvim-scrollbar / nvim-scrollview also wants to draw in the rightmost
+    -- column — at 0 (default) the cell frame and the scrollbar fight for
+    -- the same column; setting this to 1 (or 2) pulls the right border
+    -- inward by that many columns so the scrollbar has space to live.
+    -- Affects the frame width: the top/bottom dashes and any inline
+    -- content (output blocks, tables, images, math) shrink to match.
+    cell_frame_right_pad = 0,
+
     -- Extmark priority of the cell-frame side bars (the left/right `│`).
     -- This decides who wins when an indent-guide plugin draws a vertical
     -- line in the same column as the frame's left bar:

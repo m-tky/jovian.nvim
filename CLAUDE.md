@@ -173,6 +173,8 @@ require("jovian").setup({
     cell_frame          = false,      -- ┌─ Code [id] ─┐ card borders
     cell_frame_priority = 100,        -- side-bar extmark priority; raise (e.g. 4096)
                                       -- to draw the frame above indent-guide plugins
+    cell_frame_right_pad = 0,         -- columns to leave empty at the right edge for
+                                      -- scrollbar plugins (nvim-scrollbar / scrollview)
     markdown_cell_style = false,      -- conceal #/**bold**/tables in markdown cells
     table_border        = "round",    -- round/none/heavy/double (render-markdown style)
     -- $…$/$$…$$ → Unicode (render-markdown semantics). position: center =

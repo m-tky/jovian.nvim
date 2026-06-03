@@ -163,12 +163,15 @@ function M.text_area_width(winid)
     local info = vim.fn.getwininfo(winid)[1] or {}
     local textoff = info.textoff or 0
     local w = total - textoff
+    -- Optional right-edge reservation: shave columns off the frame width so
+    -- a scrollbar plugin (nvim-scrollbar / nvim-scrollview) can own the
+    -- rightmost column(s) without overlapping the right `│`. Top/bottom
+    -- dashes, inner content, and the right bar all key off this width.
+    local right_pad = math.max(Config.options.cell_frame_right_pad or 0, 0)
+    w = w - right_pad
     if w < 20 then
         w = 20
     end
-    -- No upper cap: the right_align side bar lives at the actual text-area
-    -- edge, so the top/bottom dashes must reach there too — otherwise
-    -- the frame looks like ┌──── ─┐  │  with a visible gap on wide windows.
     return w
 end
 
@@ -356,6 +359,7 @@ function M.render(bufnr, winid)
         --    user-tunable so the bars can be drawn above (or yield to) an
         --    indent-guide plugin's vertical line — see `cell_frame_priority`.
         local bar_priority = Config.options.cell_frame_priority or 100
+        local right_pad = math.max(Config.options.cell_frame_right_pad or 0, 0)
         for ln = h.line + 1, last_src do
             pcall(vim.api.nvim_buf_set_extmark, bufnr, NS, ln, 0, {
                 virt_text = { { "│ ", hl } },
@@ -364,13 +368,21 @@ function M.render(bufnr, winid)
                 hl_mode = "combine",
                 priority = bar_priority,
             })
-            pcall(vim.api.nvim_buf_set_extmark, bufnr, NS, ln, 0, {
+            local right_opts = {
                 virt_text = { { "│", hl } },
-                virt_text_pos = "right_align",
                 virt_text_repeat_linebreak = true,
                 hl_mode = "combine",
                 priority = bar_priority,
-            })
+            }
+            if right_pad > 0 then
+                -- Pin the right bar to a fixed window column so it sits
+                -- `right_pad` cells in from the actual text-area edge,
+                -- leaving room for an external scrollbar.
+                right_opts.virt_text_win_col = width - 1
+            else
+                right_opts.virt_text_pos = "right_align"
+            end
+            pcall(vim.api.nvim_buf_set_extmark, bufnr, NS, ln, 0, right_opts)
         end
 
         -- 4. Bottom block on the last source line via virt_lines. When

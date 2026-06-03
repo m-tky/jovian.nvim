@@ -266,6 +266,86 @@ assert_true(
 
 vim.api.nvim_win_close(wrap_win, true)
 
+-- ---------------------------- right pad ----------------------------
+-- cell_frame_right_pad reserves N columns for an external scrollbar
+-- plugin (nvim-scrollbar / nvim-scrollview). Verify:
+--   • text_area_width shrinks by exactly pad
+--   • the right `│` switches from `right_align` to `virt_text_win_col`
+--     positioned at (width - 1), so it lives N columns in from the edge
+print("\n-- cell_frame_right_pad ----")
+local pad_buf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_buf_set_option(pad_buf, "filetype", "python")
+vim.api.nvim_buf_set_lines(pad_buf, 0, -1, false, {
+    '# %% id="rp1"',
+    "z = 1",
+})
+local pad_win = vim.api.nvim_open_win(pad_buf, true, {
+    relative = "editor",
+    row = 0,
+    col = 0,
+    width = 50,
+    height = 5,
+})
+-- Pin the gutter so textoff is deterministic across nvim versions.
+vim.api.nvim_set_option_value("signcolumn", "no", { win = pad_win })
+vim.api.nvim_set_option_value("number", false, { win = pad_win })
+vim.api.nvim_set_option_value("relativenumber", false, { win = pad_win })
+vim.api.nvim_set_option_value("foldcolumn", "0", { win = pad_win })
+
+local Config = require("jovian.config")
+local prev_pad = Config.options.cell_frame_right_pad
+Config.options.cell_frame_right_pad = 2
+
+local full_width = CellFrame.text_area_width(pad_win)
+assert_eq(full_width, 48, "text_area_width shrinks by pad (50 - 2 = 48)")
+
+CellFrame.render(pad_buf, pad_win)
+local pad_marks = vim.api.nvim_buf_get_extmarks(pad_buf, CellFrame._namespace, 0, -1, { details = true })
+
+local function find_right_bar(ln)
+    for _, m in ipairs(pad_marks) do
+        if m[2] == ln then
+            local det = m[4]
+            if det.virt_text and det.virt_text[1] and det.virt_text[1][1] == "│" then
+                return det
+            end
+        end
+    end
+    return nil
+end
+
+local rb = find_right_bar(1)
+assert_true(rb ~= nil, "right `│` bar exists on source line")
+if rb then
+    -- nvim normalises virt_text_win_col to virt_text_pos = "win_col" in
+    -- the readback, so check both: position is "win_col" (not "right_align")
+    -- and the pinned column equals width - 1.
+    assert_eq(rb.virt_text_pos, "win_col", "right bar uses win_col positioning when pad > 0")
+    assert_eq(rb.virt_text_win_col, 47, "right bar pinned at width-1 (48-1=47), 2 cols in from edge")
+end
+
+-- Setting pad back to 0 restores right_align behaviour.
+Config.options.cell_frame_right_pad = 0
+CellFrame.render(pad_buf, pad_win)
+local pad_marks0 = vim.api.nvim_buf_get_extmarks(pad_buf, CellFrame._namespace, 0, -1, { details = true })
+local rb0
+for _, m in ipairs(pad_marks0) do
+    if m[2] == 1 then
+        local det = m[4]
+        if det.virt_text and det.virt_text[1] and det.virt_text[1][1] == "│" then
+            rb0 = det
+            break
+        end
+    end
+end
+assert_true(rb0 ~= nil, "right `│` bar still drawn with pad=0")
+if rb0 then
+    assert_eq(rb0.virt_text_pos, "right_align", "pad=0 keeps right_align")
+end
+
+Config.options.cell_frame_right_pad = prev_pad
+vim.api.nvim_win_close(pad_win, true)
+
 -- ---------------------------- clear ----------------------------
 print("\n-- clear --")
 CellFrame.clear(buf)

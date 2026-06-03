@@ -319,6 +319,9 @@ require("jovian").setup({
 
     -- Opt-in visual layers (all off by default)
     cell_frame = false,
+    cell_frame_right_pad = 0,      -- reserve N columns to the right of the
+                                   -- cell frame for scrollbar plugins
+                                   -- (nvim-scrollbar / nvim-scrollview)
     markdown_cell_style = false,
     inline_outputs = false,        -- requires cell_frame
     inline_output_max_lines = 20,  -- elide longer inline text output
