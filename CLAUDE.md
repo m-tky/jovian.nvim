@@ -80,7 +80,8 @@ rendered as Unicode-placeholder rows whose fg color encodes the image_id.
 | Module | Role |
 |---|---|
 | `init.lua` | `setup()` entry point; registers autocmds |
-| `config.lua` | Default options; `M.options` is the live config table |
+| `config.lua` | Default options; `M.options` is the live config table; auto-resolves `python_interpreter` via `python.lua` at setup |
+| `python.lua` | Python interpreter resolution (PATH / $VIRTUAL_ENV / $CONDA_PREFIX / .venv probe + ipykernel check) and kernelspec listing |
 | `state.lua` | Single global state table; all mutable plugin state lives here |
 | `core.lua` | Kernel lifecycle + execution + Vars/View — delegates to rust_kernel |
 | `backend/core.lua` | jovian-core binary locator + shared RPC client + kitty_attach |
@@ -156,10 +157,22 @@ nix run .#nvim-jovian -- demo_jovian.py   # full demo (Rust backend, all feature
 
 ```lua
 require("jovian").setup({
-    -- Python
-    python_interpreter = "python3",   -- or JOVIAN_PYTHON env var
-                                      -- an absolute path → used as the kernel's
-                                      -- python directly (bypasses kernelspec lookup)
+    -- Python — auto-resolved when nil (default). Resolver probes, in order:
+    --   PATH python3/python  →  $VIRTUAL_ENV  →  $CONDA_PREFIX
+    --   →  ./.venv  →  ./venv
+    -- and picks the first one with `import ipykernel`. JOVIAN_PYTHON env
+    -- wins over the resolver. Set this explicitly (string) to pin a
+    -- specific interpreter — that value is used verbatim and the resolver
+    -- is skipped; health surfaces a warning if ipykernel is missing.
+    -- Absolute paths bypass Jupyter kernelspec lookup (no kernel.json
+    -- needed); bare names still fall back to kernelspec discovery on the
+    -- Rust side as a last resort. Switch interactively at runtime with
+    -- :JovianPickPython.
+    python_interpreter = nil,
+    -- Pin a registered Jupyter kernelspec by name (e.g. "python3", "ir").
+    -- Mutually exclusive with python_interpreter; usually nil — set by
+    -- :JovianPickPython when a kernelspec entry is chosen.
+    kernel_name = nil,
 
     -- UI
     float_border       = "rounded",   -- single/double/rounded/solid/shadow
@@ -237,6 +250,7 @@ require("jovian").setup({
 | `:JovianRestart` | Restart kernel |
 | `:JovianInterrupt` | Interrupt kernel |
 | `:JovianREPL` | Open `jupyter console` attached to the running kernel |
+| `:JovianPickPython` | Pick a python interpreter (or registered kernelspec) interactively; restarts kernel |
 
 ### UI
 | Command | Description |

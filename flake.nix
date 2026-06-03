@@ -205,6 +205,9 @@
             echo ">>> Running Math (LaTeX) Tests..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_math.lua
 
+            echo ">>> Running Python Resolver Tests..."
+            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_python_resolve.lua
+
             echo ">>> Running Rust Backend Phase 1 Smoke Test (Real Kernel)..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_rust_phase1.lua
 

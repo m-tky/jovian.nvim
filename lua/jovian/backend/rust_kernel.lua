@@ -233,6 +233,10 @@ function M.start(on_ready)
             args.remote_cwd = Config.options.remote_cwd
         elseif looks_like_path(Config.options.python_interpreter) then
             args.python_path = Config.options.python_interpreter
+        elseif Config.options.kernel_name and Config.options.kernel_name ~= "" then
+            -- No usable python pinned; defer to a registered Jupyter
+            -- kernelspec. The Rust side calls discover_with_fallback(name).
+            args.kernel_name = Config.options.kernel_name
         end
         client:request("start_kernel", args, function(err2, _)
             vim.schedule(function()

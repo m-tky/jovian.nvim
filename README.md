@@ -83,6 +83,30 @@ That's it for the kernel. There is no `pyzmq`, `jupyter-client`, or
 `jupyter-console` requirement anymore — `jovian-core` talks to the kernel
 directly.
 
+#### How jovian picks the Python interpreter
+
+By default jovian auto-resolves a usable Python at startup — you don't need
+to register a Jupyter `kernel.json`. It probes the following sources in
+order and picks the first one that can `import ipykernel`:
+
+1. `$JOVIAN_PYTHON` (explicit env var, used as-is)
+2. PATH `python3` / `python` — the typical `nix develop`, asdf, or system
+   case: drop into a shell that has the right Python, then launch Neovim
+3. `$VIRTUAL_ENV/bin/python` — active venv
+4. `$CONDA_PREFIX/bin/python` — active conda env
+5. `./.venv/bin/python`, `./venv/bin/python` — project-local venvs (poetry,
+   uv, vanilla)
+
+If nothing matches, jovian falls back to the bare string `python3` and the
+Rust core looks for a registered Jupyter kernelspec as a last resort.
+
+To pin a specific interpreter, set `python_interpreter` explicitly in
+`setup()` — the resolver is then skipped and your value is used verbatim
+(`:checkhealth jovian` warns if `ipykernel` is missing instead of
+overriding your choice). To switch at runtime, run `:JovianPickPython` and
+choose from the detected pythons + registered kernelspecs; the kernel is
+restarted with the new selection.
+
 ### 2. The `jovian-core` binary
 
 The native backend. You get it one of three ways, in order of preference:
@@ -120,7 +144,11 @@ The `build` hook installs `jovian-core` (prebuilt download, or cargo fallback):
     end,
     config = function()
         require("jovian").setup({
-            python_interpreter = "python3",
+            -- python_interpreter is auto-resolved by default — set it
+            -- explicitly only to pin a specific interpreter (absolute
+            -- path skips Jupyter kernelspec lookup entirely).
+            -- python_interpreter = "/path/to/your/python",
+
             -- Opt-in visuals (all off by default):
             cell_frame = true,           -- bordered cell cards
             markdown_cell_style = true,  -- styled markdown cells

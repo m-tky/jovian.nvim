@@ -100,6 +100,79 @@ function M.setup()
         desc = "Continuous eval session in the kernel (replaces jupyter console)",
     })
 
+    -- Pick a python interpreter or a registered Jupyter kernelspec
+    -- interactively. Lists every detected python (with an [ipykernel] tag
+    -- when usable) plus every kernel.json discovered by jovian-core, then
+    -- restarts the running kernel so the new choice takes effect.
+    vim.api.nvim_create_user_command("JovianPickPython", function()
+        local Python = require("jovian.python")
+        local candidates = Python.candidates()
+        Python.list_kernelspecs(function(specs, err)
+            specs = specs or {}
+            if err then
+                vim.notify("kernelspec discovery failed: " .. tostring(err), vim.log.levels.WARN)
+            end
+
+            local entries = {}
+            for _, c in ipairs(candidates) do
+                local usable = Python.has_ipykernel(c.path)
+                local tag = usable and "[ipykernel]" or "[missing ipykernel]"
+                table.insert(entries, {
+                    label = ("%s  %s  %s"):format(tag, c.source, c.path),
+                    kind = "python",
+                    path = c.path,
+                    usable = usable,
+                })
+            end
+            for _, s in ipairs(specs) do
+                table.insert(entries, {
+                    label = ("[kernelspec] %s  (%s)"):format(s.name, s.display_name or s.name),
+                    kind = "kernelspec",
+                    name = s.name,
+                    usable = true,
+                })
+            end
+
+            if #entries == 0 then
+                vim.notify("No python or kernelspec found.", vim.log.levels.WARN)
+                return
+            end
+
+            vim.ui.select(entries, {
+                prompt = "Jovian: pick python / kernel",
+                format_item = function(e)
+                    return e.label
+                end,
+            }, function(choice)
+                if not choice then
+                    return
+                end
+                if choice.kind == "python" then
+                    if not choice.usable then
+                        vim.notify(
+                            ("'%s' has no ipykernel — pick a usable entry."):format(choice.path),
+                            vim.log.levels.ERROR
+                        )
+                        return
+                    end
+                    Config.options.python_interpreter = choice.path
+                    Config.configured_python = choice.path
+                    Config.options.kernel_name = nil
+                    vim.notify("jovian: python set to " .. choice.path, vim.log.levels.INFO)
+                else
+                    Config.options.kernel_name = choice.name
+                    Config.options.python_interpreter = nil
+                    Config.configured_python = nil
+                    vim.notify("jovian: kernelspec set to " .. choice.name, vim.log.levels.INFO)
+                end
+
+                if State.rust_active then
+                    Core.restart_kernel()
+                end
+            end)
+        end)
+    end, { desc = "Pick the python interpreter or Jupyter kernelspec to use" })
+
     -- Host Management
     vim.api.nvim_create_user_command("JovianAddHost", function(opts)
         local args = vim.split(opts.args, " ")

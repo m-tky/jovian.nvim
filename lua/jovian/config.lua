@@ -9,7 +9,30 @@ M.defaults = {
     float_border = "rounded", -- Border style for floating windows (single, double, rounded, solid, shadow)
 
     -- Python Environment
-    python_interpreter = os.getenv("JOVIAN_PYTHON") or "python3",
+    --
+    -- When unset (the default), jovian auto-resolves a usable python at
+    -- setup time: it probes PATH `python3`/`python`, $VIRTUAL_ENV,
+    -- $CONDA_PREFIX, ./.venv, ./venv (in that order) and picks the first
+    -- one that can `import ipykernel`. Set this explicitly to opt out and
+    -- pin a specific interpreter — the value is then used verbatim, even
+    -- if ipykernel is missing (a health warning is surfaced instead).
+    --
+    -- Absolute paths bypass Jupyter kernelspec lookup: jovian-core launches
+    -- `<python> -m ipykernel_launcher` directly, so no `kernel.json` needs
+    -- to exist on the system. Bare names like "python3" still go through
+    -- kernelspec discovery on the Rust side as a last resort.
+    --
+    -- JOVIAN_PYTHON env var, if set, wins over the auto-resolver — this
+    -- matches what the bundled flake's devShell hook exports.
+    python_interpreter = nil,
+
+    -- Pin a specific Jupyter kernelspec by name (e.g. "python3", "ir").
+    -- Forwarded to jovian-core's start_kernel as `kernel_name`. Mutually
+    -- exclusive with python_interpreter (which builds a synthetic spec on
+    -- the fly); when both are set, python_interpreter wins. Most users
+    -- leave this nil — the picker (`:JovianPickPython`) sets it when a
+    -- registered kernelspec is chosen.
+    kernel_name = nil,
 
     -- Behavior
     notify_threshold = 10,
@@ -248,9 +271,38 @@ M.defaults = {
 
 M.options = vim.deepcopy(M.defaults)
 
+-- True iff the user explicitly set `python_interpreter` in setup(). Used to
+-- skip the auto-resolver and respect the user's pin verbatim (matches the
+-- "そのまま使う" answer to the explicit-override question in the design).
+M.python_interpreter_explicit = false
+
+-- Resolved absolute python path picked by the auto-resolver, or whatever
+-- the user pinned. Filled in by `setup()` and mirrored back to
+-- `options.python_interpreter` so the rest of the plugin (rust_kernel.lua,
+-- session.lua, health.lua, hosts.lua) can read a single field.
+M.configured_python = nil
+
 function M.setup(opts)
-    M.options = vim.tbl_deep_extend("force", M.defaults, opts or {})
-    M.configured_python = M.options.python_interpreter
+    opts = opts or {}
+    M.python_interpreter_explicit = opts.python_interpreter ~= nil
+    M.options = vim.tbl_deep_extend("force", M.defaults, opts)
+
+    local resolved
+    if M.options.python_interpreter and M.options.python_interpreter ~= "" then
+        -- Explicit setup() value wins, no probing. Health surfaces a warning
+        -- if ipykernel is missing instead of overriding the user's choice.
+        resolved = M.options.python_interpreter
+    else
+        local env = os.getenv("JOVIAN_PYTHON")
+        if env and env ~= "" then
+            resolved = env
+        else
+            local Python = require("jovian.python")
+            resolved = Python.resolve() or "python3"
+        end
+    end
+    M.options.python_interpreter = resolved
+    M.configured_python = resolved
 end
 
 return M
