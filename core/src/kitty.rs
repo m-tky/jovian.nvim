@@ -24,7 +24,6 @@ pub fn alloc_id() -> u32 {
     NEXT_IMAGE_ID.fetch_add(1, Ordering::Relaxed)
 }
 
-#[derive(Clone)]
 pub struct KittyTty {
     inner: Arc<Mutex<KittyTtyInner>>,
 }
@@ -110,15 +109,6 @@ impl KittyTty {
             pos = end;
         }
         Ok(())
-    }
-
-    pub fn delete_image(&self, id: u32) -> Result<()> {
-        let s = format!("\x1b_Ga=d,d=I,i={},q=2\x1b\\", id);
-        self.write(s.as_bytes())
-    }
-
-    pub fn delete_all(&self) -> Result<()> {
-        self.write(b"\x1b_Ga=d,d=A,q=2\x1b\\")
     }
 }
 

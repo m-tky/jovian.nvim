@@ -10,9 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Async runtime
-tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "io-std", "io-util", "sync", "process", "time", "signal", "fs"] }
-tokio-stream = "0.1"
-futures = "0.3"
+tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "io-std", "io-util", "sync", "process", "time"] }
 
 # ZMQ — pure-rust impl, no libzmq C dep
 zeromq = { version = "0.4", default-features = false, features = ["tokio-runtime", "all-transport"] }
@@ -20,7 +18,6 @@ zeromq = { version = "0.4", default-features = false, features = ["tokio-runtime
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
-rmp-serde = "1.3"
 rmpv = { version = "1.3", features = ["with-serde"] }
 
 # Crypto for Jupyter HMAC signing
@@ -34,7 +31,6 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # Errors & logging
 anyhow = "1"
-thiserror = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tracing-appender = "0.2"

@@ -193,30 +193,20 @@ impl Server {
         };
         match method {
             "ping" => Ok(json!("pong")),
-            "version" => Ok(json!({
-                "version": env!("CARGO_PKG_VERSION"),
-                "name": env!("CARGO_PKG_NAME"),
-            })),
             "list_kernels" => self.list_kernels(),
             "open" => self.open(p).await,
             "close" => self.close(p).await,
-            "snapshot" => self.snapshot(p),
             "reparse" => self.reparse(p),
             "start_kernel" => self.start_kernel(p).await,
-            "stop_kernel" => self.stop_kernel(p).await,
             "interrupt_kernel" => self.interrupt_kernel(p).await,
-            "restart_kernel" => self.restart_kernel(p).await,
             "execute" => self.execute(p).await,
-            "execute_silent" => self.execute_silent(p).await,
             "execute_collect" => self.execute_collect(p).await,
             "complete" => self.complete(p).await,
             "inspect" => self.inspect(p).await,
             "clear_outputs" => self.clear_outputs(p),
             "clear_cell_output" => self.clear_cell_output(p),
-            "persist_outputs" => self.persist_outputs(p),
             "kitty_attach" => self.kitty_attach(p).await,
             "kitty_transmit" => self.kitty_transmit(p).await,
-            "kitty_clear" => self.kitty_clear(p).await,
             other => Err(anyhow!("unknown method '{other}'")),
         }
     }
@@ -250,18 +240,6 @@ impl Server {
             }
         }
         Ok(json!({ "ok": true }))
-    }
-
-    fn snapshot(&self, p: Json) -> Result<Json> {
-        let sid = p
-            .get("session_id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow!("session_id required"))?;
-        let s = self
-            .sessions
-            .get(sid)
-            .ok_or_else(|| anyhow!("session not found"))?;
-        Ok(serde_json::to_value(s.snapshot())?)
     }
 
     fn reparse(&self, p: Json) -> Result<Json> {
@@ -386,23 +364,6 @@ impl Server {
         Ok(json!({ "kernel_name": kernel_name }))
     }
 
-    async fn stop_kernel(&self, p: Json) -> Result<Json> {
-        let sid = p
-            .get("session_id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow!("session_id required"))?;
-        let s = self
-            .sessions
-            .get(sid)
-            .ok_or_else(|| anyhow!("no session"))?
-            .clone();
-        let k = s.kernel.write().await.take();
-        if let Some(k) = k {
-            k.kill().await?;
-        }
-        Ok(json!({ "ok": true }))
-    }
-
     async fn interrupt_kernel(&self, p: Json) -> Result<Json> {
         let sid = p
             .get("session_id")
@@ -418,11 +379,6 @@ impl Server {
             k.interrupt().await?;
         }
         Ok(json!({ "ok": true }))
-    }
-
-    async fn restart_kernel(self: Arc<Self>, p: Json) -> Result<Json> {
-        self.stop_kernel(p.clone()).await.ok();
-        self.start_kernel(p).await
     }
 
     async fn execute(&self, p: Json) -> Result<Json> {
@@ -548,31 +504,6 @@ impl Server {
         }))
     }
 
-    async fn execute_silent(&self, p: Json) -> Result<Json> {
-        let sid = p
-            .get("session_id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow!("session_id"))?;
-        let code = p
-            .get("code")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow!("code"))?;
-        let session = self
-            .sessions
-            .get(sid)
-            .ok_or_else(|| anyhow!("no session"))?
-            .clone();
-        let guard = session.kernel.read().await;
-        let kernel = guard
-            .as_ref()
-            .ok_or_else(|| anyhow!("kernel not started"))?;
-        let msg_id = Uuid::new_v4().to_string();
-        kernel
-            .execute_with_id_opts(code, msg_id.clone(), true, false)
-            .await?;
-        Ok(json!({ "msg_id": msg_id }))
-    }
-
     async fn complete(&self, p: Json) -> Result<Json> {
         let sid = p
             .get("session_id")
@@ -658,20 +589,6 @@ impl Server {
         Ok(json!({ "ok": true }))
     }
 
-    fn persist_outputs(&self, p: Json) -> Result<Json> {
-        let sid = p
-            .get("session_id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow!("session_id"))?;
-        let s = self
-            .sessions
-            .get(sid)
-            .ok_or_else(|| anyhow!("no session"))?
-            .clone();
-        s.persist_outputs()?;
-        Ok(json!({ "ok": true }))
-    }
-
     async fn kitty_attach(&self, p: Json) -> Result<Json> {
         let path = p.get("tty").and_then(|v| v.as_str()).map(PathBuf::from);
         let kitty = KittyTty::open(path)?;
@@ -705,19 +622,6 @@ impl Server {
             None => kitty.transmit_png(&png, cols, rows)?,
         };
         Ok(json!({ "image_id": id }))
-    }
-
-    async fn kitty_clear(&self, p: Json) -> Result<Json> {
-        let kitty_lock = self.kitty.lock().await;
-        let kitty = kitty_lock
-            .as_ref()
-            .ok_or_else(|| anyhow!("kitty not attached"))?;
-        if let Some(id) = p.get("image_id").and_then(|v| v.as_u64()) {
-            kitty.delete_image(id as u32)?;
-        } else {
-            kitty.delete_all()?;
-        }
-        Ok(json!({ "ok": true }))
     }
 
     async fn notify(&self, method: &str, params: Json) {
