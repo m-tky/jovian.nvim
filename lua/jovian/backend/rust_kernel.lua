@@ -26,6 +26,16 @@ local _event_handler_registered = false
 -- final reply, so we should land the cell in "error" state when the reply hits.
 local _cell_had_error = {}
 
+-- Per-cell completion gating. Jupyter's rule: a cell is "done" once we
+-- have BOTH `execute_reply` on shell AND `status: idle` on iopub (with
+-- matching parent_msg_id). The two events arrive in arbitrary order
+-- because they're on separate sockets, and trailing iopub messages
+-- (stream chunks, execute_result) can land AFTER execute_reply but
+-- BEFORE idle. If we fire set_final on execute_reply alone, the UI
+-- flips to "Done" while the last lines of output are still arriving.
+-- Track both signals and finalize only when both are in.
+local _cell_done_state = {}
+
 local function set_busy(cell_id)
     local buf = State.cell_buf_map[cell_id]
     if buf and vim.api.nvim_buf_is_valid(buf) then
@@ -89,6 +99,16 @@ local function refresh_inline_outputs(cell_id)
     end
 end
 
+local function maybe_finalize_cell(cell_id)
+    local s = _cell_done_state[cell_id]
+    if not s or not s.got_reply or not s.got_idle then
+        return
+    end
+    set_final(cell_id, s.errored or _cell_had_error[cell_id])
+    refresh_inline_outputs(cell_id)
+    _cell_done_state[cell_id] = nil
+end
+
 local function on_cell_event(params)
     local cell_id = params and params.cell_id
     if not cell_id then
@@ -99,6 +119,7 @@ local function on_cell_event(params)
 
     if kind == "execute_input" then
         _cell_had_error[cell_id] = false
+        _cell_done_state[cell_id] = { got_reply = false, got_idle = false, errored = false }
         -- Mark this cell as freshly executed in the current session so
         -- the renderers drop the "(cached)" suffix on its outputs.
         State.fresh_cells[cell_id] = true
@@ -188,10 +209,23 @@ local function on_cell_event(params)
         end
         refresh_inline_outputs(cell_id)
     elseif kind == "execute_reply" then
-        set_final(cell_id, ev.status == "error" or _cell_had_error[cell_id])
-        refresh_inline_outputs(cell_id)
+        local s = _cell_done_state[cell_id] or { got_reply = false, got_idle = false, errored = false }
+        s.got_reply = true
+        s.errored = (ev.status == "error")
+        _cell_done_state[cell_id] = s
+        maybe_finalize_cell(cell_id)
+    elseif kind == "status" then
+        -- Only `idle` matters for cell completion. `busy` is implied by
+        -- execute_input firing, which already triggered set_busy().
+        if ev.state == "idle" then
+            local s = _cell_done_state[cell_id]
+            if s then
+                s.got_idle = true
+                maybe_finalize_cell(cell_id)
+            end
+        end
     end
-    -- status (busy/idle), update_display_data, kernel_info, clear_output: no-op for Phase 1
+    -- update_display_data, kernel_info, clear_output: no-op
 end
 
 -- Handle kernel_event notifications from the core. The interesting kind
