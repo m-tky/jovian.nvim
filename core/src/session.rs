@@ -11,10 +11,18 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{oneshot, RwLock as AsyncRwLock};
+use std::time::Duration;
+use tokio::sync::{oneshot, Notify, RwLock as AsyncRwLock};
 
 use crate::kernel::{Kernel, KernelEvent};
 use crate::notebook::{self, OutputStoreFile, Source};
+
+// Window during which apply_event() calls coalesce into a single sidecar
+// write. A chatty cell (e.g. a print-in-a-loop with 10k iterations) used to
+// re-serialize and overwrite the entire JSON file once per iopub event —
+// O(N²) work and 10k crash-windows where readers saw partial JSON. Now we
+// write at most once per PERSIST_DEBOUNCE_MS regardless of event rate.
+const PERSIST_DEBOUNCE_MS: u64 = 100;
 
 /// A collector for execute_collect: accumulates kernel events for one
 /// msg_id and fires `done` with the collected list when the kernel goes
@@ -48,13 +56,18 @@ pub struct Session {
     /// Events with a matching parent_msg_id are diverted into the collector
     /// instead of going through apply_event / cell_event notifications.
     pub collect_pending: DashMap<String, Mutex<Collector>>,
+    /// Wake signal for the debounced sidecar persister task. apply_event
+    /// calls request_persist() instead of writing synchronously; the task
+    /// sleeps PERSIST_DEBOUNCE_MS after each wake, coalescing bursts.
+    persist_signal: Arc<Notify>,
 }
 
 impl Session {
     pub fn open(id: String, path: PathBuf) -> Result<Arc<Self>> {
         let source = Source::read(&path)?;
         let outputs = notebook::read_sidecar(&path)?;
-        Ok(Arc::new(Self {
+        let persist_signal = Arc::new(Notify::new());
+        let session = Arc::new(Self {
             id,
             path,
             source: RwLock::new(source),
@@ -62,7 +75,32 @@ impl Session {
             kernel: AsyncRwLock::new(None),
             msg_to_cell: DashMap::new(),
             collect_pending: DashMap::new(),
-        }))
+            persist_signal: persist_signal.clone(),
+        });
+        // Debounced flush task. Holds a Weak<Session> so it doesn't keep
+        // the session alive; when the session is dropped the next
+        // `upgrade()` fails and the task exits.
+        let weak = Arc::downgrade(&session);
+        tokio::spawn(async move {
+            loop {
+                persist_signal.notified().await;
+                tokio::time::sleep(Duration::from_millis(PERSIST_DEBOUNCE_MS)).await;
+                let Some(s) = weak.upgrade() else {
+                    return;
+                };
+                if let Err(e) = s.persist_outputs() {
+                    tracing::warn!("persist sidecar (debounced): {e:?}");
+                }
+            }
+        });
+        Ok(session)
+    }
+
+    /// Wake the debounced persister. Cheap (a single `notify_one`) so it's
+    /// safe to call from every apply_event without rate-limiting at the
+    /// call site.
+    pub fn request_persist(&self) {
+        self.persist_signal.notify_one();
     }
 
     /// Register a collector for a hidden execute. Returns the receiver
@@ -243,13 +281,11 @@ impl Session {
                 json!({ "kind": "kernel_info", "info": info })
             }
         };
-        // Persist eagerly so external readers and a future :checkhealth jovian see
-        // current state without us needing an explicit save RPC. The write is
-        // synchronous but small (one cell's worth of JSON).
+        // Persist via the debounced flusher: a burst of stream events
+        // collapses to a single write ~100 ms later. Synchronous callers
+        // (clear_outputs / close) still force-flush via persist_outputs.
         drop(outs);
-        if let Err(e) = self.persist_outputs() {
-            tracing::warn!("persist sidecar: {e:?}");
-        }
+        self.request_persist();
         Some((cell_id, payload))
     }
 }

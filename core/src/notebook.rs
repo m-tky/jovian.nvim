@@ -224,13 +224,22 @@ pub fn read_sidecar(source_path: &Path) -> Result<OutputStoreFile> {
     Ok(f)
 }
 
+/// Atomic sidecar write: serialize into `<path>.tmp` then `rename` it
+/// over the real path. A concurrent reader (a second nvim viewing the
+/// same file) either sees the previous file or the new one — never an
+/// empty / half-written JSON document. `rename(2)` on the same filesystem
+/// is atomic on POSIX; the `.jovian_cache/<file>/` directory is always
+/// on the same fs as the source file, so this holds in practice.
 pub fn write_sidecar(source_path: &Path, store: &OutputStoreFile) -> Result<()> {
     let p = sidecar_path_for(source_path);
     if let Some(parent) = p.parent() {
         std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
     }
     let s = serde_json::to_string_pretty(store)?;
-    std::fs::write(&p, s + "\n").with_context(|| format!("write {}", p.display()))?;
+    let tmp = p.with_extension("json.tmp");
+    std::fs::write(&tmp, s + "\n").with_context(|| format!("write {}", tmp.display()))?;
+    std::fs::rename(&tmp, &p)
+        .with_context(|| format!("rename {} → {}", tmp.display(), p.display()))?;
     Ok(())
 }
 

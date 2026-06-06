@@ -234,6 +234,9 @@ impl Server {
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("session_id required"))?;
         if let Some((_, s)) = self.sessions.remove(sid) {
+            // Force-flush before dropping: a write that's still queued in
+            // the debounce window would otherwise be lost.
+            let _ = s.persist_outputs();
             let kernel = s.kernel.write().await.take();
             if let Some(k) = kernel {
                 let _ = k.kill().await;
