@@ -15,6 +15,29 @@ local M = {}
 
 local uv = vim.uv or vim.loop
 
+-- Module-wide registry of every pending-timer table created by M.make,
+-- consulted by a single BufWipeout autocmd that nukes any pending timers
+-- for a bufnr that goes away. Without this, a timer scheduled against
+-- buf 42 outlives the buffer; when the timer fires we close it (the
+-- buf-valid check handles that), but a fresh schedule() in the same
+-- bufnr slot during the window can stop the wrong timer or fire
+-- against a recycled buffer.
+local all_timer_tables = {}
+
+vim.api.nvim_create_autocmd({ "BufWipeout", "BufDelete" }, {
+    pattern = "*",
+    callback = function(ev)
+        for _, timers in ipairs(all_timer_tables) do
+            local t = timers[ev.buf]
+            if t then
+                pcall(t.stop, t)
+                pcall(t.close, t)
+                timers[ev.buf] = nil
+            end
+        end
+    end,
+})
+
 -- Build a scheduler for `render_fn`. The returned `schedule(bufnr, ...)` can
 -- be called as often as the caller likes; only the final call in any 60 ms
 -- window actually invokes render. The extra args are captured AT FIRE TIME
@@ -31,6 +54,7 @@ function M.make(render_fn, opts)
     local delay = opts.delay or 60
     local resolve = opts.resolve
     local timers = {}
+    table.insert(all_timer_tables, timers)
 
     return function(bufnr, ...)
         bufnr = bufnr or vim.api.nvim_get_current_buf()

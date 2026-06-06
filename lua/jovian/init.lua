@@ -87,6 +87,33 @@ function M.setup(opts)
             Session.clean_stale_cache(ev.buf)
         end,
     })
+
+    -- Drop per-cell state attached to a buffer that's being wiped or
+    -- deleted, so cell ids from a previous incarnation don't linger in
+    -- global maps and confuse future lookups for a recycled bufnr.
+    vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
+        pattern = "*",
+        callback = function(ev)
+            local State = require("jovian.state")
+            local bufnr = ev.buf
+            for cell_id, b in pairs(State.cell_buf_map) do
+                if b == bufnr then
+                    State.cell_buf_map[cell_id] = nil
+                    State.cell_status_extmarks[cell_id] = nil
+                    State.cell_start_time[cell_id] = nil
+                    State.cell_status_cache[cell_id] = nil
+                    State.running_cells[cell_id] = nil
+                end
+            end
+            -- cell_status_cache entries can outlive cell_buf_map (the latter
+            -- is cleared on cell completion). Sweep them too.
+            for cell_id, cached in pairs(State.cell_status_cache) do
+                if cached and cached.bufnr == bufnr then
+                    State.cell_status_cache[cell_id] = nil
+                end
+            end
+        end,
+    })
     vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
         pattern = "*.py",
         callback = function()

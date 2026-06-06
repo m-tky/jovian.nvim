@@ -3,16 +3,21 @@ local Config = require("jovian.config")
 local State = require("jovian.state")
 
 function M.flash_range(start_line, end_line)
-    vim.api.nvim_buf_clear_namespace(0, State.hl_ns, 0, -1)
-    vim.api.nvim_buf_set_extmark(0, State.hl_ns, start_line - 1, 0, {
+    -- Capture the buffer up-front so the deferred clear targets the
+    -- buffer we actually highlighted, even if the user switches buffers
+    -- inside the flash_duration window. Without this, switching out and
+    -- back during the flash wipes the wrong buffer's highlights.
+    local bufnr = vim.api.nvim_get_current_buf()
+    vim.api.nvim_buf_clear_namespace(bufnr, State.hl_ns, 0, -1)
+    vim.api.nvim_buf_set_extmark(bufnr, State.hl_ns, start_line - 1, 0, {
         end_row = end_line,
         hl_group = Config.options.flash_highlight_group,
         hl_eol = true,
         priority = 200,
     })
     vim.defer_fn(function()
-        if vim.api.nvim_buf_is_valid(0) then
-            vim.api.nvim_buf_clear_namespace(0, State.hl_ns, 0, -1)
+        if vim.api.nvim_buf_is_valid(bufnr) then
+            vim.api.nvim_buf_clear_namespace(bufnr, State.hl_ns, 0, -1)
         end
     end, Config.options.flash_duration)
 end
