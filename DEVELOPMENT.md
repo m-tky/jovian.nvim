@@ -1,117 +1,208 @@
 # Development Guide for jovian.nvim
 
-This document provides an overview of the project structure and guidelines for contributing to `jovian.nvim`.
+This is the working notes for hacking on the plugin. Architectural overview
+and end-user docs live in `CLAUDE.md` and `doc/jovian.txt`; this file focuses
+on the developer workflow — how to build, test, lint, and where to look when
+something breaks.
 
-## 🛠️ Development Environment
+## Repository layout
 
-To start a Neovim instance with the plugin loaded and all dependencies (Python, etc.) pre-configured using Nix:
-
-```bash
-nix develop --command nvim-jovian -l file
+```
+jovian.nvim/
+├── core/                       Rust backend (`jovian-core`)
+│   ├── src/
+│   │   ├── main.rs             tokio entry + file logging
+│   │   ├── rpc.rs              msgpack-RPC framing + method dispatch
+│   │   ├── kernel.rs           kernel spawn + 3 ZMQ sockets + iopub loop
+│   │   ├── kernelspec.rs       kernel.json discovery
+│   │   ├── protocol.rs         Jupyter wire protocol v5.4 + HMAC signing
+│   │   ├── notebook.rs         `# %%` parser + sidecar JSON I/O
+│   │   ├── session.rs          per-buffer state + cell↔msg_id routing
+│   │   └── kitty.rs            Kitty graphics escape writer
+│   └── Cargo.toml
+├── lua/jovian/
+│   ├── init.lua                setup() + autocmds
+│   ├── commands.lua            :Jovian* user commands
+│   ├── config.lua              defaults + setup()
+│   ├── state.lua               single mutable plugin state
+│   ├── python.lua              interpreter resolver
+│   ├── cell.lua                cell ID + range + edits
+│   ├── session.lua             cache cleanup + preview-on-cursor
+│   ├── complete.lua            omnifunc via core's `complete` RPC
+│   ├── diagnostics.lua         LSP filter for !magic commands
+│   ├── highlights.lua          built-in highlight groups
+│   ├── health.lua              :checkhealth jovian
+│   ├── hosts.lua               registered hosts persistence
+│   ├── ssh_config.lua          ~/.ssh/config + tailscale discovery
+│   ├── install.lua             prebuilt binary downloader / `cargo build`
+│   ├── ui.lua                  UI facade re-exporting ui/*
+│   ├── ui/
+│   │   ├── layout.lua          window/buffer orchestration
+│   │   ├── windows.lua         low-level window helpers
+│   │   ├── renderers.lua       float content (vars pane, DF viewer)
+│   │   ├── virtual_text.lua    status extmarks
+│   │   ├── shared.lua          REPL output + system notifications
+│   │   ├── cell_frame.lua      ┌─ Code [id] ─┐ card frames
+│   │   ├── markdown_cell.lua   markdown styling (headings/bold/code/img)
+│   │   ├── markdown_table.lua  box-drawn markdown tables
+│   │   ├── math.lua            LaTeX → Unicode for $…$/$$…$$
+│   │   ├── output_render.lua   nbformat outputs → virt_lines / preview
+│   │   ├── kitty.lua           Kitty Unicode-placeholder generation
+│   │   ├── highlights.lua      shared color helpers
+│   │   └── debounce.lua        small debouncer
+│   └── backend/
+│       ├── rpc.lua             vim.uv msgpack-RPC client
+│       ├── core.lua            binary locator + shared client + kitty_attach
+│       └── rust_kernel.lua     cell_event → UI; Vars/View via execute_collect
+├── plugin/jovian.lua           VimEnter auto-setup safety net
+├── doc/jovian.txt              `:h jovian`
+├── queries/python/             custom TreeSitter queries (magic commands)
+├── tests/                      headless test harness
+├── flake.nix                   nix devShell + run-tests + nvim-jovian wrapper
+└── .github/workflows/          CI (lint + tests) and release (prebuilt cores)
 ```
 
-This ensures you have the correct Python environment and dependencies available.
+## Building
 
-## 📂 Project Structure
-
-The core logic is located in `lua/jovian/`:
-
-- **`init.lua`**: The entry point. Handles `setup` and delegates command registration.
-- **`commands.lua`**: Contains all user command definitions (`JovianRun`, `JovianToggle`, etc.).
-- **`highlights.lua`**: Defines custom highlight groups (`JovianFloat`, `JovianHeader`, etc.) and links them to standard groups.
-- **`core.lua`**: The brain of the plugin. Manages the Python kernel process (local or remote) and orchestrates logic.
-- **`backend/kernel_bridge.py`**: The Python script that runs on the target host (local or remote). It wraps an `IPython.interactive` shell, captures I/O, and communicates with Neovim via JSON messages. It also handles plot display, supporting both inline images and external windows (via TkAgg) simultaneously.
-- **`handlers.lua`**: Contains handler functions for processing messages received from the Python kernel.
-- **`hosts.lua`**: Manages host configurations (Local/SSH), persistence, and validation.
-- **`cell.lua`**: Encapsulates cell-related logic (ID generation, range calculation, operations).
-- **`session.lua`**: Manages session state, cache cleaning, and structure checking.
-- **`ui.lua`**: The main UI module. Acts as a facade for UI submodules.
-    - **`ui/layout.lua`**: High-level UI orchestration (Open, Toggle, Resize).
-    - **`ui/windows.lua`**: Low-level Window and Buffer management.
-    - **`ui/renderers.lua`**: Handles rendering of content (Variables, Dataframes).
-    - **`ui/virtual_text.lua`**: Manages virtual text and extmarks.
-    - **`ui/shared.lua`**: Shared UI utilities to avoid circular dependencies.
-- **`utils.lua`**: General utility functions (re-exports `cell.lua` for compatibility).
-- **`config.lua`**: Defines default configuration options.
-- **`diagnostics.lua`**: Handles LSP diagnostic filtering (suppressing errors for magic commands).
-- **`health.lua`**: Implements the `:checkhealth jovian` logic.
-- **`jovian_queries/`**: Contains custom TreeSitter queries for syntax highlighting (injections and highlights).
-
-### Key Concepts
-
-- **Extmark Management**: Virtual text (e.g., "Done", "Running") is managed via a dedicated namespace (`State.status_ns`). Functions in `ui.lua` (`set_cell_status`, `clear_status_extmarks`) control this.
-- **Window Management**: Window IDs are stored in `State.win` (e.g., `State.win.output`, `State.win.variables`). We check `vim.api.nvim_win_is_valid` before accessing them.
-- **Magic Command Handling**:
-    - **LSP Suppression**: `diagnostics.lua` intercepts `textDocument/publishDiagnostics` from the LSP client. It filters out Syntax Errors on lines starting with `%` or `!`.
-    - **TreeSitter Highlighting**: We use custom queries in `jovian_queries/` to highlight magic commands.
-        - A custom predicate `#same-line?` is registered in `init.lua` to handle fragmented nodes (e.g., `!ls --color=always`).
-        - We use `priority` 105 to ensure our highlights override the default Python highlights.
-- **Remote Execution Architecture**:
-    - **Connection**: We use `ssh` to connect to remote hosts.
-    - **Backend Deployment**: The `lua/jovian/backend/` directory is synchronized to the remote host (`/tmp/jovian_backend/`).
-        - **Hash-based Sync**: We calculate a SHA256 hash of the local backend files. We compare this with a remote `.hash` file. Files are only transferred (scp) if the hashes differ, ensuring fast connection times.
-    - **Startup Handshake**: Upon launch, `kernel_bridge.py` sends a `{"type": "ready"}` message. Neovim waits for this signal before sending initial configuration (like plot mode) to avoid race conditions.
-    - **Communication**: Neovim communicates with the remote `kernel_bridge.py` via the SSH process's stdin/stdout.
-    - **File Sync**: Generated files (images, markdown) are synced back to the local machine via `scp` for preview.
-
-- **Cache Management**:
-    - Cache is stored in `.jovian_cache/` relative to the source file.
-    - **Orphaned Cache Cleanup**: `session.lua` contains `clean_orphaned_caches` which scans the cache directory and removes subdirectories corresponding to missing source files. This is triggered on `VimEnter`, `VimLeavePre`, and via `:JovianClean!`.
-
-## 🤝 Contribution Guide
-
-### Adding New Cell Operations
-
-If you want to add a new cell operation (e.g., `JovianSplitCell`), follow these steps:
-
-1.  **Implement Logic in `utils.lua`**:
-    - Manipulate the buffer text using `vim.api.nvim_buf_set_lines`.
-    - **CRITICAL**: You **MUST** handle Extmark cleanup. If you move or delete lines that contain a cell header (`# %%`), the associated Extmarks might persist or become orphaned.
-    - Use `UI.clear_status_extmarks` or `UI.delete_status_extmark` to clean up before modifying text.
-
-2.  **Register Command in `init.lua`**:
-    - Add a new user command that calls your utility function.
-    - **Trigger Structure Check**: Call `require("jovian.core").check_structure_change()` after the operation to ensure the plugin's internal state (cache) remains consistent.
-
-### Testing & Linting
-
-We use the following tools to maintain code quality:
-
-- **Lua Formatting**: [StyLua](https://github.com/JohnnyMorganz/StyLua)
-- **Lua Linting**: [Luacheck](https://github.com/lunarmodules/luacheck)
-- **Python Linting**: [Ruff](https://github.com/astral-sh/ruff)
-
-#### Running Lints Locally
+### Rust core
 
 ```bash
-# Check Lua formatting
-stylua --check .
-
-# Run Lua linting
-luacheck .
-
-# Run Python linting
-ruff check .
+cd core && cargo build --release      # → core/target/release/jovian-core
 ```
 
-#### Running Functional Tests
+The Lua side locates the binary in this order:
+1. `$JOVIAN_CORE_BIN` (explicit override)
+2. `<plugin>/core/target/release/jovian-core`
+3. `$PATH` lookup for `jovian-core`
 
-Tests are located in the `tests/` directory. They use a mocked Neovim environment and are designed to run headlessly.
+### Nix
 
 ```bash
-nvim -l tests/test_commands.lua
-nvim -l tests/test_async_flow.lua
-nvim -l tests/test_resize_layout.lua
+nix develop                  # devShell with python + neovim + rust toolchain
+nix build .#jovian-core      # just the Rust binary
+nix build .#jovian-nvim      # vim plugin with binary bundled in
+nix run .#nvim-jovian -- demo_jovian.py
 ```
 
-These tests will exit with a non-zero status code if any assertions fail, making them suitable for CI.
+The devShell's `shellHook` auto-builds the core on first entry and exports
+`JOVIAN_CORE_BIN`, `JOVIAN_PYTHON`, and `JOVIAN_TTY`.
 
-## ⚠️ Known Issues & Development Notes
+## Running tests
 
-### Virtual Text Stability (Undo/Redo)
+```bash
+nix run .#run-tests                              # full suite
+```
 
-One of the challenges in this plugin is maintaining accurate virtual text (cell status) during complex edits and Undo/Redo operations.
+Individual tests need either `$JOVIAN_CORE_BIN` set or a fresh nix build:
 
-- **Debouncing**: We use a **debounced `TextChanged` listener** (in `init.lua` -> `core.lua`) to periodically scan the buffer and clean up invalid Extmarks.
-- **Atomic Operations**: When implementing move operations, we use `vim.api.nvim_buf_set_lines` in a single call (or grouped via `undojoin` previously) to ensure that Undo restores the buffer to a clean state.
-- **Explicit Cleanup**: Do not rely solely on Neovim's automatic Extmark movement. Explicitly clear status marks when logically removing a cell to prevent "ghost" marks.
+```bash
+nvim --headless -l tests/test_cell_frame.lua
+nvim --headless -l tests/test_inline_outputs.lua
+nvim --headless -l tests/test_kitty_images.lua    # mocked RPC
+nvim --headless -l tests/test_rust_phase1.lua     # real kernel
+nvim --headless -l tests/test_commands.lua        # mocked: cell editing
+```
+
+> **When you add a test file, register it in `flake.nix`'s `run-tests`
+> script.** Anything outside `run-tests` is not run by CI.
+
+The remote-SSH test is skipped unless `$JOVIAN_REMOTE_SSH_HOST` is set —
+it requires a reachable host with python + ipykernel available.
+
+## Linting and formatting
+
+```bash
+stylua .                  # auto-format Lua  (CI runs `stylua --check .`)
+luacheck .                # Lua lints
+ruff check .              # Python lints (demo + example files only)
+cd core && cargo fmt && cargo clippy --all-targets -- -D warnings
+cd core && cargo test
+```
+
+CI runs all of the above. Pre-commit hooks aren't shipped — set them up
+locally if you want them.
+
+## Architecture cheatsheet
+
+The full picture lives in `CLAUDE.md`. The two things that catch newcomers:
+
+1. **One sidecar drives three surfaces.** Outputs are written by the Rust
+   core to `.jovian_cache/<filename>/outputs.json` in nbformat shape. The
+   inline cell view, the preview pane, and the REPL window all read from
+   that same JSON via `lua/jovian/ui/output_render.lua` — there is no
+   separate "inline" vs "preview" rendering path.
+
+2. **Kitty images are transmitted once.** `kitty.lua` builds Unicode
+   placeholder rows whose foreground color encodes the image_id. The PNG
+   bytes themselves go to the tty via `core kitty_transmit` (`a=T,U=1`).
+   The placeholders survive Neovim redraws because they're real buffer or
+   virt_text content — no `image.nvim` dependency.
+
+## Contributing
+
+### Adding a `:Jovian*` command
+
+1. Implement the user-visible logic somewhere appropriate (`cell.lua` for
+   cell editing, `core.lua` for kernel interaction, etc.).
+2. Register the command in `lua/jovian/commands.lua` inside `M.setup()`.
+3. Add it to `doc/jovian.txt` (the |jovian-commands| section).
+4. Add it to the command table in `README.md`.
+5. If it mutates buffer structure, wrap it in `cell_edit()` so the structure
+   check runs after.
+
+### Adding a UI rendering layer
+
+1. Add the module under `lua/jovian/ui/`.
+2. Add an opt-in option flag in `lua/jovian/config.lua`.
+3. Wire autocmds in `lua/jovian/init.lua` (look at `cell_frame` /
+   `markdown_cell` for the pattern: register unconditionally, early-return
+   inside the render fn when the flag is off).
+4. Add a test under `tests/` and register it in `flake.nix`.
+
+### Extending the Rust core
+
+Wire-protocol details live in `core/src/protocol.rs`. Any new RPC method
+needs:
+
+1. A dispatch arm in `core/src/rpc.rs` (`handle_request`).
+2. A corresponding call site in `lua/jovian/backend/` (typically
+   `rust_kernel.lua` or `backend/core.lua`).
+3. A unit/integration test — if it's a notification, exercise it through
+   `tests/test_rust_phase1.lua`-style headless flows.
+
+The kernel talks v5.4 of the Jupyter wire protocol over three ZMQ sockets
+(shell / control / iopub). HMAC-SHA256 signing is mandatory and lives in
+`protocol.rs`.
+
+## Known footguns
+
+**Extmarks and undo.** Cell status extmarks can outlive the lines they were
+attached to if you mutate the buffer without clearing them first. Always
+call `UI.clear_status_extmarks(...)` before deleting cell headers — see
+`commands.lua::merge_cell_below` for the canonical pattern.
+
+**Window vs buffer options.** `conceallevel` is a window option. The Phase
+2 features (cell frame, markdown styling) bump it to 2 from autocmds — if
+you add a new feature that conceals source, copy the `apply_window_options`
+pattern in `init.lua`.
+
+**`vim.uv` pipes, not `jobstart`.** The msgpack-RPC client uses raw pipes
+because `jobstart` strips `\n` from binary stdio. Don't "simplify" it by
+switching to `jobstart`; you'll silently corrupt msgpack frames.
+
+## Where to look when…
+
+| Symptom | Start here |
+|---|---|
+| Kernel won't start | `core/src/kernel.rs`, `lua/jovian/backend/core.lua` |
+| Outputs missing inline | `lua/jovian/ui/output_render.lua` + sidecar JSON |
+| Image rendering broken | `:JovianDebugImages` → `core/src/kitty.rs` |
+| Status extmark ghosts | `lua/jovian/ui/virtual_text.lua` + `cell.lua` edits |
+| Remote kernel hangs | `core/src/kernel.rs::launch_remote`, ssh -L tunnel |
+| Magic command red squigglies | `lua/jovian/diagnostics.lua` |
+
+Logs:
+
+- Rust core: `$XDG_CACHE_HOME/jovian/core.log` (`~/.cache/jovian/core.log`)
+- Neovim: `~/.local/state/nvim/log` (RPC frames at debug level if you
+  raise the level in `backend/rpc.lua`)
