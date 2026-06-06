@@ -35,6 +35,8 @@ end
 
 local function set_final(cell_id, errored)
     local buf = State.cell_buf_map[cell_id]
+    local started_at = State.cell_start_time[cell_id]
+    local elapsed = started_at and (os.time() - started_at) or nil
     if buf and vim.api.nvim_buf_is_valid(buf) then
         local timestamp = ""
         if Config.options.show_execution_time then
@@ -46,6 +48,13 @@ local function set_final(cell_id, errored)
         else
             UI.set_cell_status(buf, cell_id, "done", Config.options.ui_symbols.done .. timestamp)
         end
+    end
+    -- Desktop notification for long-running cells: fires when the elapsed
+    -- wall-clock time crosses notify_threshold. Errors are notified above
+    -- unconditionally, so only the success path needs gating here.
+    local threshold = Config.options.notify_threshold
+    if not errored and elapsed and threshold and threshold > 0 and elapsed >= threshold then
+        UI.send_notification(("Cell %s done in %ds"):format(cell_id, elapsed), "info")
     end
     State.running_cells[cell_id] = nil
     State.cell_buf_map[cell_id] = nil

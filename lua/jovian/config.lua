@@ -88,17 +88,6 @@ M.defaults = {
     -- Magic Commands
     suppress_magic_command_errors = true,
 
-    -- TreeSitter
-    treesitter = {
-        -- Can be true (default), false (disable), or a string (custom query)
-        markdown_injection = true,
-        magic_command_highlight = true,
-    },
-    -- Kept as a recognised key for old setups; the legacy Python-bridge
-    -- and libzmq FFI paths it gated were removed in Phase 5. Setting it
-    -- has no effect.
-    use_rust_core = true,
-
     -- Render each `# %%` cell as a bordered card via extmarks:
     --   ┌─ [3] Code ────┐   (cell_frame_style = "square", default)
     --   │ print("hi")   │

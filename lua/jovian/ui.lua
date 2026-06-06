@@ -13,7 +13,6 @@ M.open_windows = Layout.open_windows
 M.close_windows = Windows.close_windows
 M.toggle_windows = Layout.toggle_windows
 M.resize_windows = Layout.resize_windows
-M.open_markdown_preview = Windows.open_markdown_preview
 M.toggle_variables_pane = Layout.toggle_variables_pane
 M.update_variables_pane = Layout.update_variables_pane
 M.open_output_window = Layout.open_output_window

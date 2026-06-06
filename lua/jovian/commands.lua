@@ -343,7 +343,7 @@ function M.setup()
     vim.api.nvim_create_user_command("JovianTunnelStatus", function()
         local host = Config.options.ssh_host
         if host and host ~= "" then
-            local running = State.job_id and "running" or "not started"
+            local running = State.rust_active and "running" or "not started"
             vim.notify(("jovian: remote host '%s' via SSH (kernel %s)"):format(host, running), vim.log.levels.INFO)
         else
             vim.notify("jovian: no remote host active (local kernel)", vim.log.levels.INFO)

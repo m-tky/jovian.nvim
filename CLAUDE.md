@@ -227,9 +227,6 @@ require("jovian").setup({
     },
 
     suppress_magic_command_errors = true,
-
-    -- use_rust_core is recognised but inert — the Rust backend is the only
-    -- path now (the legacy Python bridge was removed in Phase 5).
 })
 ```
 

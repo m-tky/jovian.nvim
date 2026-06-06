@@ -20,8 +20,6 @@ M.hl_ns = vim.api.nvim_create_namespace("JovianCellHighlight")
 M.status_ns = vim.api.nvim_create_namespace("JovianStatus")
 M.diag_ns = vim.api.nvim_create_namespace("JovianDiagnostics")
 
-M.current_preview_file = nil
-
 -- Mappings
 M.msg_id_cell_map = {} -- { msg_id: cell_id }
 M.cell_buf_map = {} -- { cell_id: bufnr }

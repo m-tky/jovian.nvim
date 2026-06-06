@@ -93,6 +93,10 @@ local function load_markdown_into_window(win, filepath)
     return abs_path
 end
 
+-- load_markdown_into_window survives only as a helper for :JovianPin —
+-- the standalone open_markdown_preview entry point was tied to the
+-- removed kernel_bridge.py .md-per-cell path and has no callers now.
+
 function M.close_windows()
     local wins = { State.win.preview, State.win.output, State.win.variables, State.win.pin }
     for _, win in pairs(wins) do
@@ -105,13 +109,6 @@ function M.close_windows()
     State.win.output = nil
     State.win.variables = nil
     State.win.pin = nil
-end
-
-function M.open_markdown_preview(filepath)
-    if not (State.win.preview and vim.api.nvim_win_is_valid(State.win.preview)) then
-        return
-    end
-    State.current_preview_file = load_markdown_into_window(State.win.preview, filepath)
 end
 
 function M.pin_cell(filepath)
