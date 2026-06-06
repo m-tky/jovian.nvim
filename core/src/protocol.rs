@@ -71,8 +71,8 @@ impl Message {
         let signature = if key.is_empty() {
             String::new()
         } else {
-            let mut mac = HmacSha256::new_from_slice(key)
-                .map_err(|e| anyhow!("hmac key error: {e}"))?;
+            let mut mac =
+                HmacSha256::new_from_slice(key).map_err(|e| anyhow!("hmac key error: {e}"))?;
             mac.update(&header);
             mac.update(&parent);
             mac.update(&meta);
@@ -107,7 +107,10 @@ impl Message {
         let identities: Vec<Bytes> = frames[..delim_idx].to_vec();
         let rest = &frames[delim_idx + 1..];
         if rest.len() < 5 {
-            return Err(anyhow!("not enough frames after delimiter ({})", rest.len()));
+            return Err(anyhow!(
+                "not enough frames after delimiter ({})",
+                rest.len()
+            ));
         }
         let signature = &rest[0];
         let header_raw = &rest[1];
@@ -117,8 +120,8 @@ impl Message {
         let buffers: Vec<Bytes> = rest[5..].to_vec();
 
         if !key.is_empty() {
-            let mut mac = HmacSha256::new_from_slice(key)
-                .map_err(|e| anyhow!("hmac key error: {e}"))?;
+            let mut mac =
+                HmacSha256::new_from_slice(key).map_err(|e| anyhow!("hmac key error: {e}"))?;
             mac.update(header_raw);
             mac.update(parent_raw);
             mac.update(meta_raw);
@@ -133,8 +136,7 @@ impl Message {
         }
 
         let header: Header = serde_json::from_slice(header_raw)?;
-        let parent_header: Value =
-            serde_json::from_slice(parent_raw).unwrap_or_else(|_| json!({}));
+        let parent_header: Value = serde_json::from_slice(parent_raw).unwrap_or_else(|_| json!({}));
         let metadata: Value = serde_json::from_slice(meta_raw).unwrap_or_else(|_| json!({}));
         let content: Value = serde_json::from_slice(content_raw).unwrap_or_else(|_| json!({}));
 
@@ -173,7 +175,11 @@ mod tests {
     #[test]
     fn signing_roundtrip() {
         let key = b"deadbeefdeadbeef";
-        let msg = Message::new("execute_request", "sess", execute_request("1+1", false, true));
+        let msg = Message::new(
+            "execute_request",
+            "sess",
+            execute_request("1+1", false, true),
+        );
         let frames = msg.to_frames(key).unwrap();
         let mut with_id = vec![Bytes::from_static(b"identity")];
         with_id.extend(frames);
@@ -185,7 +191,11 @@ mod tests {
     #[test]
     fn signing_rejects_tampering() {
         let key = b"deadbeefdeadbeef";
-        let msg = Message::new("execute_request", "sess", execute_request("1+1", false, true));
+        let msg = Message::new(
+            "execute_request",
+            "sess",
+            execute_request("1+1", false, true),
+        );
         let mut frames = msg.to_frames(key).unwrap();
         let last = frames.len() - 1;
         frames[last] = Bytes::from_static(b"{\"code\": \"evil\"}");

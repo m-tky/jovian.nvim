@@ -64,7 +64,8 @@ impl KittyTty {
                 }
             }
             wrapped.extend_from_slice(b"\x1b\\");
-            f.write_all(&wrapped).map_err(|e| anyhow!("tty write: {e}"))?;
+            f.write_all(&wrapped)
+                .map_err(|e| anyhow!("tty write: {e}"))?;
         } else {
             f.write_all(bytes).map_err(|e| anyhow!("tty write: {e}"))?;
         }
@@ -84,13 +85,7 @@ impl KittyTty {
     /// needs these up front — `a=t,U=1` alone (transmit only) is not
     /// enough to make placeholders renderable. We use `a=T,U=1,c=N,r=N`
     /// (capital T = transmit AND create placement) just like jupynvim.
-    pub fn transmit_png_with_id(
-        &self,
-        id: u32,
-        png: &[u8],
-        cols: u32,
-        rows: u32,
-    ) -> Result<()> {
+    pub fn transmit_png_with_id(&self, id: u32, png: &[u8], cols: u32, rows: u32) -> Result<()> {
         let b64 = base64::engine::general_purpose::STANDARD.encode(png);
         let chunk = 4096;
         let mut pos = 0;

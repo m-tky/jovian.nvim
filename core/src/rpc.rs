@@ -87,8 +87,7 @@ impl Server {
                     if acc.len() < 4 {
                         break;
                     }
-                    let len =
-                        u32::from_be_bytes([acc[0], acc[1], acc[2], acc[3]]) as usize;
+                    let len = u32::from_be_bytes([acc[0], acc[1], acc[2], acc[3]]) as usize;
                     if acc.len() < 4 + len {
                         break;
                     }
@@ -478,10 +477,7 @@ impl Server {
             .get("code")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("code"))?;
-        let timeout_ms = p
-            .get("timeout_ms")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(5000);
+        let timeout_ms = p.get("timeout_ms").and_then(|v| v.as_u64()).unwrap_or(5000);
         let session = self
             .sessions
             .get(sid)
@@ -499,22 +495,18 @@ impl Server {
             .execute_with_id_opts(code, msg_id.clone(), false, false)
             .await?;
 
-        let events = match tokio::time::timeout(
-            std::time::Duration::from_millis(timeout_ms),
-            rx,
-        )
-        .await
-        {
-            Ok(Ok(evs)) => evs,
-            Ok(Err(_)) => {
-                session.collect_pending.remove(&msg_id);
-                return Err(anyhow!("execute_collect: receiver dropped"));
-            }
-            Err(_) => {
-                session.collect_pending.remove(&msg_id);
-                return Err(anyhow!("execute_collect: timeout after {timeout_ms}ms"));
-            }
-        };
+        let events =
+            match tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), rx).await {
+                Ok(Ok(evs)) => evs,
+                Ok(Err(_)) => {
+                    session.collect_pending.remove(&msg_id);
+                    return Err(anyhow!("execute_collect: receiver dropped"));
+                }
+                Err(_) => {
+                    session.collect_pending.remove(&msg_id);
+                    return Err(anyhow!("execute_collect: timeout after {timeout_ms}ms"));
+                }
+            };
 
         // Aggregate into a single reply payload.
         let mut stdout = String::new();
@@ -619,10 +611,7 @@ impl Server {
             .get("cursor_pos")
             .and_then(|v| v.as_u64())
             .ok_or_else(|| anyhow!("cursor_pos"))? as usize;
-        let detail_level = p
-            .get("detail_level")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u8;
+        let detail_level = p.get("detail_level").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
         let session = self
             .sessions
             .get(sid)

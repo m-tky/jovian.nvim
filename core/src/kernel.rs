@@ -248,7 +248,9 @@ impl Kernel {
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
 
-        let child = cmd.spawn().with_context(|| format!("spawning {:?}", argv))?;
+        let child = cmd
+            .spawn()
+            .with_context(|| format!("spawning {:?}", argv))?;
         Self::from_child_and_conn(spec, conn, child).await
     }
 
@@ -299,15 +301,16 @@ impl Kernel {
             ));
         }
         let stdout = String::from_utf8_lossy(&out.stdout);
-        let (conn_path, remote_ports) = stdout
-            .lines()
-            .find_map(parse_bootstrap_line)
-            .ok_or_else(|| {
-                anyhow!(
-                    "no JOVIAN_CONN line from remote bootstrap; stderr: {}",
-                    String::from_utf8_lossy(&out.stderr).trim()
-                )
-            })?;
+        let (conn_path, remote_ports) =
+            stdout
+                .lines()
+                .find_map(parse_bootstrap_line)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "no JOVIAN_CONN line from remote bootstrap; stderr: {}",
+                        String::from_utf8_lossy(&out.stderr).trim()
+                    )
+                })?;
         tracing::info!(%host, ?remote_ports, %conn_path, "remote kernel bootstrapped");
 
         // --- launch: -L forwards (local→remote) + exec the kernel ---
@@ -531,9 +534,7 @@ fn write_connection_file(conn: &ConnectionInfo) -> Result<PathBuf> {
     Ok(path)
 }
 
-async fn connect_sockets(
-    conn: &ConnectionInfo,
-) -> Result<(DealerSocket, DealerSocket, SubSocket)> {
+async fn connect_sockets(conn: &ConnectionInfo) -> Result<(DealerSocket, DealerSocket, SubSocket)> {
     let mut shell = DealerSocket::new();
     let mut control = DealerSocket::new();
     let mut iopub = SubSocket::new();

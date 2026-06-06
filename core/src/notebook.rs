@@ -120,10 +120,7 @@ impl Source {
         }
 
         for (idx, (line, kind, id)) in headers.iter().enumerate() {
-            let next_header = headers
-                .get(idx + 1)
-                .map(|h| h.0)
-                .unwrap_or(lines.len());
+            let next_header = headers.get(idx + 1).map(|h| h.0).unwrap_or(lines.len());
             let src_start = line + 1;
             let src_end = next_header;
             let src = if src_start < src_end {
@@ -155,8 +152,8 @@ impl Source {
                 }],
             });
         }
-        let raw = std::fs::read_to_string(path)
-            .with_context(|| format!("read {}", path.display()))?;
+        let raw =
+            std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
         Ok(Self::parse(&raw))
     }
 
@@ -217,21 +214,20 @@ pub fn read_sidecar(source_path: &Path) -> Result<OutputStoreFile> {
     if !p.exists() {
         return Ok(OutputStoreFile::default());
     }
-    let raw = std::fs::read_to_string(&p)
-        .with_context(|| format!("read sidecar {}", p.display()))?;
+    let raw =
+        std::fs::read_to_string(&p).with_context(|| format!("read sidecar {}", p.display()))?;
     if raw.trim().is_empty() {
         return Ok(OutputStoreFile::default());
     }
-    let f: OutputStoreFile = serde_json::from_str(&raw)
-        .with_context(|| format!("parse sidecar {}", p.display()))?;
+    let f: OutputStoreFile =
+        serde_json::from_str(&raw).with_context(|| format!("parse sidecar {}", p.display()))?;
     Ok(f)
 }
 
 pub fn write_sidecar(source_path: &Path, store: &OutputStoreFile) -> Result<()> {
     let p = sidecar_path_for(source_path);
     if let Some(parent) = p.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("mkdir {}", parent.display()))?;
+        std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
     }
     let s = serde_json::to_string_pretty(store)?;
     std::fs::write(&p, s + "\n").with_context(|| format!("write {}", p.display()))?;

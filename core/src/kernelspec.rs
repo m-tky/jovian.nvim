@@ -99,10 +99,7 @@ pub fn discover_with_fallback(name: &str, language: Option<&str>) -> Option<Kern
     }
     if let Some(lang) = language {
         let lang_lower = lang.to_lowercase();
-        if let Some(s) = all
-            .iter()
-            .find(|s| s.language.to_lowercase() == lang_lower)
-        {
+        if let Some(s) = all.iter().find(|s| s.language.to_lowercase() == lang_lower) {
             return Some(s.clone());
         }
     }
@@ -113,8 +110,8 @@ fn load_one(name: &str, dir: &Path) -> Result<KernelSpec> {
     let kj_path = dir.join("kernel.json");
     let raw = std::fs::read_to_string(&kj_path)
         .with_context(|| format!("reading {}", kj_path.display()))?;
-    let kj: KernelJson = serde_json::from_str(&raw)
-        .with_context(|| format!("parsing {}", kj_path.display()))?;
+    let kj: KernelJson =
+        serde_json::from_str(&raw).with_context(|| format!("parsing {}", kj_path.display()))?;
     Ok(KernelSpec {
         name: name.to_string(),
         path: dir.to_path_buf(),

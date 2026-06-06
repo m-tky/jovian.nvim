@@ -276,4 +276,3 @@ pub struct SessionSnapshot {
     pub path: String,
     pub cells: Vec<CellSnapshot>,
 }
-
