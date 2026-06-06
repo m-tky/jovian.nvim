@@ -40,12 +40,15 @@ function M.setup(opts)
 
     vim.api.nvim_create_autocmd("FileType", {
         pattern = "python",
-        callback = function()
+        callback = function(ev)
             M.Complete.setup_omnifunc()
             if Config.options.folding then
                 vim.opt_local.foldmethod = "expr"
                 vim.opt_local.foldexpr = "getline(v:lnum)=~'^# %%'?'>1':'1'"
                 vim.opt_local.foldlevel = 99
+            end
+            if Config.options.default_keymaps then
+                require("jovian.keymaps").apply(ev.buf)
             end
         end,
     })

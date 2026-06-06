@@ -241,6 +241,7 @@ require("jovian").setup({
 | `:JovianRun` | Run current cell |
 | `:JovianRunAndNext` | Run cell and jump to next |
 | `:JovianRunAll` | Run all cells top-to-bottom |
+| `:JovianRestartAndRunAll` | Restart kernel, then run all cells |
 | `:JovianRunAbove` | Run all cells above cursor |
 | `:JovianRunLine` | Run current line |
 | `:JovianSendSelection` | Run visual selection |
@@ -271,13 +272,14 @@ require("jovian").setup({
 | `:JovianDeleteCell` | Delete current cell |
 | `:JovianMoveCellUp` / `Down` | Reorder cells |
 | `:JovianSplitCell` | Split cell at cursor |
-| `:JovianMergeBelow` | Merge current cell with next |
+| `:JovianMergeBelow` / `:JovianMergeAbove` | Merge with next / previous cell |
 
 ### Inspection & data
 | Command | Description |
 |---|---|
 | `:JovianVars` | Show variables pane |
 | `:JovianView [var]` | Paginated DataFrame viewer |
+| `:JovianInspect [expr]` | Show kernel's docstring for the cursor symbol (Jupyter's `?foo`) |
 
 (`:JovianDoc`, `:JovianPeek`, `:JovianCopy`, `:JovianBackend`,
 `:JovianTogglePlot` were removed — use LSP hover / a one-off cell instead.)

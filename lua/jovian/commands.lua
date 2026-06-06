@@ -87,6 +87,22 @@ local function merge_cell_below()
     end
 end
 
+local function merge_cell_above()
+    local s, _ = Cell.get_cell_range()
+    if s <= 1 then
+        return vim.notify("No cell above", vim.log.levels.WARN)
+    end
+    -- s is the line of THIS cell's header. Drop it; the cell content
+    -- now flows into the previous cell.
+    local hdr = vim.api.nvim_buf_get_lines(0, s - 1, s, false)[1]
+    if not hdr or not hdr:match("^# %%%%") then
+        return vim.notify("Could not find cell header to drop", vim.log.levels.WARN)
+    end
+    UI.clear_status_extmarks(0, s, s + 1)
+    vim.api.nvim_buf_set_lines(0, s - 1, s, false, {})
+    vim.notify("Cells merged", vim.log.levels.INFO)
+end
+
 function M.setup()
     -- Execution
     vim.api.nvim_create_user_command("JovianStart", Core.start_kernel, {})
@@ -604,6 +620,7 @@ function M.setup()
     vim.api.nvim_create_user_command("JovianMoveCellUp", cell_edit(Cell.move_cell_up), {})
     vim.api.nvim_create_user_command("JovianMoveCellDown", cell_edit(Cell.move_cell_down), {})
     vim.api.nvim_create_user_command("JovianSplitCell", cell_edit(Cell.split_cell), {})
+    vim.api.nvim_create_user_command("JovianMergeAbove", cell_edit(merge_cell_above), {})
 
     -- Execution Control
     vim.api.nvim_create_user_command("JovianRunAndNext", function()
@@ -623,6 +640,73 @@ function M.setup()
     vim.api.nvim_create_user_command("JovianRunAbove", function()
         require("jovian.core").run_cells_above()
     end, {})
+
+    -- Restart kernel, then run every cell once it's ready. Standard "I
+    -- changed something fundamental, redo the notebook from scratch"
+    -- workflow from JupyterLab / VS Code.
+    vim.api.nvim_create_user_command("JovianRestartAndRunAll", function()
+        local rust = require("jovian.backend.rust_kernel")
+        UI.append_to_repl("[Kernel Restarting...]", "WarningMsg")
+        UI.clear_status_extmarks(0)
+        rust.restart(function()
+            Core.run_all_cells()
+        end)
+    end, { desc = "Restart the kernel and run every cell" })
+
+    -- :JovianInspect — runs the kernel's inspect_request on the symbol
+    -- under the cursor (or :JovianInspect <expr>) and shows the rendered
+    -- docstring in a float. Mirrors `?foo` from a Jupyter notebook; pylsp
+    -- hover gives you static signatures, inspect gives you the runtime
+    -- object's docstring as the kernel sees it.
+    vim.api.nvim_create_user_command("JovianInspect", function(opts)
+        local BackendCore = require("jovian.backend.core")
+        local client = BackendCore.client()
+        if not client or not State.rust_session_id then
+            return vim.notify("Jovian: kernel not started", vim.log.levels.WARN)
+        end
+        local code, cursor_pos
+        if opts.args ~= "" then
+            code = opts.args
+            cursor_pos = #code
+        else
+            code = vim.api.nvim_get_current_line()
+            cursor_pos = vim.api.nvim_win_get_cursor(0)[2]
+        end
+        client:request("inspect", {
+            session_id = State.rust_session_id,
+            code = code,
+            cursor_pos = cursor_pos,
+            detail_level = 0,
+        }, function(err, result)
+            vim.schedule(function()
+                if err then
+                    vim.notify("inspect failed: " .. err, vim.log.levels.ERROR)
+                    return
+                end
+                if not result or not result.found then
+                    vim.notify("No information for symbol under cursor", vim.log.levels.INFO)
+                    return
+                end
+                local text = (result.data or {})["text/plain"] or ""
+                if type(text) ~= "string" or text == "" then
+                    vim.notify("Empty inspect result", vim.log.levels.INFO)
+                    return
+                end
+                local strip_ansi = require("jovian.ui.shared").strip_ansi
+                local lines = vim.split(strip_ansi(text), "\n", { plain = true })
+                local buf = vim.api.nvim_create_buf(false, true)
+                vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+                vim.bo[buf].buftype = "nofile"
+                vim.bo[buf].modifiable = false
+                vim.bo[buf].filetype = "rst"
+                local Windows = require("jovian.ui.windows")
+                Windows.create_float_window(buf, "Inspect", {
+                    width = math.min(100, vim.o.columns - 4),
+                    height = math.min(#lines + 2, math.floor(vim.o.lines * 0.6)),
+                })
+            end)
+        end)
+    end, { nargs = "?", desc = "Jovian: inspect the symbol under the cursor (Jupyter's ?foo)" })
 end
 
 return M

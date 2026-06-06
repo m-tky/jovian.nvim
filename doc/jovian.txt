@@ -122,6 +122,10 @@ Cells without an id get one on first run.
                                                                  *:JovianRunAll*
 :JovianRunAll           Run every cell in the buffer, top to bottom.
 
+                                                       *:JovianRestartAndRunAll*
+:JovianRestartAndRunAll Restart the kernel, then run every cell once the
+                        new kernel is ready.
+
                                                                *:JovianRunAbove*
 :JovianRunAbove         Run every cell above the cursor.
 
@@ -220,6 +224,9 @@ Cells without an id get one on first run.
                                                              *:JovianMergeBelow*
 :JovianMergeBelow       Merge the current cell with the next one.
 
+                                                             *:JovianMergeAbove*
+:JovianMergeAbove       Merge the current cell with the previous one.
+
 ------------------------------------------------------------------------------
 5.4 Inspection and data                                    *jovian-cmd-inspect*
 
@@ -230,6 +237,12 @@ Cells without an id get one on first run.
 :JovianView [var]       Open the paginated DataFrame / collection viewer for
                         `[var]`, or for the variable under the cursor if no
                         argument is given.
+
+                                                                *:JovianInspect*
+:JovianInspect [expr]   Run the kernel's `inspect_request` on the symbol
+                        under the cursor (or on `[expr]`) and show the
+                        rendered docstring in a float. The runtime
+                        complement to LSP hover.
 
 ------------------------------------------------------------------------------
 5.5 Remote / host                                           *jovian-cmd-remote*
@@ -371,6 +384,9 @@ Magic commands:~
 
 `suppress_magic_command_errors` true  Filter LSP diagnostics for `!shell`
                                       and `%magic` lines.
+`default_keymaps`              false  Install the buffer-local keymaps from
+                                      `lua/jovian/keymaps.lua` for python
+                                      files. See README for the binding list.
 
 Layout:~
 

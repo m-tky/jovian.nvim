@@ -88,6 +88,14 @@ M.defaults = {
     -- Magic Commands
     suppress_magic_command_errors = true,
 
+    -- Install a small default keymap on `FileType python` buffers. Off by
+    -- default — every Neovim user has opinions about <leader> bindings,
+    -- so we never claim them unless asked. When true, the bindings
+    -- documented in README's "Recommended Keybindings" section are
+    -- installed buffer-locally for python files only. Pass `false` (or
+    -- omit) and bind whichever subset you want yourself.
+    default_keymaps = false,
+
     -- Render each `# %%` cell as a bordered card via extmarks:
     --   ┌─ [3] Code ────┐   (cell_frame_style = "square", default)
     --   │ print("hi")   │

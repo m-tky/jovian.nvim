@@ -451,6 +451,7 @@ while keeping the source plain, diff-friendly, and source-controllable.
 | `:JovianRun` | Run current cell |
 | `:JovianRunAndNext` | Run cell and jump to next |
 | `:JovianRunAll` | Run all cells |
+| `:JovianRestartAndRunAll` | Restart kernel, then run all cells |
 | `:JovianRunAbove` | Run all cells above the cursor |
 | `:JovianRunLine` | Run the current line |
 | `:JovianSendSelection` | Run the visual selection |
@@ -490,7 +491,7 @@ while keeping the source plain, diff-friendly, and source-controllable.
 | `:JovianDeleteCell` | Delete the current cell |
 | `:JovianMoveCellUp` / `:JovianMoveCellDown` | Reorder cells |
 | `:JovianSplitCell` | Split the cell at the cursor |
-| `:JovianMergeBelow` | Merge with the next cell |
+| `:JovianMergeBelow` / `:JovianMergeAbove` | Merge with next / previous cell |
 
 </details>
 
@@ -501,6 +502,7 @@ while keeping the source plain, diff-friendly, and source-controllable.
 | :--- | :--- |
 | `:JovianVars` | Show variables in a float |
 | `:JovianView [var]` | Inspect a variable / DataFrame |
+| `:JovianInspect [expr]` | Show kernel's docstring for the cursor symbol (Jupyter's `?foo`) |
 
 </details>
 
