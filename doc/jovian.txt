@@ -1,0 +1,482 @@
+*jovian.txt*  Interactive Jupyter-style Python development for Neovim
+
+Author:  m-tky
+License: MIT
+Version: 0.1.0
+
+==============================================================================
+CONTENTS                                                      *jovian-contents*
+
+  1. Introduction ................................. |jovian-introduction|
+  2. Requirements ................................. |jovian-requirements|
+  3. Setup ........................................ |jovian-setup|
+  4. Cell format .................................. |jovian-cell-format|
+  5. Commands ..................................... |jovian-commands|
+     5.1 Execution ................................ |jovian-cmd-execution|
+     5.2 UI ....................................... |jovian-cmd-ui|
+     5.3 Cell navigation and editing .............. |jovian-cmd-cells|
+     5.4 Inspection and data ...................... |jovian-cmd-inspect|
+     5.5 Remote / host ............................ |jovian-cmd-remote|
+     5.6 Cache and diagnostics .................... |jovian-cmd-diagnostic|
+  6. Options ...................................... |jovian-options|
+  7. Highlight groups ............................. |jovian-highlights|
+  8. Architecture ................................. |jovian-architecture|
+  9. Troubleshooting .............................. |jovian-troubleshooting|
+
+==============================================================================
+1. INTRODUCTION                                           *jovian-introduction*
+
+jovian.nvim turns Neovim into a Jupyter-like environment for Python. You edit
+plain `.py` files using the `# %%` cell format, execute code against a live
+IPython kernel, and view rich output — text, tables, errors and plots — inline
+below each cell or in a side-by-side preview window.
+
+Execution is powered by `jovian-core`, a small Rust backend that speaks the
+Jupyter wire protocol directly. There is no `libzmq`, no `pyzmq`, and no
+Python bridge process — just a single static binary talking msgpack-RPC to
+Neovim over stdio.
+
+==============================================================================
+2. REQUIREMENTS                                           *jovian-requirements*
+
+Required:~
+
+  * Neovim 0.10 or newer
+  * Python with `ipykernel` installed in the interpreter you want to use
+  * The `jovian-core` binary (auto-installed by `lazy.nvim`'s `build` hook,
+    or built locally via `cargo build --release` in the `core/` directory,
+    or bundled via the Nix flake)
+
+Optional:~
+
+  * A Kitty-graphics-capable terminal (Kitty, Ghostty 1.3+, recent WezTerm)
+    for inline plot rendering
+  * `rsync` for `:JovianSync` to remote hosts
+  * `ssh` with key-based or agent-based authentication for remote kernels
+
+==============================================================================
+3. SETUP                                                         *jovian-setup*
+
+>lua
+    require("jovian").setup({
+        -- All options have sensible defaults; see |jovian-options|.
+    })
+<
+
+If you install via a traditional plugin manager (vim-plug, packer, native
+runtimepath, ...), |plugin/jovian.lua| auto-calls `setup()` once on VimEnter
+with default options, so you can omit the call entirely. Lazy.nvim users
+typically configure via the `config` hook as shown above.
+
+Picking a python interpreter:~
+
+By default, `setup()` auto-resolves a usable interpreter at startup. It probes
+(in order):
+
+  1. `$JOVIAN_PYTHON` environment variable (if set)
+  2. `python3` / `python` on `$PATH`
+  3. `$VIRTUAL_ENV/bin/python`
+  4. `$CONDA_PREFIX/bin/python`
+  5. `./.venv/bin/python` and `./venv/bin/python`
+
+The first one that can `import ipykernel` is picked. Override at runtime with
+|:JovianPickPython|, or pin a specific path via `python_interpreter`.
+
+==============================================================================
+4. CELL FORMAT                                             *jovian-cell-format*
+
+Cells are delimited by `# %%` lines, optionally tagged with `[markdown]` for
+prose cells and given a stable identifier:
+>
+    # %% id="abc123"
+    import numpy as np
+    x = np.linspace(0, 1, 100)
+
+    # %% [markdown] id="def456"
+    # ## A heading
+    #
+    # Some prose with **bold** and `inline code`.
+
+    # %% id="ghi789"
+    x.mean()
+<
+The `id="..."` field is generated and maintained by jovian; it correlates
+cached outputs in `.jovian_cache/<file>/outputs.json` with cells across edits.
+Cells without an id get one on first run.
+
+==============================================================================
+5. COMMANDS                                                   *jovian-commands*
+
+------------------------------------------------------------------------------
+5.1 Execution                                            *jovian-cmd-execution*
+
+                                                                  *:JovianStart*
+:JovianStart            Start or connect to the kernel for the current buffer.
+
+                                                                    *:JovianRun*
+:JovianRun              Run the cell containing the cursor.
+
+                                                             *:JovianRunAndNext*
+:JovianRunAndNext       Run the current cell, then jump to the next cell.
+
+                                                                 *:JovianRunAll*
+:JovianRunAll           Run every cell in the buffer, top to bottom.
+
+                                                               *:JovianRunAbove*
+:JovianRunAbove         Run every cell above the cursor.
+
+                                                                *:JovianRunLine*
+:JovianRunLine          Run the current line as a single statement.
+
+                                                          *:JovianSendSelection*
+:JovianSendSelection    Run the visual selection (`:[range]JovianSendSelection`).
+
+                                                                *:JovianRestart*
+:JovianRestart          Restart the kernel.
+
+                                                              *:JovianInterrupt*
+:JovianInterrupt        Interrupt the running kernel (SIGINT).
+
+                                                                   *:JovianEval*
+:JovianEval [code]      Quick-eval an expression. Not recorded in REPL history.
+
+                                                                   *:JovianREPL*
+:JovianREPL             Open a continuous eval session against the live kernel.
+
+                                                            *:JovianPickPython*
+:JovianPickPython       Pick a python interpreter (or registered Jupyter
+                        kernelspec) interactively. Restarts the kernel if one
+                        is already running.
+
+------------------------------------------------------------------------------
+5.2 UI                                                         *jovian-cmd-ui*
+
+                                                                   *:JovianOpen*
+:JovianOpen             Open the configured UI panels.
+
+                                                                 *:JovianToggle*
+:JovianToggle           Toggle the UI panels.
+
+                                                           *:JovianToggleOutput*
+:JovianToggleOutput     Toggle the Output (REPL) window. Output keeps
+                        accumulating in the background buffer when hidden.
+
+                                                             *:JovianToggleVars*
+:JovianToggleVars       Toggle the Variables pane.
+
+                                                           *:JovianToggleStatus*
+:JovianToggleStatus     Toggle cell status virtual text (Running/Done/Error).
+
+                                                        *:JovianToggleCellFrame*
+:JovianToggleCellFrame  Toggle bordered cell card frames.
+
+                                                    *:JovianToggleMarkdownStyle*
+:JovianToggleMarkdownStyle
+                        Toggle markdown cell styling.
+
+                                                                    *:JovianPin*
+:JovianPin              Pin the current cell's output to the pinned pane.
+
+                                                                  *:JovianUnpin*
+:JovianUnpin            Unpin the currently pinned cell.
+
+                                                              *:JovianTogglePin*
+:JovianTogglePin        Toggle the pinned-output window.
+
+                                                              *:JovianClearREPL*
+:JovianClearREPL        Clear the Output buffer.
+
+------------------------------------------------------------------------------
+5.3 Cell navigation and editing                              *jovian-cmd-cells*
+
+                                                               *:JovianNextCell*
+:JovianNextCell         Jump to the next cell.
+
+                                                               *:JovianPrevCell*
+:JovianPrevCell         Jump to the previous cell.
+
+                                                           *:JovianNewCellBelow*
+:JovianNewCellBelow     Insert an empty cell after the current cell.
+
+                                                           *:JovianNewCellAbove*
+:JovianNewCellAbove     Insert an empty cell before the current cell.
+
+                                                   *:JovianNewMarkdownCellBelow*
+:JovianNewMarkdownCellBelow
+                        Insert an empty markdown cell after the current cell.
+
+                                                             *:JovianDeleteCell*
+:JovianDeleteCell       Delete the cell containing the cursor.
+
+                                                             *:JovianMoveCellUp*
+:JovianMoveCellUp       Swap the current cell with the previous one.
+
+                                                           *:JovianMoveCellDown*
+:JovianMoveCellDown     Swap the current cell with the next one.
+
+                                                              *:JovianSplitCell*
+:JovianSplitCell        Split the cell at the cursor position.
+
+                                                             *:JovianMergeBelow*
+:JovianMergeBelow       Merge the current cell with the next one.
+
+------------------------------------------------------------------------------
+5.4 Inspection and data                                    *jovian-cmd-inspect*
+
+                                                                   *:JovianVars*
+:JovianVars             Show kernel variables in a floating window.
+
+                                                                   *:JovianView*
+:JovianView [var]       Open the paginated DataFrame / collection viewer for
+                        `[var]`, or for the variable under the cursor if no
+                        argument is given.
+
+------------------------------------------------------------------------------
+5.5 Remote / host                                           *jovian-cmd-remote*
+
+                                                                *:JovianConnect*
+:JovianConnect          Interactively pick a host from `~/.ssh/config` or the
+                        local Tailscale list and activate it.
+
+                                                                *:JovianAddHost*
+:JovianAddHost [name host python]
+                        Register an SSH host. With no arguments, prompts
+                        interactively.
+
+                                                               *:JovianAddLocal*
+:JovianAddLocal [name python]
+                        Register a local-only python environment as a named
+                        host. With no arguments, prompts interactively.
+
+                                                                    *:JovianUse*
+:JovianUse [name]       Switch to a registered host (interactive selection if
+                        omitted).
+
+                                                             *:JovianRemoveHost*
+:JovianRemoveHost [name]
+                        Remove a registered host.
+
+                                                                   *:JovianSync*
+:JovianSync [path]      `rsync` the given path (defaults to `.`) to the active
+                        remote host's `remote_cwd`. Excludes `.jovian_cache`,
+                        `.git`, `__pycache__`, `.ipynb_checkpoints`.
+
+                                                           *:JovianTunnelStatus*
+:JovianTunnelStatus     Show the active remote host and kernel state.
+
+------------------------------------------------------------------------------
+5.6 Cache and diagnostics                               *jovian-cmd-diagnostic*
+
+                                                                  *:JovianClean*
+:JovianClean[!]         Clean stale cache entries for the current buffer; with
+                        `!`, also remove orphaned cache directories whose
+                        source files no longer exist.
+
+                                                             *:JovianClearCache*
+:JovianClearCache[!]    Clear cached output for the current cell; with `!`,
+                        clear all cached output for the buffer.
+
+                                                              *:JovianClearDiag*
+:JovianClearDiag        Clear LSP diagnostics for the current buffer.
+
+                                                             *:JovianDebugImages*
+:JovianDebugImages      Probe the Kitty graphics pipeline by transmitting a
+                        1×1 PNG. Reports the exact RPC error on failure.
+
+                                                            *:checkhealth-jovian*
+:checkhealth jovian     Validate dependencies (python, ipykernel, jovian-core
+                        binary, terminal capability).
+
+==============================================================================
+6. OPTIONS                                                     *jovian-options*
+
+All options are set via `require("jovian").setup{...}`. Defaults shown.
+
+Python and kernel:~
+
+`python_interpreter`           nil   Pin a specific python (absolute path or
+                                     bare name). When nil, auto-resolves at
+                                     setup time. See |jovian-setup|.
+`kernel_name`                  nil   Pin a registered Jupyter kernelspec by
+                                     name. Mutually exclusive with
+                                     `python_interpreter`.
+
+UI behavior:~
+
+`float_border`            "rounded"  Border style for floating windows.
+                                     One of "single", "double", "rounded",
+                                     "solid", "shadow".
+`flash_duration`               300   ms to highlight a cell after running.
+`show_execution_time`         true   Show execution time after each cell.
+`notify_threshold`              10   Seconds before a slow cell triggers a
+                                     notification.
+`notify_mode`                "all"   "all", "error", or "none".
+`dataframe_page_size`           50   Rows per page in |:JovianView|.
+`output_window`        "ondemand"   "ondemand" (default — toggle via
+                                     |:JovianToggleOutput|), "always"
+                                     (always open), or "off" (drop output).
+`folding`                    false   Enable cell-based folds for Python files.
+
+Cell-frame visuals (opt-in):~
+
+`cell_frame`                 false   Render `┌─ Code [id] ─┐` card borders.
+`cell_frame_style`        "square"   "square" (┌┐└┘) or "rounded" (╭╮╰╯).
+`cell_frame_priority`          100   Extmark priority of the frame's side
+                                     bars. Raise above your indent-guide
+                                     plugin's priority (e.g. 4096) to draw
+                                     the frame on top.
+`cell_frame_right_pad`           0   Columns reserved at the right edge for
+                                     scrollbar plugins (nvim-scrollbar,
+                                     scrollview).
+`markdown_cell_style`        false   Conceal `#`/`**bold**`/tables in
+                                     markdown cells and replace with styled
+                                     virt_text.
+`table_border`             "round"   "round", "none", "heavy", or "double".
+`math`         { enabled = true,    LaTeX math → Unicode in markdown cells.
+                position = "center",
+                converter = nil }
+`inline_outputs`             false   Render outputs below each cell as
+                                     virt_lines. Requires `cell_frame = true`.
+`inline_output_max_lines`       20   Cap for inline text output (longer is
+                                     elided).
+
+Image sizing:~
+
+`image_rows`                    14   Rows of placeholder for inline images.
+`image_cols`                    56   Columns of placeholder for inline images.
+`preview_cell_pixel_height`     16   Pixel height of one terminal cell. Used
+                                     to scale preview images.
+`preview_cell_pixel_aspect`    0.5   Cell width / height ratio.
+`preview_image_max_cols`       nil   Upper bound on preview image width.
+`preview_image_max_rows`       nil   Upper bound on preview image height.
+
+Highlight overrides:~
+
+`highlights = { ... }`               Per-group overrides. Each value is
+                                     either a string (link target) or a
+                                     table of `nvim_set_hl` attrs. See
+                                     |jovian-highlights| for the group list.
+
+UI symbols:~
+
+`ui_symbols = {
+    running = " Running...",
+    done = " Done",
+    error = " Error",
+    interrupted = " Interrupted",
+    stale = " Stale",
+}`
+
+Magic commands:~
+
+`suppress_magic_command_errors` true  Filter LSP diagnostics for `!shell`
+                                      and `%magic` lines.
+
+Layout:~
+
+`ui.cell_separator_highlight` "text"  "text", "line", or "none".
+`ui.layouts = { ... }`                Persistent panel layout. See
+                                      `lua/jovian/config.lua` for structure.
+
+==============================================================================
+7. HIGHLIGHT GROUPS                                         *jovian-highlights*
+
+Built-in groups (linked by default — override via `highlights = {...}`):
+
+  JovianFloat              Float background
+  JovianFloatBorder        Float border
+  JovianHeader             Title / heading
+  JovianCellMarker         `# %%` cell separator
+  JovianSeparator          Misc dividers
+
+Cell frame:
+
+  JovianCellBorderCode      Code cell card outline
+  JovianCellBorderMarkdown  Markdown cell card outline
+
+Markdown:
+
+  JovianMdH1 ... JovianMdH6  Heading levels
+  JovianMdBold               **bold**
+  JovianMdEm                 *italic*
+  JovianMdCode               `inline code`
+  JovianMdBullet             - / * list bullets
+  JovianMdQuote              > blockquote
+  JovianMdTableDivider       table borders
+  JovianMdTableHeader        table header row
+  JovianMdMath               `$…$` / `$$…$$`
+
+Inline output:
+
+  JovianOutDivider           `├─ Out[N] ─┤` separator
+  JovianOutStdout            stdout text
+  JovianOutStderr            stderr text
+  JovianOutResult            execute_result text
+  JovianOutError             tracebacks
+
+==============================================================================
+8. ARCHITECTURE                                          *jovian-architecture*
+
+jovian.nvim is split into a Lua front-end and a Rust backend.
+
+Rust backend (`jovian-core`):~
+
+  A single binary that owns all kernel communication. Lua spawns it once and
+  talks to it over msgpack-RPC on stdio.
+
+  - Speaks the Jupyter wire protocol v5.4 directly (HMAC-SHA256-signed
+    messages over 3 ZMQ sockets: shell, control, iopub).
+  - Uses the pure-Rust `zeromq` crate, so there is no `libzmq` C dependency.
+  - Owns the nbformat-shaped JSON sidecar at
+    `.jovian_cache/<file>/outputs.json` — one source of truth that feeds
+    inline / preview / REPL rendering identically.
+  - Writes Kitty graphics escapes to the tty (via `/proc/self/fd` or
+    `$JOVIAN_TTY` on macOS).
+
+Lua front-end:~
+
+  - `lua/jovian/init.lua`     setup() entry point, autocmds
+  - `lua/jovian/commands.lua` `:Jovian*` user commands
+  - `lua/jovian/backend/`     msgpack-RPC client + cell_event → UI bridge
+  - `lua/jovian/cell.lua`     cell ID management, ranges
+  - `lua/jovian/ui/`          rendering: cell frame, markdown, math, kitty,
+                              output_render (the single sidecar → surface
+                              renderer)
+
+==============================================================================
+9. TROUBLESHOOTING                                    *jovian-troubleshooting*
+
+`:checkhealth jovian` is the first thing to run. It validates:
+
+  - jovian-core binary is present and executable
+  - python interpreter is resolvable and has `ipykernel`
+  - terminal supports Kitty graphics (when relevant)
+
+Inline images are blank or show garbage glyphs:~
+
+  Your terminal probably doesn't support the Kitty graphics protocol. Run
+  |:JovianDebugImages| for a one-shot probe — it surfaces the exact RPC
+  error from the core.
+
+`jovian-core: not found`:~
+
+  Either run `cd core && cargo build --release`, or trigger your plugin
+  manager's `build` hook (lazy.nvim runs `:JovianInstall` via
+  `lua/jovian/install.lua`).
+
+Outputs from an earlier session keep showing up:~
+
+  That's the sidecar JSON. Run |:JovianClearCache| (with `!` to clear the
+  whole buffer) or |:JovianClean!| to GC orphaned cache directories.
+
+Kernel doesn't start with my conda / venv:~
+
+  Run |:JovianPickPython| to pick interactively. The picker tags entries
+  with `[ipykernel]` when they're usable.
+
+Logs:~
+
+  Rust core: `$XDG_CACHE_HOME/jovian/core.log` (or `~/.cache/jovian/`).
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:
