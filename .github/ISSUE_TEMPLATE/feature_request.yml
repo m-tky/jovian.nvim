@@ -1,0 +1,38 @@
+name: Feature request
+description: Suggest a new feature or behavior change.
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For non-trivial features, please open this issue *before* writing
+        a PR so we can discuss the design — see CONTRIBUTING.md.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the pain point, not the proposed implementation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What you'd like the plugin to do. UI mockups / config snippets welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Existing workarounds, related plugins, things you tried.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, links to similar features in other plugins, etc.
