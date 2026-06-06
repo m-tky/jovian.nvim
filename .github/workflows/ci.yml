@@ -7,7 +7,7 @@ env:
 
 jobs:
   lint:
-    name: Linting
+    name: Lua + Python lints
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,8 +24,28 @@ jobs:
       - name: Python Linting (Ruff)
         run: nix develop --command ruff check .
 
+  rust:
+    name: Rust fmt + clippy + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - name: cargo fmt --check
+        run: cargo fmt --manifest-path core/Cargo.toml --all -- --check
+      - name: cargo clippy
+        run: cargo clippy --manifest-path core/Cargo.toml --all-targets --locked -- -D warnings
+      - name: cargo test
+        run: cargo test --manifest-path core/Cargo.toml --locked
+
   test:
-    name: Tests
+    name: Integration tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
