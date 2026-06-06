@@ -3,6 +3,9 @@ local Config = require("jovian.config")
 local Session = require("jovian.session")
 
 function M.setup(opts)
+    -- Flag for plugin/jovian.lua's auto-setup safety net: if the user
+    -- called setup() themselves, the VimEnter fallback no-ops.
+    vim.g.jovian_setup_done = 1
     Config.setup(opts)
     require("jovian.diagnostics").setup()
     require("jovian.highlights").setup()
