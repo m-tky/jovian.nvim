@@ -458,6 +458,7 @@ while keeping the source plain, diff-friendly, and source-controllable.
 | `:JovianInterrupt` | Interrupt execution (SIGINT) |
 | `:JovianEval` | Quick-eval an expression (no history) |
 | `:JovianREPL` | Interactive eval loop on the live kernel |
+| `:JovianPickPython` | Pick a python interpreter / kernelspec; restarts kernel |
 
 </details>
 

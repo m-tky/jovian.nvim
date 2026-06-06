@@ -251,11 +251,13 @@ require("jovian").setup({
 | `:JovianInterrupt` | Interrupt kernel |
 | `:JovianREPL` | Open `jupyter console` attached to the running kernel |
 | `:JovianPickPython` | Pick a python interpreter (or registered kernelspec) interactively; restarts kernel |
+| `:JovianEval [code]` | Quick-eval an expression in the kernel (not recorded in REPL history) |
 
 ### UI
 | Command | Description |
 |---|---|
 | `:JovianOpen` / `:JovianToggle` | Open / toggle all panels |
+| `:JovianToggleOutput` | Toggle the Output (REPL) window |
 | `:JovianToggleVars` | Toggle variables pane |
 | `:JovianToggleStatus` | Toggle cell status virtual text |
 | `:JovianToggleCellFrame` | Toggle cell card frames |
