@@ -194,6 +194,38 @@ local function on_cell_event(params)
     -- status (busy/idle), update_display_data, kernel_info, clear_output: no-op for Phase 1
 end
 
+-- Handle kernel_event notifications from the core. The interesting kind
+-- is kernel_died, which fires when the kernel process exits on its own
+-- (segfault, OOM, user kills it from another terminal). We reset state
+-- and notify the user so they can :JovianRestart instead of hanging on
+-- the next :JovianRun.
+local function on_kernel_event(params)
+    local ev = params and params.event
+    if not ev or ev.kind ~= "kernel_died" then
+        return
+    end
+    vim.schedule(function()
+        local code = ev.exit_code
+        local code_str = code and tostring(code) or "?"
+        vim.notify(
+            "jovian: kernel process exited (code=" .. code_str .. "). Run :JovianRestart to start a new one.",
+            vim.log.levels.ERROR
+        )
+        -- Mark every running cell as errored so the UI doesn't leave them
+        -- in "Running..." forever.
+        for cell_id, buf in pairs(State.cell_buf_map) do
+            if buf and vim.api.nvim_buf_is_valid(buf) then
+                UI.set_cell_status(buf, cell_id, "error", Config.options.ui_symbols.error .. " (kernel died)")
+            end
+        end
+        State.cell_buf_map = {}
+        State.running_cells = {}
+        State.rust_active = false
+        State.rust_session_id = nil
+        State.job_id = nil
+    end)
+end
+
 local function ensure_event_handler()
     if _event_handler_registered then
         return
@@ -203,6 +235,7 @@ local function ensure_event_handler()
         return
     end
     client:on("cell_event", on_cell_event)
+    client:on("kernel_event", on_kernel_event)
     _event_handler_registered = true
 end
 

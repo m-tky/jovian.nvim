@@ -14,7 +14,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{Mutex, Notify};
 use uuid::Uuid;
 
-use crate::kernel::Kernel;
+use crate::kernel::{Kernel, KernelEvent};
 use crate::kernelspec;
 use crate::kitty::KittyTty;
 use crate::session::Session;
@@ -345,6 +345,26 @@ impl Server {
                 // there instead of going through cell_event routing.
                 if session_clone.try_collect(&ev) {
                     continue;
+                }
+                // KernelDied is the one global event that needs structured
+                // routing rather than the {raw: Debug} fallback: the Lua
+                // side reacts by resetting state and notifying the user.
+                if let KernelEvent::KernelDied { exit_code } = &ev {
+                    tracing::warn!(
+                        session = %sid_clone,
+                        ?exit_code,
+                        "kernel process exited"
+                    );
+                    let note = json!({
+                        "session_id": sid_clone,
+                        "event": json!({ "kind": "kernel_died", "exit_code": exit_code }),
+                    });
+                    server.notify("kernel_event", note).await;
+                    // The kernel is gone; drop the session so subsequent
+                    // RPCs against the same session_id fail loudly instead
+                    // of hanging on a dead ZMQ socket.
+                    server.sessions.remove(&sid_clone);
+                    return;
                 }
                 if let Some((cell_id, payload)) = session_clone.apply_event(&ev) {
                     let note = json!({

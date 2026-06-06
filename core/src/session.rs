@@ -210,6 +210,9 @@ impl Session {
             KernelEvent::UpdateDisplayData { parent_msg_id, .. } => parent_msg_id.clone(),
             KernelEvent::ClearOutput { parent_msg_id, .. } => parent_msg_id.clone(),
             KernelEvent::KernelInfo { parent_msg_id, .. } => parent_msg_id.clone(),
+            // KernelDied has no parent_msg_id — it's a global signal, handled
+            // by the start_kernel event loop directly.
+            KernelEvent::KernelDied { .. } => return None,
         }?;
         let cell_id = self.msg_to_cell.get(&parent)?.clone();
 
@@ -280,6 +283,7 @@ impl Session {
             KernelEvent::KernelInfo { info, .. } => {
                 json!({ "kind": "kernel_info", "info": info })
             }
+            KernelEvent::KernelDied { .. } => unreachable!("filtered above"),
         };
         // Persist via the debounced flusher: a burst of stream events
         // collapses to a single write ~100 ms later. Synchronous callers
@@ -303,6 +307,7 @@ fn ev_parent(ev: &KernelEvent) -> Option<String> {
         KernelEvent::UpdateDisplayData { parent_msg_id, .. } => parent_msg_id.clone(),
         KernelEvent::ClearOutput { parent_msg_id, .. } => parent_msg_id.clone(),
         KernelEvent::KernelInfo { parent_msg_id, .. } => parent_msg_id.clone(),
+        KernelEvent::KernelDied { .. } => None,
     }
 }
 

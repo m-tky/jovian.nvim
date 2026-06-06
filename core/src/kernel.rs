@@ -202,13 +202,23 @@ pub enum KernelEvent {
         parent_msg_id: Option<String>,
         info: Value,
     },
+    /// The kernel process exited on its own (segfault, OOM, normal exit, …).
+    /// Emitted exactly once, after which the kernel is unusable. The RPC
+    /// layer translates this into a `kernel_event` notification with
+    /// `kind: "kernel_died"` and tears the session down.
+    KernelDied { exit_code: Option<i32> },
 }
 
 pub struct Kernel {
     spec: KernelSpec,
     conn: ConnectionInfo,
     session: String,
-    child: Mutex<Child>,
+    /// Send () to ask the child-watcher task to kill the child. The task
+    /// owns the Child and awaits either this signal or `child.wait()` —
+    /// whichever fires first. Replacing the previous `Mutex<Child>` lets
+    /// the wait task hold the child indefinitely without serializing
+    /// against explicit kills.
+    kill_tx: Mutex<Option<oneshot::Sender<()>>>,
     shell_tx: mpsc::UnboundedSender<ZmqMessage>,
     control_tx: mpsc::UnboundedSender<ZmqMessage>,
     iopub_handle: tokio::task::JoinHandle<()>,
@@ -375,7 +385,7 @@ impl Kernel {
     async fn from_child_and_conn(
         spec: KernelSpec,
         conn: ConnectionInfo,
-        child: Child,
+        mut child: Child,
     ) -> Result<Self> {
         let session = Uuid::new_v4().to_string();
 
@@ -398,13 +408,55 @@ impl Kernel {
             "shell",
             Some(pending.clone()),
         ));
-        tokio::spawn(socket_owner(control, control_rx, key, tx, "control", None));
+        tokio::spawn(socket_owner(
+            control,
+            control_rx,
+            key.clone(),
+            tx.clone(),
+            "control",
+            None,
+        ));
+
+        // Drain stdout/stderr to tracing so a chatty kernel doesn't fill the
+        // 64 KB pipe buffer and block its own writes. We saw this in practice
+        // with ipykernel deprecation warnings on stderr.
+        if let Some(stderr) = child.stderr.take() {
+            tokio::spawn(drain_to_log(stderr, "stderr"));
+        }
+        if let Some(stdout) = child.stdout.take() {
+            tokio::spawn(drain_to_log(stdout, "stdout"));
+        }
+
+        // Child-watcher: owns the Child, awaits either an explicit kill or
+        // the child exiting on its own. The latter emits KernelDied so the
+        // Lua side can react ("kernel crashed — restart?").
+        let (kill_tx, kill_rx) = oneshot::channel::<()>();
+        let died_tx = tx.clone();
+        tokio::spawn(async move {
+            tokio::select! {
+                biased;
+                _ = kill_rx => {
+                    let _ = child.start_kill();
+                    let _ = child.wait().await;
+                }
+                result = child.wait() => {
+                    let code = result.ok().and_then(|s| s.code());
+                    let _ = died_tx.send(KernelEvent::KernelDied { exit_code: code });
+                }
+            }
+        });
+
+        // Handshake: send kernel_info_request and wait for the reply before
+        // returning. This proves the kernel is bound to the ZMQ sockets and
+        // speaks our wire-protocol version before any execute can race the
+        // bind. 5 s is enough for a cold-start interpreter + ipykernel.
+        handshake_kernel_info(&shell_tx, &pending, &session, &key).await?;
 
         Ok(Self {
             spec,
             conn,
             session,
-            child: Mutex::new(child),
+            kill_tx: Mutex::new(Some(kill_tx)),
             shell_tx,
             control_tx,
             iopub_handle,
@@ -507,10 +559,70 @@ impl Kernel {
 
     pub async fn kill(&self) -> Result<()> {
         self.iopub_handle.abort();
-        let mut child = self.child.lock().await;
-        let _ = child.start_kill();
-        let _ = child.wait().await;
+        if let Some(s) = self.kill_tx.lock().await.take() {
+            // Send error is fine: the child-watcher may have already
+            // exited because the kernel died first.
+            let _ = s.send(());
+        }
         Ok(())
+    }
+}
+
+async fn drain_to_log<R>(reader: R, label: &'static str)
+where
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
+{
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    let mut lines = BufReader::new(reader).lines();
+    loop {
+        match lines.next_line().await {
+            Ok(Some(line)) => tracing::warn!(kernel = label, "{line}"),
+            Ok(None) => return,
+            Err(e) => {
+                tracing::warn!(kernel = label, "read error: {e}");
+                return;
+            }
+        }
+    }
+}
+
+async fn handshake_kernel_info(
+    shell_tx: &mpsc::UnboundedSender<ZmqMessage>,
+    pending: &DashMap<String, oneshot::Sender<Value>>,
+    session_id: &str,
+    key: &[u8],
+) -> Result<()> {
+    let msg_id = Uuid::new_v4().to_string();
+    let (tx, rx) = oneshot::channel();
+    pending.insert(msg_id.clone(), tx);
+
+    let mut msg = Message::new("kernel_info_request", session_id.to_string(), json!({}));
+    msg.header.msg_id = msg_id.clone();
+    let frames = msg.to_frames(key)?;
+    if shell_tx.send(frames_to_zmq(frames)).is_err() {
+        pending.remove(&msg_id);
+        return Err(anyhow!("shell channel closed during handshake"));
+    }
+
+    match tokio::time::timeout(Duration::from_millis(5000), rx).await {
+        Ok(Ok(reply)) => {
+            // Surface the kernel's protocol version into the log; later we
+            // can refuse to start if it doesn't match our 5.4 expectations.
+            if let Some(v) = reply.get("protocol_version").and_then(|v| v.as_str()) {
+                tracing::info!(protocol_version = v, "kernel handshake OK");
+            }
+            Ok(())
+        }
+        Ok(Err(_)) => {
+            pending.remove(&msg_id);
+            Err(anyhow!("kernel_info_reply dropped"))
+        }
+        Err(_) => {
+            pending.remove(&msg_id);
+            Err(anyhow!(
+                "kernel_info_request timed out after 5 s — kernel did not bind"
+            ))
+        }
     }
 }
 
