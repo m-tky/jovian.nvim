@@ -21,7 +21,7 @@
 local M = {}
 
 local Config = require("jovian.config")
-local Highlights = require("jovian.ui.highlights")
+local Highlights = require("jovian.ui.hl_utils")
 local Debounce = require("jovian.ui.debounce")
 
 local dw = Highlights.dw

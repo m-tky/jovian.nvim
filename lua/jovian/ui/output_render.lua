@@ -13,7 +13,7 @@ local M = {}
 
 local Config = require("jovian.config")
 local Shared = require("jovian.ui.shared")
-local Highlights = require("jovian.ui.highlights")
+local Highlights = require("jovian.ui.hl_utils")
 local CellFrame = require("jovian.ui.cell_frame")
 local strip_ansi = Shared.strip_ansi
 local dw = Highlights.dw

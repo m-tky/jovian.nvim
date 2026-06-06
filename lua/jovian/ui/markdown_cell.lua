@@ -17,7 +17,7 @@ local Config = require("jovian.config")
 local CellFrame = require("jovian.ui.cell_frame")
 local MarkdownTable = require("jovian.ui.markdown_table")
 local Math = require("jovian.ui.math")
-local Highlights = require("jovian.ui.highlights")
+local Highlights = require("jovian.ui.hl_utils")
 local Debounce = require("jovian.ui.debounce")
 
 local NS = vim.api.nvim_create_namespace("JovianMarkdownCell")

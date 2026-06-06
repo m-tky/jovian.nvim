@@ -10,7 +10,7 @@
 
 local M = {}
 
-local Highlights = require("jovian.ui.highlights")
+local Highlights = require("jovian.ui.hl_utils")
 local CellFrame = require("jovian.ui.cell_frame")
 
 local HL_DIVIDER = "JovianMdTableDivider"
