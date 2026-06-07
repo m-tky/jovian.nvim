@@ -29,7 +29,6 @@ use std::path::{Path, PathBuf};
 pub enum CellType {
     Code,
     Markdown,
-    Raw,
 }
 
 impl CellType {
@@ -37,13 +36,11 @@ impl CellType {
         match self {
             CellType::Code => "code",
             CellType::Markdown => "markdown",
-            CellType::Raw => "raw",
         }
     }
     pub fn from_str(s: &str) -> Self {
         match s {
             "markdown" | "md" => CellType::Markdown,
-            "raw" => CellType::Raw,
             _ => CellType::Code,
         }
     }

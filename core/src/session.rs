@@ -119,11 +119,11 @@ impl Session {
     /// the event into it and (on status=idle) fire the receiver. Returns
     /// true if the event was consumed (skip normal routing).
     pub fn try_collect(&self, ev: &KernelEvent) -> bool {
-        let parent = match ev_parent(ev) {
+        let parent = match ev.parent_msg_id() {
             Some(p) => p,
             None => return false,
         };
-        let entry = match self.collect_pending.get(&parent) {
+        let entry = match self.collect_pending.get(parent) {
             Some(e) => e,
             None => return false,
         };
@@ -141,7 +141,7 @@ impl Session {
             }
             drop(c);
             drop(entry);
-            self.collect_pending.remove(&parent);
+            self.collect_pending.remove(parent);
         }
         true
     }
@@ -199,22 +199,8 @@ impl Session {
     /// Apply a kernel event to in-memory output state. Returns the (cell_id,
     /// frontend-shaped event payload) tuple so the RPC layer can notify Lua.
     pub fn apply_event(&self, ev: &KernelEvent) -> Option<(String, Value)> {
-        let parent = match ev {
-            KernelEvent::Stream { parent_msg_id, .. } => parent_msg_id.clone(),
-            KernelEvent::DisplayData { parent_msg_id, .. } => parent_msg_id.clone(),
-            KernelEvent::ExecuteResult { parent_msg_id, .. } => parent_msg_id.clone(),
-            KernelEvent::Error { parent_msg_id, .. } => parent_msg_id.clone(),
-            KernelEvent::Status { parent_msg_id, .. } => parent_msg_id.clone(),
-            KernelEvent::ExecuteInput { parent_msg_id, .. } => parent_msg_id.clone(),
-            KernelEvent::ExecuteReply { parent_msg_id, .. } => parent_msg_id.clone(),
-            KernelEvent::UpdateDisplayData { parent_msg_id, .. } => parent_msg_id.clone(),
-            KernelEvent::ClearOutput { parent_msg_id, .. } => parent_msg_id.clone(),
-            KernelEvent::KernelInfo { parent_msg_id, .. } => parent_msg_id.clone(),
-            // KernelDied has no parent_msg_id — it's a global signal, handled
-            // by the start_kernel event loop directly.
-            KernelEvent::KernelDied { .. } => return None,
-        }?;
-        let cell_id = self.msg_to_cell.get(&parent)?.clone();
+        let parent = ev.parent_msg_id()?;
+        let cell_id = self.msg_to_cell.get(parent)?.clone();
 
         let mut outs = self.outputs.write();
         let cell = outs.cells.entry(cell_id.clone()).or_default();
@@ -227,9 +213,6 @@ impl Session {
             KernelEvent::DisplayData { data, metadata, .. } => {
                 notebook::append_display(&mut cell.outputs, data.clone(), metadata.clone());
                 json!({ "kind": "display_data", "data": data, "metadata": metadata })
-            }
-            KernelEvent::UpdateDisplayData { data, metadata, .. } => {
-                json!({ "kind": "update_display_data", "data": data, "metadata": metadata })
             }
             KernelEvent::ExecuteResult {
                 execution_count,
@@ -283,7 +266,9 @@ impl Session {
             KernelEvent::KernelInfo { info, .. } => {
                 json!({ "kind": "kernel_info", "info": info })
             }
-            KernelEvent::KernelDied { .. } => unreachable!("filtered above"),
+            // KernelDied is filtered out at the parent_msg_id() check above
+            // (it has no parent), so it never reaches this match.
+            KernelEvent::KernelDied { .. } => unreachable!(),
         };
         // Persist via the debounced flusher: a burst of stream events
         // collapses to a single write ~100 ms later. Synchronous callers
@@ -291,23 +276,6 @@ impl Session {
         drop(outs);
         self.request_persist();
         Some((cell_id, payload))
-    }
-}
-
-// Helper: extract parent_msg_id from any KernelEvent variant.
-fn ev_parent(ev: &KernelEvent) -> Option<String> {
-    match ev {
-        KernelEvent::Stream { parent_msg_id, .. } => parent_msg_id.clone(),
-        KernelEvent::DisplayData { parent_msg_id, .. } => parent_msg_id.clone(),
-        KernelEvent::ExecuteResult { parent_msg_id, .. } => parent_msg_id.clone(),
-        KernelEvent::Error { parent_msg_id, .. } => parent_msg_id.clone(),
-        KernelEvent::Status { parent_msg_id, .. } => parent_msg_id.clone(),
-        KernelEvent::ExecuteInput { parent_msg_id, .. } => parent_msg_id.clone(),
-        KernelEvent::ExecuteReply { parent_msg_id, .. } => parent_msg_id.clone(),
-        KernelEvent::UpdateDisplayData { parent_msg_id, .. } => parent_msg_id.clone(),
-        KernelEvent::ClearOutput { parent_msg_id, .. } => parent_msg_id.clone(),
-        KernelEvent::KernelInfo { parent_msg_id, .. } => parent_msg_id.clone(),
-        KernelEvent::KernelDied { .. } => None,
     }
 }
 

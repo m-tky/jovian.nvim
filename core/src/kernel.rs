@@ -157,7 +157,6 @@ pub enum KernelEvent {
         parent_msg_id: Option<String>,
         data: Value,
         metadata: Value,
-        transient: Value,
     },
     ExecuteResult {
         msg_id: String,
@@ -187,13 +186,6 @@ pub enum KernelEvent {
         status: String,
         execution_count: u64,
     },
-    UpdateDisplayData {
-        msg_id: String,
-        parent_msg_id: Option<String>,
-        data: Value,
-        metadata: Value,
-        transient: Value,
-    },
     ClearOutput {
         parent_msg_id: Option<String>,
         wait: bool,
@@ -207,6 +199,26 @@ pub enum KernelEvent {
     /// layer translates this into a `kernel_event` notification with
     /// `kind: "kernel_died"` and tears the session down.
     KernelDied { exit_code: Option<i32> },
+}
+
+impl KernelEvent {
+    /// The `parent_msg_id` field of the underlying Jupyter message, if the
+    /// variant carries one. `None` for variants that are globally scoped
+    /// (currently only `KernelDied`).
+    pub fn parent_msg_id(&self) -> Option<&str> {
+        match self {
+            KernelEvent::Stream { parent_msg_id, .. }
+            | KernelEvent::DisplayData { parent_msg_id, .. }
+            | KernelEvent::ExecuteResult { parent_msg_id, .. }
+            | KernelEvent::Error { parent_msg_id, .. }
+            | KernelEvent::Status { parent_msg_id, .. }
+            | KernelEvent::ExecuteInput { parent_msg_id, .. }
+            | KernelEvent::ExecuteReply { parent_msg_id, .. }
+            | KernelEvent::ClearOutput { parent_msg_id, .. }
+            | KernelEvent::KernelInfo { parent_msg_id, .. } => parent_msg_id.as_deref(),
+            KernelEvent::KernelDied { .. } => None,
+        }
+    }
 }
 
 pub struct Kernel {
@@ -704,8 +716,7 @@ async fn socket_owner(
             recv = sock.recv() => {
                 match recv {
                     Ok(zmsg) => {
-                        let frames = zmq_to_frames(zmsg);
-                        match Message::from_frames(frames, &key) {
+                        match Message::from_frames(zmsg.into_vec(), &key) {
                             Ok(reply) => {
                                 let parent = reply
                                     .parent_header
@@ -758,20 +769,17 @@ async fn socket_owner(
 async fn iopub_loop(mut sock: SubSocket, key: Vec<u8>, tx: mpsc::UnboundedSender<KernelEvent>) {
     loop {
         match sock.recv().await {
-            Ok(zmsg) => {
-                let frames = zmq_to_frames(zmsg);
-                match Message::from_frames(frames, &key) {
-                    Ok(msg) => {
-                        if let Some(ev) = iopub_to_event(&msg) {
-                            if tx.send(ev).is_err() {
-                                tracing::info!("iopub event channel closed; loop exit");
-                                return;
-                            }
+            Ok(zmsg) => match Message::from_frames(zmsg.into_vec(), &key) {
+                Ok(msg) => {
+                    if let Some(ev) = iopub_to_event(&msg) {
+                        if tx.send(ev).is_err() {
+                            tracing::info!("iopub event channel closed; loop exit");
+                            return;
                         }
                     }
-                    Err(e) => tracing::warn!("iopub parse: {e}"),
                 }
-            }
+                Err(e) => tracing::warn!("iopub parse: {e}"),
+            },
             Err(e) => {
                 tracing::warn!("iopub recv: {e}");
                 tokio::time::sleep(Duration::from_millis(50)).await;
@@ -808,15 +816,13 @@ fn iopub_to_event(msg: &Message) -> Option<KernelEvent> {
             parent_msg_id: parent,
             data: c.get("data").cloned().unwrap_or(json!({})),
             metadata: c.get("metadata").cloned().unwrap_or(json!({})),
-            transient: c.get("transient").cloned().unwrap_or(json!({})),
         }),
-        "update_display_data" => Some(KernelEvent::UpdateDisplayData {
-            msg_id,
-            parent_msg_id: parent,
-            data: c.get("data").cloned().unwrap_or(json!({})),
-            metadata: c.get("metadata").cloned().unwrap_or(json!({})),
-            transient: c.get("transient").cloned().unwrap_or(json!({})),
-        }),
+        // update_display_data is intentionally not routed: no Lua renderer
+        // handles it (the inline / preview surfaces re-read the sidecar on
+        // every cell_event, so an update_display_data is observable as a
+        // display_data replacement during the next render). Dropping it
+        // here avoids a no-op event payload + KernelEvent variant.
+        "update_display_data" => None,
         "execute_result" => Some(KernelEvent::ExecuteResult {
             msg_id,
             parent_msg_id: parent,
@@ -886,10 +892,6 @@ fn frames_to_zmq(frames: Vec<Bytes>) -> ZmqMessage {
         zmsg.push_back(f);
     }
     zmsg
-}
-
-fn zmq_to_frames(zmsg: ZmqMessage) -> Vec<Bytes> {
-    zmsg.into_vec()
 }
 
 #[cfg(test)]
