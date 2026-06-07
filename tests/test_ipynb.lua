@@ -98,9 +98,12 @@ do
     write_file(ipynb, sample_ipynb())
     vim.cmd("JovianImport " .. ipynb)
     local py = dir .. "/nb.py"
-    assert_true(spin_until(function()
-        return vim.fn.filereadable(py) == 1
-    end, 5000), ".py was written by :JovianImport")
+    assert_true(
+        spin_until(function()
+            return vim.fn.filereadable(py) == 1
+        end, 5000),
+        ".py was written by :JovianImport"
+    )
     local py_text = read_file(py)
     assert_true(py_text:find('# %%%% id="a1"') ~= nil, ".py header includes id=a1")
     assert_true(py_text:find('tags=%["slow","skip"%]') ~= nil, "tags carried over verbatim")

@@ -24,7 +24,7 @@
         # files don't trigger spurious rebuilds.
         jovian-core = final.rustPlatform.buildRustPackage {
           pname = "jovian-core";
-          version = "0.1.0";
+          version = "0.2.0";
           # Only the core/ subtree is needed for the Rust build; using a
           # narrower src avoids invalidating the cargoSetupHook every time an
           # unrelated lua/ or test file changes.
@@ -34,7 +34,7 @@
           # `crates.io/api/v1/.../download`, which crates.io now 403s for
           # requests without a descriptive User-Agent (breaking clean-store CI
           # builds). cargo vendor fetches from static.crates.io instead.
-          cargoHash = "sha256-0Qn1g71pb9L/N3NRweNbHq3iIeFqCZo1pQS4psFImG0=";
+          cargoHash = "sha256-mU9LCJvpY0qjVq5LYtg9PYALAh0lsZWMR98qCaSv1kU=";
           # Pure-rust zmq crate — no C deps, no system libzmq required. We
           # still need a C linker (provided by buildRustPackage's default
           # stdenv) for the final link step.
