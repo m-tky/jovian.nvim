@@ -198,14 +198,12 @@ function M.setup()
                 vim.notify("Host '" .. name .. "' already exists. Use a different name.", vim.log.levels.ERROR)
                 return
             end
-            vim.cmd("redraw")
-            local config = { type = "ssh", host = host, python = python }
-
-            Hosts.validate_connection(config, function()
-                Hosts.add_host(name, config)
-            end, function(err)
-                vim.notify("Validation Failed: " .. err, vim.log.levels.ERROR)
-            end)
+            -- No pre-flight validation: the Rust core's start_kernel does
+            -- the real SSH + python probe on first :JovianRun, and failure
+            -- surfaces as a kernel_died notification with the actual error.
+            -- Validating here used to add 200ms-5s to every :JovianAddHost
+            -- and could disagree with what the actual launch does later.
+            Hosts.add_host(name, { type = "ssh", host = host, python = python })
         end
 
         if opts.args == "" or #args < 3 then
@@ -243,14 +241,7 @@ function M.setup()
                 vim.notify("Host '" .. name .. "' already exists. Use a different name.", vim.log.levels.ERROR)
                 return
             end
-            vim.cmd("redraw")
-            local config = { type = "local", python = python }
-
-            Hosts.validate_connection(config, function()
-                Hosts.add_host(name, config)
-            end, function(err)
-                vim.notify("Validation Failed: " .. err, vim.log.levels.ERROR)
-            end)
+            Hosts.add_host(name, { type = "local", python = python })
         end
 
         if opts.args == "" or #args < 2 then

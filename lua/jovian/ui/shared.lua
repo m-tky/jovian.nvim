@@ -2,6 +2,13 @@ local M = {}
 local Config = require("jovian.config")
 local State = require("jovian.state")
 
+-- File-local state for the tqdm `\r` carriage-return coalescer below.
+-- Was previously stored on `State.last_stream_type` / `.last_stream_tail`
+-- which made it look like global plugin state when really it's an
+-- implementation detail of append_stream_text.
+local _last_stream_type = nil
+local _last_stream_tail = nil
+
 -- Strip CSI (ESC [ … letter) and OSC (ESC ] … ESC \) escape sequences from
 -- a kernel-produced string. Used wherever raw text from the kernel ends up
 -- in a non-terminal buffer (extmarks, preview pane), since those surfaces
@@ -143,21 +150,21 @@ function M.append_stream_text(text, stream_type)
     end
 
     -- Fix for tqdm: If switching from stderr (no newline) to stdout, inject newline
-    if stream_type == "stdout" and State.last_stream_type == "stderr" then
-        if not ends_with_newline(State.last_stream_tail) then
+    if stream_type == "stdout" and _last_stream_type == "stderr" then
+        if not ends_with_newline(_last_stream_tail) then
             text = "\r\n" .. text
         end
     end
 
     -- Update state
-    State.last_stream_type = stream_type
+    _last_stream_type = stream_type
     if #text > 0 then
         -- Keep last 50 chars to capture potential newlines hidden by ANSI codes
         local tail = text
         if #tail > 50 then
             tail = tail:sub(-50)
         end
-        State.last_stream_tail = tail
+        _last_stream_tail = tail
     end
 
     local clean_text = text:gsub("\n", "\r\n")

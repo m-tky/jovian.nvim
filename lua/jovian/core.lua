@@ -346,17 +346,10 @@ vim.schedule(function()
         if cfg.type == "ssh" then
             Config.options.ssh_host = cfg.host
             Config.options.ssh_python = cfg.python
-            Config.options.connection_file = nil
-            Config.options.python_interpreter = cfg.python
-        elseif cfg.type == "connection" then
-            Config.options.ssh_host = nil
-            Config.options.ssh_python = nil
-            Config.options.connection_file = cfg.connection_file
             Config.options.python_interpreter = cfg.python
         else
             Config.options.ssh_host = nil
             Config.options.ssh_python = nil
-            Config.options.connection_file = nil
             Config.options.python_interpreter = cfg.python
         end
     end
