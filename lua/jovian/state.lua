@@ -7,12 +7,14 @@ M.win = {
     output = nil,
     preview = nil,
     variables = nil, -- Add: Variables pane window
+    pin = nil,
 }
 
 M.buf = {
     output = nil,
     variables = nil, -- Add: Variables pane buffer
     preview = nil,
+    pin = nil,
 }
 
 -- Highlight Namespaces
@@ -30,8 +32,6 @@ M.cell_start_line = {} -- { cell_id: line_num }
 
 M.on_ready_callbacks = {} -- List of functions to call when kernel is ready
 
-M.batch_execution = nil -- { total = int, current = int, start_time = timestamp }
-
 M.is_starting_kernel = false
 M.running_cells = {} -- { [cell_id] = true }
 
@@ -40,10 +40,10 @@ M.cell_status_cache = {} -- { [cell_id] = { status, msg, bufnr } }
 
 M.dataframe_sessions = {} -- { [var_name] = { total, offset, limit, columns } }
 
-M.last_stream_type = nil
-M.last_stream_tail = nil
-M.vars_request_force_float = false
-M.current_pin_file = nil
+-- Currently pinned cell — { src = absolute source path, cell_id = "abc123" }
+-- or nil. Replaces the old `current_pin_file` which pointed at a per-cell
+-- markdown file written by the now-removed Python bridge.
+M.current_pin = nil
 
 -- Rust core (jovian-core) state.
 -- `job_id` is set to the sentinel string "rust" so `if State.job_id`

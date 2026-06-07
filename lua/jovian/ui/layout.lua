@@ -100,12 +100,11 @@ local Elements = {
     },
     pin = {
         open = function()
-            if State.current_pin_file then
-                local buf = vim.fn.bufadd(State.current_pin_file)
-                if not vim.api.nvim_buf_is_loaded(buf) then
-                    vim.fn.bufload(buf)
+            if State.current_pin then
+                if not State.buf.pin or not vim.api.nvim_buf_is_valid(State.buf.pin) then
+                    State.buf.pin = Windows.get_or_create_buf("JovianPin")
                 end
-                return buf
+                return State.buf.pin
             else
                 return Windows.placeholder_buf()
             end
@@ -113,6 +112,14 @@ local Elements = {
         setup = function(win)
             Windows.apply_window_options(win, { wrap = true })
             State.win.pin = win
+            if State.current_pin then
+                require("jovian.ui.output_render").render_to_buffer(
+                    State.buf.pin,
+                    win,
+                    State.current_pin.src,
+                    State.current_pin.cell_id
+                )
+            end
         end,
     },
 }
@@ -423,8 +430,8 @@ function M.open_pin_window()
         vim.api.nvim_set_current_win(cur_win)
     end
 
-    if State.current_pin_file then
-        Windows.pin_cell(State.current_pin_file)
+    if State.current_pin then
+        Windows.pin_cell(State.current_pin.src, State.current_pin.cell_id)
     else
         vim.api.nvim_win_set_buf(State.win.pin, Windows.placeholder_buf())
         Windows.apply_window_options(State.win.pin, { wrap = true })

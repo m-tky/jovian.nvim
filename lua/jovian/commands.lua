@@ -590,14 +590,11 @@ function M.setup()
         if not id then
             return vim.notify("No cell found", vim.log.levels.WARN)
         end
-
-        local md_path = Cell.get_cell_md_path(id)
-
-        if vim.fn.filereadable(md_path) == 0 then
-            return vim.notify("No output found for cell " .. id, vim.log.levels.WARN)
+        local src = vim.api.nvim_buf_get_name(0)
+        if src == "" then
+            return vim.notify("Save the buffer first; pin needs a source path", vim.log.levels.WARN)
         end
-
-        UI.pin_cell(md_path)
+        UI.pin_cell(src, id)
     end, {})
 
     vim.api.nvim_create_user_command("JovianUnpin", function()

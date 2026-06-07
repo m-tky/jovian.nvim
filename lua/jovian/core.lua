@@ -197,7 +197,7 @@ function M.run_and_next()
     end
 end
 
-function M._execute_lines(lines, batch_name)
+function M._execute_lines(lines)
     local fn = vim.fn.expand("%:t")
     local cells_to_run = {}
     local blk, current_bid, is_code = {}, nil, false
@@ -222,15 +222,6 @@ function M._execute_lines(lines, batch_name)
         return
     end
 
-    if batch_name then
-        State.batch_execution = {
-            total = #cells_to_run,
-            current = 0,
-            start_time = os.time(),
-            name = batch_name,
-        }
-    end
-
     for _, cell in ipairs(cells_to_run) do
         M.send_payload(cell.code, cell.id, fn)
     end
@@ -242,7 +233,7 @@ function M.run_all_cells()
     end
     with_kernel(function()
         local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-        M._execute_lines(lines, "RunAll")
+        M._execute_lines(lines)
     end)
 end
 
@@ -254,7 +245,7 @@ function M.run_cells_above()
         local cursor_line = vim.fn.line(".")
         local cur_s, _ = Cell.get_cell_range(cursor_line)
         local lines = vim.api.nvim_buf_get_lines(0, 0, cur_s - 1, false)
-        M._execute_lines(lines, "RunCellsAbove")
+        M._execute_lines(lines)
     end)
 end
 

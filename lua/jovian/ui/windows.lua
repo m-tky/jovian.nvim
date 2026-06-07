@@ -25,28 +25,6 @@ function M.placeholder_buf()
     return buf
 end
 
-local function cleanup_buffer(old_buf, current_buf)
-    if old_buf and old_buf ~= current_buf and vim.api.nvim_buf_is_valid(old_buf) then
-        if vim.api.nvim_buf_get_option(old_buf, "modified") then
-            return
-        end
-
-        local buf_name = vim.api.nvim_buf_get_name(old_buf)
-        local is_jovian_cache = buf_name:find(".jovian_cache", 1, true)
-        local buftype = vim.bo[old_buf].buftype
-        local is_ephemeral = (buftype == "nofile" or buftype == "terminal")
-
-        if not (is_jovian_cache or is_ephemeral) then
-            return
-        end
-
-        local wins = vim.fn.win_findbuf(old_buf)
-        if #wins == 0 then
-            vim.api.nvim_buf_delete(old_buf, { force = true })
-        end
-    end
-end
-
 function M.apply_window_options(win, opts)
     if not vim.api.nvim_win_is_valid(win) then
         return
@@ -68,35 +46,6 @@ function M.apply_window_options(win, opts)
     end
 end
 
-local function load_markdown_into_window(win, filepath)
-    local old_buf = vim.api.nvim_win_get_buf(win)
-    local abs_path = vim.fn.fnamemodify(filepath, ":p")
-
-    local buf = vim.fn.bufadd(abs_path)
-    if buf == 0 then
-        return nil
-    end
-
-    if not vim.api.nvim_buf_is_loaded(buf) then
-        vim.fn.bufload(buf)
-    else
-        vim.cmd("checktime " .. buf)
-    end
-
-    vim.api.nvim_win_set_buf(win, buf)
-    vim.bo[buf].filetype = "markdown"
-    vim.bo[buf].buftype = ""
-    vim.bo[buf].modifiable = false
-    vim.bo[buf].readonly = true
-    M.apply_window_options(win, { wrap = true })
-    cleanup_buffer(old_buf, buf)
-    return abs_path
-end
-
--- load_markdown_into_window survives only as a helper for :JovianPin —
--- the standalone open_markdown_preview entry point was tied to the
--- removed kernel_bridge.py .md-per-cell path and has no callers now.
-
 function M.close_windows()
     local wins = { State.win.preview, State.win.output, State.win.variables, State.win.pin }
     for _, win in pairs(wins) do
@@ -111,22 +60,32 @@ function M.close_windows()
     State.win.pin = nil
 end
 
-function M.pin_cell(filepath)
-    State.current_pin_file = vim.fn.fnamemodify(filepath, ":p")
-    if State.win.pin and vim.api.nvim_win_is_valid(State.win.pin) then
-        load_markdown_into_window(State.win.pin, filepath)
+-- Pin a cell's output into the pin window. Reads the sidecar JSON
+-- directly via output_render — the previous .md-per-cell path was the
+-- Python bridge's job and is gone.
+function M.pin_cell(src_path, cell_id)
+    State.current_pin = { src = vim.fn.fnamemodify(src_path, ":p"), cell_id = cell_id }
+    if not (State.win.pin and vim.api.nvim_win_is_valid(State.win.pin)) then
+        return
     end
+    if not (State.buf.pin and vim.api.nvim_buf_is_valid(State.buf.pin)) then
+        State.buf.pin = M.get_or_create_buf("JovianPin")
+    end
+    vim.api.nvim_win_set_buf(State.win.pin, State.buf.pin)
+    M.apply_window_options(State.win.pin, { wrap = true })
+    require("jovian.ui.output_render").render_to_buffer(
+        State.buf.pin,
+        State.win.pin,
+        State.current_pin.src,
+        State.current_pin.cell_id
+    )
 end
 
 function M.unpin()
-    State.current_pin_file = nil
-
+    State.current_pin = nil
     if State.win.pin and vim.api.nvim_win_is_valid(State.win.pin) then
-        local old_buf = vim.api.nvim_win_get_buf(State.win.pin)
-        local buf = M.placeholder_buf()
-        vim.api.nvim_win_set_buf(State.win.pin, buf)
+        vim.api.nvim_win_set_buf(State.win.pin, M.placeholder_buf())
         M.apply_window_options(State.win.pin, { wrap = true })
-        cleanup_buffer(old_buf, buf)
     end
 end
 

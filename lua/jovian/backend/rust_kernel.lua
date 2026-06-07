@@ -97,6 +97,17 @@ local function refresh_inline_outputs(cell_id)
     then
         OutRender.render_to_buffer(State.buf.preview, State.win.preview, src_path, cell_id)
     end
+
+    -- Refresh the pin pane on every output event for the pinned cell so
+    -- the user sees streaming results live (matches the preview behavior).
+    if
+        State.current_pin
+        and State.current_pin.cell_id == cell_id
+        and State.buf.pin
+        and vim.api.nvim_buf_is_valid(State.buf.pin)
+    then
+        OutRender.render_to_buffer(State.buf.pin, State.win.pin, src_path, cell_id)
+    end
 end
 
 local function maybe_finalize_cell(cell_id)

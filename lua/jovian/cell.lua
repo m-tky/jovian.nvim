@@ -247,22 +247,4 @@ function M.get_cell_hash(text)
     return string.format("%x", hash)
 end
 
-function M.get_cell_md_path(id, filename)
-    if not id then
-        return nil
-    end
-
-    local fname = filename or vim.fn.expand("%:t")
-    if fname == "" then
-        fname = "scratchpad"
-    end
-
-    local file_dir = vim.fn.expand("%:p:h")
-    -- If filename was passed, we might need to be careful about file_dir context
-    -- But usually this is called in the context of the current buffer or with a known filename
-
-    local cache_dir = file_dir .. "/.jovian_cache/" .. fname
-    return cache_dir .. "/" .. id .. ".md"
-end
-
 return M
