@@ -42,6 +42,13 @@ M.is_starting_kernel = false
 M.running_cells = {} -- { [cell_id] = true }
 
 M.virt_text_hidden_bufs = {} -- { [bufnr] = true }
+
+-- Per-cell collapse-outputs state. When a cell_id is set, cell_frame
+-- renders a single "├─ Out[N] (collapsed) ─┤" line instead of the full
+-- output block. Buffer-keyed so two python files can have different
+-- cells collapsed independently; entries are GC'd by the existing
+-- BufDelete autocmd in init.lua.
+M.collapsed_outputs = {} -- { [bufnr] = { [cell_id] = true } }
 M.cell_status_cache = {} -- { [cell_id] = { status, msg, bufnr } }
 
 M.dataframe_sessions = {} -- { [var_name] = { total, offset, limit, columns } }

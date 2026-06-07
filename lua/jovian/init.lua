@@ -112,6 +112,10 @@ function M.setup(opts)
                     State.cell_status_cache[cell_id] = nil
                 end
             end
+            -- Drop the buffer's collapsed-outputs map. Toggled cells in a
+            -- newly-opened buffer with the same bufnr would otherwise
+            -- inherit the old buffer's collapse state.
+            State.collapsed_outputs[bufnr] = nil
         end,
     })
     vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {

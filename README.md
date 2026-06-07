@@ -482,6 +482,8 @@ while keeping the source plain, diff-friendly, and source-controllable.
 | `:JovianToggleVars` | Toggle the Variables pane |
 | `:JovianToggleStatus` | Toggle cell status virtual text |
 | `:JovianToggleCellFrame` | Toggle bordered cell cards |
+| `:JovianToggleInlineOutputs` | Toggle inline outputs across all python buffers |
+| `:JovianToggleCellOutput` | Collapse / expand the cursor cell's inline output |
 | `:JovianToggleMarkdownStyle` | Toggle markdown cell styling |
 | `:JovianPin` / `:JovianUnpin` | Pin / unpin current cell output |
 | `:JovianTogglePin` | Toggle the pinned output window |

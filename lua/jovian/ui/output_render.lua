@@ -127,6 +127,22 @@ local function divider_line(label, width)
     return main .. string.rep("─", math.max(pad, 0)) .. "┤"
 end
 
+--- Build the single-line "collapsed" placeholder used in place of the
+--- full output block when the user has toggled a cell collapsed via
+--- :JovianToggleCellOutput. Matches divider_line's styling so the
+--- frame still looks right; reads `├─ Out[N] (collapsed) ─┤`.
+---
+--- @param execution_count number|nil
+--- @param width number total cell width
+--- @return table virt_line chunk array (one row)
+function M.build_collapsed_line(execution_count, width)
+    M.setup_hl(nil)
+    local exec_label = execution_count and tostring(execution_count) or " "
+    local label = "Out[" .. exec_label .. "] (collapsed)"
+    local line = divider_line(label, width)
+    return { { line, HL.Divider } }
+end
+
 -- Pick the first image MIME present in a display_data / execute_result's
 -- mime bundle. Order matters: PNG is the highest fidelity Jupyter normally
 -- emits; GIF is preferred over JPEG for animated payloads.

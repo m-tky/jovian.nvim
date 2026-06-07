@@ -219,6 +219,20 @@ To bypass the hijack (e.g. you want to edit the raw JSON), set
                                                         *:JovianToggleCellFrame*
 :JovianToggleCellFrame  Toggle bordered cell card frames.
 
+                                                   *:JovianToggleInlineOutputs*
+:JovianToggleInlineOutputs
+                        Flip `inline_outputs` for every python buffer.
+                        If `cell_frame` was off it is enabled too,
+                        since inline output rendering is part of the
+                        cell-frame draw.
+
+                                                      *:JovianToggleCellOutput*
+:JovianToggleCellOutput Collapse / expand the cursor cell's inline
+                        output block. The full output stays in the
+                        sidecar (preview / Output window still show
+                        it); only the inline display becomes a single
+                        `├─ Out[N] (collapsed) ─┤` placeholder.
+
                                                     *:JovianToggleMarkdownStyle*
 :JovianToggleMarkdownStyle
                         Toggle markdown cell styling.

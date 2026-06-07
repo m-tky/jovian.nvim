@@ -263,6 +263,8 @@ require("jovian").setup({
 | `:JovianToggleVars` | Toggle variables pane |
 | `:JovianToggleStatus` | Toggle cell status virtual text |
 | `:JovianToggleCellFrame` | Toggle cell card frames |
+| `:JovianToggleInlineOutputs` | Toggle inline outputs across all python buffers |
+| `:JovianToggleCellOutput` | Collapse/expand the cursor cell's inline output |
 | `:JovianToggleMarkdownStyle` | Toggle markdown cell styling |
 | `:JovianTogglePin` / `:JovianPin` / `:JovianUnpin` | Pinned output window |
 | `:JovianClearREPL` | Clear the REPL output buffer |

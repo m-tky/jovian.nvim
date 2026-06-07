@@ -484,6 +484,54 @@ function M.setup()
         vim.notify("Cell frame: " .. (Config.options.cell_frame and "ON" or "OFF"), vim.log.levels.INFO)
     end, { desc = "Jovian: Toggle cell card frame" })
 
+    -- Global inline-output toggle. Flips Config.options.inline_outputs
+    -- and re-renders. inline_outputs is gated on cell_frame in the
+    -- renderer, so we also flip cell_frame on if it was off — otherwise
+    -- the toggle would silently no-op and confuse the user.
+    vim.api.nvim_create_user_command("JovianToggleInlineOutputs", function()
+        Config.options.inline_outputs = not Config.options.inline_outputs
+        local turned_on_frame = false
+        if Config.options.inline_outputs and not Config.options.cell_frame then
+            Config.options.cell_frame = true
+            turned_on_frame = true
+            ensure_conceallevel()
+        end
+        local CellFrame = require("jovian.ui.cell_frame")
+        for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+            if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "python" then
+                local wins = vim.fn.win_findbuf(buf)
+                if Config.options.cell_frame then
+                    CellFrame.render(buf, wins[1])
+                else
+                    CellFrame.clear(buf)
+                end
+            end
+        end
+        local msg = "Inline outputs: " .. (Config.options.inline_outputs and "ON" or "OFF")
+        if turned_on_frame then
+            msg = msg .. " (also enabled cell_frame)"
+        end
+        vim.notify(msg, vim.log.levels.INFO)
+    end, { desc = "Jovian: Toggle inline cell outputs (all buffers)" })
+
+    -- Per-cell collapse. Cursor cell's id goes into State.collapsed_outputs
+    -- so the next cell_frame render swaps the output block for a single
+    -- "├─ Out[N] (collapsed) ─┤" line. Toggles back on a second call.
+    vim.api.nvim_create_user_command("JovianToggleCellOutput", function()
+        local id = Cell.get_current_cell_id(nil, false)
+        if not id then
+            return vim.notify("No cell under the cursor", vim.log.levels.WARN)
+        end
+        local buf = vim.api.nvim_get_current_buf()
+        State.collapsed_outputs[buf] = State.collapsed_outputs[buf] or {}
+        local now_collapsed = not State.collapsed_outputs[buf][id]
+        State.collapsed_outputs[buf][id] = now_collapsed or nil
+        if Config.options.cell_frame then
+            require("jovian.ui.cell_frame").schedule(buf)
+        end
+        vim.notify(("Cell %s output: %s"):format(id, now_collapsed and "collapsed" or "expanded"), vim.log.levels.INFO)
+    end, { desc = "Jovian: Toggle the cursor cell's inline output (collapse/expand)" })
+
     vim.api.nvim_create_user_command("JovianToggleMarkdownStyle", function()
         Config.options.markdown_cell_style = not Config.options.markdown_cell_style
         local MarkdownCell = require("jovian.ui.markdown_cell")
