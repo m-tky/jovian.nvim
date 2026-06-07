@@ -8,6 +8,7 @@ use anyhow::Result;
 use std::path::PathBuf;
 use tracing_subscriber::EnvFilter;
 
+mod ipynb;
 mod kernel;
 mod kernelspec;
 mod kitty;

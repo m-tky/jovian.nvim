@@ -655,6 +655,58 @@ function M.setup()
         require("jovian.core").run_all_except_tagged(set)
     end, { nargs = "+", desc = "Run all cells except those tagged with any of the given tags" })
 
+    -- .ipynb import/export. The Rust core does the heavy lifting (nbformat
+    -- v4 conversion + sidecar JSON shuttling); these commands are thin
+    -- request wrappers that handle file paths.
+    vim.api.nvim_create_user_command("JovianImport", function(opts)
+        local path = opts.args
+        if path == "" then
+            return vim.notify("Usage: :JovianImport <path.ipynb>", vim.log.levels.WARN)
+        end
+        local abs = vim.fn.fnamemodify(path, ":p")
+        if vim.fn.filereadable(abs) == 0 then
+            return vim.notify("Not readable: " .. abs, vim.log.levels.ERROR)
+        end
+        local BackendCore = require("jovian.backend.core")
+        local client = BackendCore.client() or BackendCore.ensure()
+        client:request("import_ipynb", { path = abs }, function(err, result)
+            vim.schedule(function()
+                if err then
+                    return vim.notify("import_ipynb failed: " .. err, vim.log.levels.ERROR)
+                end
+                local py = result and result.py_path
+                if not py then
+                    return vim.notify("import_ipynb returned no py_path", vim.log.levels.ERROR)
+                end
+                vim.notify("Imported " .. py, vim.log.levels.INFO)
+                vim.cmd("edit " .. vim.fn.fnameescape(py))
+            end)
+        end)
+    end, { nargs = 1, complete = "file", desc = "Convert a .ipynb file into .py + sidecar JSON and open it" })
+
+    vim.api.nvim_create_user_command("JovianExport", function(opts)
+        local src = vim.api.nvim_buf_get_name(0)
+        if src == "" or not src:match("%.py$") then
+            return vim.notify(":JovianExport must be run from a .py buffer", vim.log.levels.WARN)
+        end
+        local out = opts.args
+        if out == "" then
+            out = src:gsub("%.py$", ".ipynb")
+        else
+            out = vim.fn.fnamemodify(out, ":p")
+        end
+        local BackendCore = require("jovian.backend.core")
+        local client = BackendCore.client() or BackendCore.ensure()
+        client:request("export_ipynb", { py_path = vim.fn.fnamemodify(src, ":p"), ipynb_path = out }, function(err, _)
+            vim.schedule(function()
+                if err then
+                    return vim.notify("export_ipynb failed: " .. err, vim.log.levels.ERROR)
+                end
+                vim.notify("Exported " .. out, vim.log.levels.INFO)
+            end)
+        end)
+    end, { nargs = "?", complete = "file", desc = "Export the current .py buffer to .ipynb" })
+
     -- Restart kernel, then run every cell once it's ready. Standard "I
     -- changed something fundamental, redo the notebook from scratch"
     -- workflow from JupyterLab / VS Code.

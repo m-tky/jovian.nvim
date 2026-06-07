@@ -34,7 +34,7 @@
           # `crates.io/api/v1/.../download`, which crates.io now 403s for
           # requests without a descriptive User-Agent (breaking clean-store CI
           # builds). cargo vendor fetches from static.crates.io instead.
-          cargoHash = "sha256-FObhW3hFAb8uUqoZUPm80cH6szImqOTVjJMOslW1gVk=";
+          cargoHash = "sha256-0Qn1g71pb9L/N3NRweNbHq3iIeFqCZo1pQS4psFImG0=";
           # Pure-rust zmq crate — no C deps, no system libzmq required. We
           # still need a C linker (provided by buildRustPackage's default
           # stdenv) for the final link step.

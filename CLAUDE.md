@@ -244,6 +244,8 @@ require("jovian").setup({
 | `:JovianRestartAndRunAll` | Restart kernel, then run all cells |
 | `:JovianRunOnly <tag>...` | Run cells with any of the given tags |
 | `:JovianRunAllExcept <tag>...` | Run cells whose tags don't intersect the given set |
+| `:JovianImport <path.ipynb>` | Convert a notebook to `.py + sidecar` and open it |
+| `:JovianExport [path.ipynb]` | Export the current `.py` buffer to `.ipynb` |
 | `:JovianRunAbove` | Run all cells above cursor |
 | `:JovianRunLine` | Run current line |
 | `:JovianSendSelection` | Run visual selection |

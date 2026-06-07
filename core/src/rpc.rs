@@ -218,8 +218,32 @@ impl Server {
             "clear_cell_output" => self.clear_cell_output(p),
             "kitty_attach" => self.kitty_attach(p).await,
             "kitty_transmit" => self.kitty_transmit(p).await,
+            "import_ipynb" => self.import_ipynb(p),
+            "export_ipynb" => self.export_ipynb(p),
             other => Err(anyhow!("unknown method '{other}'")),
         }
+    }
+
+    fn import_ipynb(&self, p: Json) -> Result<Json> {
+        let path = p
+            .get("path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("path required"))?;
+        let py = crate::ipynb::import_ipynb(std::path::Path::new(path))?;
+        Ok(json!({ "py_path": py.to_string_lossy() }))
+    }
+
+    fn export_ipynb(&self, p: Json) -> Result<Json> {
+        let src = p
+            .get("py_path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("py_path required"))?;
+        let out = p
+            .get("ipynb_path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("ipynb_path required"))?;
+        crate::ipynb::export_ipynb(std::path::Path::new(src), std::path::Path::new(out))?;
+        Ok(json!({ "ok": true }))
     }
 
     // ---- handlers ----

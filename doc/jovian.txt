@@ -136,6 +136,20 @@ Cells without an id get one on first run.
                          Run every cell whose tag list does NOT contain
                          any of the given tags.
 
+                                                                 *:JovianImport*
+:JovianImport {path.ipynb}
+                         Convert a Jupyter notebook into jovian's
+                         `.py + sidecar` format and open the resulting
+                         `.py` in the current window. Cell ids, tags, and
+                         cached outputs all carry over.
+
+                                                                 *:JovianExport*
+:JovianExport [path.ipynb]
+                         Export the current `.py` buffer (plus its
+                         sidecar outputs) as a Jupyter notebook. With no
+                         argument, writes alongside the source with the
+                         `.ipynb` extension.
+
                                                                *:JovianRunAbove*
 :JovianRunAbove         Run every cell above the cursor.
 
