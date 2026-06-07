@@ -4,7 +4,7 @@
 //   Response:     [1, msgid, error|nil, result|nil]
 //   Notification: [2, method, params]
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use dashmap::DashMap;
 use rmpv::Value as Mp;
 use serde_json::{json, Value as Json};
@@ -220,6 +220,8 @@ impl Server {
             "kitty_transmit" => self.kitty_transmit(p).await,
             "import_ipynb" => self.import_ipynb(p),
             "export_ipynb" => self.export_ipynb(p),
+            "ipynb_decode" => self.ipynb_decode(p),
+            "ipynb_encode" => self.ipynb_encode(p),
             other => Err(anyhow!("unknown method '{other}'")),
         }
     }
@@ -244,6 +246,42 @@ impl Server {
             .ok_or_else(|| anyhow!("ipynb_path required"))?;
         crate::ipynb::export_ipynb(std::path::Path::new(src), std::path::Path::new(out))?;
         Ok(json!({ "ok": true }))
+    }
+
+    /// In-memory ipynb→py+sidecar decode, used by the native `*.ipynb`
+    /// BufReadCmd autocmd. Takes the raw JSON text (so Lua doesn't have
+    /// to think about file paths); returns the rendered py source and
+    /// the sidecar JSON serialized as a string. Lua writes the sidecar
+    /// to disk under `.jovian_cache/<basename>/outputs.json` so the
+    /// usual output_render reads find it.
+    fn ipynb_decode(&self, p: Json) -> Result<Json> {
+        let json = p
+            .get("json")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("json required"))?;
+        let (py_source, sidecar) = crate::ipynb::decode(json)?;
+        Ok(json!({
+            "py_source": py_source,
+            "sidecar_json": serde_json::to_string_pretty(&sidecar)? + "\n",
+        }))
+    }
+
+    /// In-memory py+sidecar→ipynb encode, used by the native `*.ipynb`
+    /// BufWriteCmd autocmd. Takes the buffer text and the current
+    /// sidecar JSON (both as strings), returns the nbformat JSON.
+    fn ipynb_encode(&self, p: Json) -> Result<Json> {
+        let py_source = p
+            .get("py_source")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("py_source required"))?;
+        let sidecar: crate::notebook::OutputStoreFile = match p.get("sidecar_json") {
+            Some(serde_json::Value::String(s)) if !s.trim().is_empty() => {
+                serde_json::from_str(s).context("parse sidecar_json")?
+            }
+            _ => crate::notebook::OutputStoreFile::default(),
+        };
+        let out = crate::ipynb::encode(py_source, &sidecar)?;
+        Ok(json!({ "json": out }))
     }
 
     // ---- handlers ----

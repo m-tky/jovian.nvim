@@ -454,8 +454,13 @@ while keeping the source plain, diff-friendly, and source-controllable.
 | `:JovianRestartAndRunAll` | Restart kernel, then run all cells |
 | `:JovianRunOnly <tag>...` | Run cells with any of the given tags |
 | `:JovianRunAllExcept <tag>...` | Run cells whose tags don't intersect the given set |
-| `:JovianImport <path.ipynb>` | Convert a notebook to `.py + sidecar` and open it |
+| `:JovianImport <path.ipynb>` | One-shot: convert a notebook to `.py + sidecar` and open it |
 | `:JovianExport [path.ipynb]` | Export the current `.py` buffer to `.ipynb` |
+
+> **Native `.ipynb` editing**: just `:edit foo.ipynb` (or `nvim foo.ipynb` from
+> the shell). The on-disk file stays Jupyter format, but the buffer is the
+> rendered `# %%` cell view; `:w` re-serializes back to nbformat. LSP / `:JovianRun`
+> work exactly as for `.py`. Set `vim.g.jovian_disable_ipynb_open = 1` to opt out.
 | `:JovianRunAbove` | Run all cells above the cursor |
 | `:JovianRunLine` | Run the current line |
 | `:JovianSendSelection` | Run the visual selection |

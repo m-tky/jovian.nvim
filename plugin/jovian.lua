@@ -14,6 +14,23 @@ if vim.g.loaded_jovian == 1 then
 end
 vim.g.loaded_jovian = 1
 
+-- Native .ipynb editing: register BufReadCmd / BufWriteCmd so opening
+-- a Jupyter notebook gives you the rendered `# %%`-style cell view in
+-- the buffer, saving re-serializes back to nbformat. Registered at
+-- plugin-load time (not VimEnter) so `nvim foo.ipynb` from the shell
+-- triggers our handler immediately. The handler itself defers to
+-- jovian-core; if the binary isn't installed it shows the raw JSON
+-- with a notify and gets out of the way.
+--
+-- Set `vim.g.jovian_disable_ipynb_open = 1` before the plugin loads to
+-- skip this — useful when you want to inspect the raw JSON, or when
+-- another notebook plugin is handling .ipynb buffers.
+if vim.g.jovian_disable_ipynb_open ~= 1 then
+    pcall(function()
+        require("jovian.ipynb_open").setup()
+    end)
+end
+
 vim.api.nvim_create_autocmd("VimEnter", {
     once = true,
     callback = function()

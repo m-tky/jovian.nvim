@@ -136,12 +136,33 @@ Cells without an id get one on first run.
                          Run every cell whose tag list does NOT contain
                          any of the given tags.
 
+                                                          *jovian-native-ipynb*
+NATIVE .IPYNB EDITING
+
+Opening a `.ipynb` directly (`:edit foo.ipynb` or `nvim foo.ipynb`) is
+hijacked by a BufReadCmd / BufWriteCmd pair: the on-disk file stays a
+Jupyter notebook, but the buffer is the rendered `# %%`-style cell view.
+Saving re-serializes back to nbformat v4. The buffer's filetype is
+python, so LSP / treesitter / completion all work as normal.
+
+Outputs from the notebook are imported into the sidecar at open time
+(`.jovian_cache/foo.ipynb/outputs.json`), so they render inline / in
+the preview pane immediately. Running cells with `:JovianRun` updates
+the sidecar, and `:write` flushes both the buffer text and the current
+outputs back into the `.ipynb` JSON.
+
+To bypass the hijack (e.g. you want to edit the raw JSON), set
+`vim.g.jovian_disable_ipynb_open = 1` before the plugin loads.
+
                                                                  *:JovianImport*
 :JovianImport {path.ipynb}
-                         Convert a Jupyter notebook into jovian's
-                         `.py + sidecar` format and open the resulting
-                         `.py` in the current window. Cell ids, tags, and
-                         cached outputs all carry over.
+                         One-shot conversion: write a Jupyter notebook
+                         out as `<stem>.py` + sidecar and open the
+                         resulting `.py`. Useful when you want to commit
+                         the source as `.py` and stop carrying the
+                         notebook around. For day-to-day editing, just
+                         open the `.ipynb` directly — see
+                         |jovian-native-ipynb|.
 
                                                                  *:JovianExport*
 :JovianExport [path.ipynb]

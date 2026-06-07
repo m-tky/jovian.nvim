@@ -16,17 +16,13 @@ use std::path::Path;
 
 use crate::notebook::{self, CellType, OutputStoreFile};
 
-/// Convert a `.ipynb` file at `ipynb_path` into a `.py + sidecar` pair.
-/// The `.py` is written next to the source (same basename, `.py` ext)
-/// and the sidecar JSON next to *that*, at
-/// `<.py-dir>/.jovian_cache/<stem>.py/outputs.json`.
-///
-/// Returns the destination `.py` path.
-pub fn import_ipynb(ipynb_path: &Path) -> Result<std::path::PathBuf> {
-    let raw = std::fs::read_to_string(ipynb_path)
-        .with_context(|| format!("read {}", ipynb_path.display()))?;
-    let nb: Value = serde_json::from_str(&raw)
-        .with_context(|| format!("parse ipynb JSON at {}", ipynb_path.display()))?;
+/// Pure in-memory decode of nbformat JSON into a `(py_source, sidecar)`
+/// pair. The py_source is what the Lua side renders into the buffer;
+/// the sidecar is what `output_render` reads to draw outputs. Used by
+/// both `import_ipynb` (file→file) and the native `*.ipynb` autocmd
+/// integration on the Lua side.
+pub fn decode(ipynb_json: &str) -> Result<(String, OutputStoreFile)> {
+    let nb: Value = serde_json::from_str(ipynb_json).context("parse ipynb JSON")?;
 
     let cells = nb
         .get("cells")
@@ -125,7 +121,17 @@ pub fn import_ipynb(ipynb_path: &Path) -> Result<std::path::PathBuf> {
         }
     }
 
-    // Compute destination paths.
+    Ok((py_source, sidecar))
+}
+
+/// Convert a `.ipynb` file at `ipynb_path` into a `.py + sidecar` pair.
+/// The `.py` is written next to the source (same basename, `.py` ext)
+/// and the sidecar JSON next to *that*. Returns the destination `.py`.
+pub fn import_ipynb(ipynb_path: &Path) -> Result<std::path::PathBuf> {
+    let raw = std::fs::read_to_string(ipynb_path)
+        .with_context(|| format!("read {}", ipynb_path.display()))?;
+    let (py_source, sidecar) = decode(&raw)?;
+
     let stem = ipynb_path
         .file_stem()
         .and_then(|s| s.to_str())
@@ -134,24 +140,20 @@ pub fn import_ipynb(ipynb_path: &Path) -> Result<std::path::PathBuf> {
     let py_path = dir.join(format!("{stem}.py"));
     std::fs::write(&py_path, py_source).with_context(|| format!("write {}", py_path.display()))?;
     notebook::write_sidecar(&py_path, &sidecar)?;
-
     Ok(py_path)
 }
 
-/// Convert a `.py + sidecar` pair into a `.ipynb` at `out_path`. Reads
-/// the current sidecar for outputs.
-pub fn export_ipynb(py_path: &Path, out_path: &Path) -> Result<()> {
-    let source_text =
-        std::fs::read_to_string(py_path).with_context(|| format!("read {}", py_path.display()))?;
-    let source = notebook::Source::parse(&source_text);
-    let outputs = notebook::read_sidecar(py_path)?;
-
+/// Pure in-memory encode: given a `# %%`-style py_source and the
+/// current sidecar outputs, return a fully-formed nbformat v4 JSON
+/// string. Counterpart to `decode`.
+pub fn encode(py_source: &str, outputs: &OutputStoreFile) -> Result<String> {
+    let source = notebook::Source::parse(py_source);
     let mut cells = Vec::with_capacity(source.cells.len());
     for cell in &source.cells {
         // Skip the synthetic "scratchpad" preamble unless it has content
-        // — it represents leading lines before any `# %%`, which is rare
-        // and typically just imports. Keep it when it does have content
-        // so we don't drop user code.
+        // — it represents leading lines before any `# %%`, which is
+        // rare and typically just imports. Keep it when it does have
+        // content so we don't drop user code.
         if cell.id == "scratchpad" && cell.source.trim().is_empty() {
             continue;
         }
@@ -193,9 +195,17 @@ pub fn export_ipynb(py_path: &Path, out_path: &Path) -> Result<()> {
         "nbformat_minor": 5,
         "cells": cells
     });
-    let pretty = serde_json::to_string_pretty(&nb)?;
-    std::fs::write(out_path, pretty + "\n")
-        .with_context(|| format!("write {}", out_path.display()))?;
+    Ok(serde_json::to_string_pretty(&nb)? + "\n")
+}
+
+/// Convert a `.py + sidecar` pair into a `.ipynb` at `out_path`. Reads
+/// the current sidecar for outputs.
+pub fn export_ipynb(py_path: &Path, out_path: &Path) -> Result<()> {
+    let source_text =
+        std::fs::read_to_string(py_path).with_context(|| format!("read {}", py_path.display()))?;
+    let outputs = notebook::read_sidecar(py_path)?;
+    let json = encode(&source_text, &outputs)?;
+    std::fs::write(out_path, json).with_context(|| format!("write {}", out_path.display()))?;
     Ok(())
 }
 
