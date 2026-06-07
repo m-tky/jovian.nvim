@@ -32,6 +32,12 @@ M.cell_start_line = {} -- { cell_id: line_num }
 
 M.on_ready_callbacks = {} -- List of functions to call when kernel is ready
 
+-- Active batch run (RunAll / RunAbove), or nil. Used by set_final to emit
+-- progress notifications and a final summary. Cleared when every cell in
+-- `pending` has reported back.
+--   { total = N, done = K, started_at_ns = hrtime, pending = { [cell_id] = true } }
+M.batch = nil
+
 M.is_starting_kernel = false
 M.running_cells = {} -- { [cell_id] = true }
 

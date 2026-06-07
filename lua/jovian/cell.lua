@@ -35,6 +35,21 @@ function M.get_all_ids(bufnr)
     return ids
 end
 
+-- Parse `tags=["a","b"]` out of a `# %%` header line. Returns a list (may
+-- be empty). Mirrors the Rust core's parser so :JovianRunOnly /
+-- :JovianRunAllExcept can filter without a core round-trip.
+function M.parse_header_tags(line)
+    local list = line:match("tags=%[([^%]]*)%]")
+    if not list then
+        return {}
+    end
+    local tags = {}
+    for tag in list:gmatch('"([^"]+)"') do
+        table.insert(tags, tag)
+    end
+    return tags
+end
+
 function M.fix_duplicate_ids(bufnr)
     local buf = bufnr or 0
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)

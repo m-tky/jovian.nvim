@@ -629,6 +629,32 @@ function M.setup()
         require("jovian.core").run_cells_above()
     end, {})
 
+    -- Tag-based execution. Tags are declared in cell headers via
+    -- `# %% id="..." tags=["slow","skip"]`. Both commands accept one or
+    -- more space-separated tags, e.g. `:JovianRunAllExcept slow skip`.
+    local function parse_tag_args(args)
+        local set = {}
+        for tag in (args or ""):gmatch("%S+") do
+            set[tag] = true
+        end
+        return set
+    end
+    vim.api.nvim_create_user_command("JovianRunOnly", function(opts)
+        local set = parse_tag_args(opts.args)
+        if next(set) == nil then
+            return vim.notify("Usage: :JovianRunOnly <tag> [<tag> ...]", vim.log.levels.WARN)
+        end
+        require("jovian.core").run_only_tagged(set)
+    end, { nargs = "+", desc = "Run only cells with any of the given tags" })
+
+    vim.api.nvim_create_user_command("JovianRunAllExcept", function(opts)
+        local set = parse_tag_args(opts.args)
+        if next(set) == nil then
+            return vim.notify("Usage: :JovianRunAllExcept <tag> [<tag> ...]", vim.log.levels.WARN)
+        end
+        require("jovian.core").run_all_except_tagged(set)
+    end, { nargs = "+", desc = "Run all cells except those tagged with any of the given tags" })
+
     -- Restart kernel, then run every cell once it's ready. Standard "I
     -- changed something fundamental, redo the notebook from scratch"
     -- workflow from JupyterLab / VS Code.

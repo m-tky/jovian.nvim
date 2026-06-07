@@ -42,6 +42,7 @@ pub struct CellSnapshot {
     pub end_line: usize,
     pub execution_count: Option<u64>,
     pub outputs: Vec<Value>,
+    pub tags: Vec<String>,
 }
 
 pub struct Session {
@@ -170,6 +171,7 @@ impl Session {
                     end_line: c.end_line,
                     execution_count: co.execution_count,
                     outputs: co.outputs,
+                    tags: c.tags.clone(),
                 }
             })
             .collect();

@@ -126,6 +126,16 @@ Cells without an id get one on first run.
 :JovianRestartAndRunAll Restart the kernel, then run every cell once the
                         new kernel is ready.
 
+                                                                *:JovianRunOnly*
+:JovianRunOnly {tag}...  Run only cells whose `tags=["..."]` list contains
+                         any of the given tags. Declare tags on a cell
+                         header: `# %% id="abc" tags=["slow","skip"]`.
+
+                                                           *:JovianRunAllExcept*
+:JovianRunAllExcept {tag}...
+                         Run every cell whose tag list does NOT contain
+                         any of the given tags.
+
                                                                *:JovianRunAbove*
 :JovianRunAbove         Run every cell above the cursor.
 

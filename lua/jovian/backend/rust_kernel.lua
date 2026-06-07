@@ -43,14 +43,33 @@ local function set_busy(cell_id)
     end
 end
 
+-- Render an hrtime-delta (nanoseconds) into a compact "1.3s" / "230ms" /
+-- "5m12s" string. The thresholds pick the unit that gives a 1-3 digit
+-- significand, matching Jupyter's "Wall time" output style.
+local function format_elapsed_ns(ns)
+    if not ns then
+        return nil
+    end
+    local seconds = ns / 1e9
+    if seconds < 1 then
+        return ("%dms"):format(math.floor(seconds * 1000 + 0.5))
+    elseif seconds < 60 then
+        return ("%.1fs"):format(seconds)
+    else
+        local m = math.floor(seconds / 60)
+        local s = math.floor(seconds % 60)
+        return ("%dm%ds"):format(m, s)
+    end
+end
+
 local function set_final(cell_id, errored)
     local buf = State.cell_buf_map[cell_id]
     local started_at = State.cell_start_time[cell_id]
-    local elapsed = started_at and (os.time() - started_at) or nil
+    local elapsed_ns = started_at and ((vim.uv or vim.loop).hrtime() - started_at) or nil
     if buf and vim.api.nvim_buf_is_valid(buf) then
         local timestamp = ""
-        if Config.options.show_execution_time then
-            timestamp = " (" .. os.date("%H:%M:%S") .. ")"
+        if Config.options.show_execution_time and elapsed_ns then
+            timestamp = " (" .. format_elapsed_ns(elapsed_ns) .. ")"
         end
         if errored then
             UI.set_cell_status(buf, cell_id, "error", Config.options.ui_symbols.error .. timestamp)
@@ -60,11 +79,36 @@ local function set_final(cell_id, errored)
         end
     end
     -- Desktop notification for long-running cells: fires when the elapsed
-    -- wall-clock time crosses notify_threshold. Errors are notified above
-    -- unconditionally, so only the success path needs gating here.
+    -- wall-clock time crosses notify_threshold (seconds). Errors are
+    -- notified above unconditionally, so only the success path needs gating.
     local threshold = Config.options.notify_threshold
-    if not errored and elapsed and threshold and threshold > 0 and elapsed >= threshold then
-        UI.send_notification(("Cell %s done in %ds"):format(cell_id, elapsed), "info")
+    if not errored and elapsed_ns and threshold and threshold > 0 and elapsed_ns / 1e9 >= threshold then
+        UI.send_notification(("Cell %s done in %s"):format(cell_id, format_elapsed_ns(elapsed_ns)), "info")
+    end
+    -- Batch run progress: emit a final summary when the last cell of a
+    -- :JovianRunAll / :JovianRunAbove finishes. Per-cell progress is
+    -- intentionally NOT emitted — the inline status extmarks already
+    -- show every cell's state; another notification stream would just be
+    -- noise.
+    if State.batch and State.batch.pending[cell_id] then
+        State.batch.pending[cell_id] = nil
+        State.batch.done = State.batch.done + 1
+        if State.batch.done == State.batch.total then
+            local batch_elapsed_ns = (vim.uv or vim.loop).hrtime() - State.batch.started_at_ns
+            local msg = ("jovian: %d/%d cells done in %s"):format(
+                State.batch.done,
+                State.batch.total,
+                format_elapsed_ns(batch_elapsed_ns)
+            )
+            vim.notify(msg, vim.log.levels.INFO)
+            -- Cross-threshold batches also get a desktop notification so
+            -- the user can :JovianRunAll, switch windows, and be paged
+            -- back when it finishes.
+            if threshold and threshold > 0 and batch_elapsed_ns / 1e9 >= threshold then
+                UI.send_notification(msg, errored and "error" or "info")
+            end
+            State.batch = nil
+        end
     end
     State.running_cells[cell_id] = nil
     State.cell_buf_map[cell_id] = nil

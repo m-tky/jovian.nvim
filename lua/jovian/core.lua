@@ -106,7 +106,10 @@ function M.send_payload(code, cell_id, filename)
 
     local current_buf = vim.api.nvim_get_current_buf()
     State.cell_buf_map[cell_id] = current_buf
-    State.cell_start_time[cell_id] = os.time()
+    -- hrtime() is monotonic nanoseconds since startup. Used for elapsed
+    -- display in set_final; os.time() (whole seconds) was too coarse to
+    -- distinguish a 50 ms cell from a 950 ms one.
+    State.cell_start_time[cell_id] = (vim.uv or vim.loop).hrtime()
     State.cell_hashes[cell_id] = Cell.get_cell_hash(code)
     State.running_cells[cell_id] = true
 
@@ -197,29 +200,53 @@ function M.run_and_next()
     end
 end
 
-function M._execute_lines(lines)
+-- _execute_lines runs every code cell in `lines`. The optional `filter`
+-- receives each cell's tag list and returns true to include it — used by
+-- :JovianRunOnly / :JovianRunAllExcept. nil means "no filter, run all".
+function M._execute_lines(lines, filter)
     local fn = vim.fn.expand("%:t")
     local cells_to_run = {}
-    local blk, current_bid, is_code = {}, nil, false
+    local blk, current_bid, current_tags, is_code = {}, nil, {}, false
+
+    local function flush()
+        if #blk > 0 and is_code and current_bid and (not filter or filter(current_tags)) then
+            table.insert(cells_to_run, { code = table.concat(blk, "\n"), id = current_bid })
+        end
+    end
 
     for i, line in ipairs(lines) do
         if line:match("^# %%%%") then
-            if #blk > 0 and is_code and current_bid then
-                table.insert(cells_to_run, { code = table.concat(blk, "\n"), id = current_bid })
-            end
+            flush()
             blk = {}
             current_bid = Cell.ensure_cell_id(i, line)
+            current_tags = Cell.parse_header_tags(line)
             is_code = not line:lower():find("# %% [markdown]", 1, true)
         elseif is_code then
             table.insert(blk, line)
         end
     end
-    if #blk > 0 and is_code and current_bid then
-        table.insert(cells_to_run, { code = table.concat(blk, "\n"), id = current_bid })
-    end
+    flush()
 
     if #cells_to_run == 0 then
         return
+    end
+
+    -- Set up batch tracking for multi-cell runs. set_final ticks `done` per
+    -- cell completion and emits a final summary when done == total. Single-
+    -- cell runs (:JovianRun) skip this so a normal cell doesn't get a
+    -- "1/1 done" notification.
+    if #cells_to_run > 1 then
+        local pending = {}
+        for _, c in ipairs(cells_to_run) do
+            pending[c.id] = true
+        end
+        State.batch = {
+            total = #cells_to_run,
+            done = 0,
+            started_at_ns = (vim.uv or vim.loop).hrtime(),
+            pending = pending,
+        }
+        vim.notify(("jovian: running %d cells"):format(#cells_to_run), vim.log.levels.INFO)
     end
 
     for _, cell in ipairs(cells_to_run) do
@@ -234,6 +261,42 @@ function M.run_all_cells()
     with_kernel(function()
         local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
         M._execute_lines(lines)
+    end)
+end
+
+-- Run only cells whose tag list intersects `wanted` (set of tag strings).
+function M.run_only_tagged(wanted)
+    if not is_window_open() then
+        return
+    end
+    with_kernel(function()
+        local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+        M._execute_lines(lines, function(tags)
+            for _, t in ipairs(tags) do
+                if wanted[t] then
+                    return true
+                end
+            end
+            return false
+        end)
+    end)
+end
+
+-- Run every cell whose tag list does NOT intersect `excluded`.
+function M.run_all_except_tagged(excluded)
+    if not is_window_open() then
+        return
+    end
+    with_kernel(function()
+        local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+        M._execute_lines(lines, function(tags)
+            for _, t in ipairs(tags) do
+                if excluded[t] then
+                    return false
+                end
+            end
+            return true
+        end)
     end)
 end
 

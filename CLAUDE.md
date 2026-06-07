@@ -242,6 +242,8 @@ require("jovian").setup({
 | `:JovianRunAndNext` | Run cell and jump to next |
 | `:JovianRunAll` | Run all cells top-to-bottom |
 | `:JovianRestartAndRunAll` | Restart kernel, then run all cells |
+| `:JovianRunOnly <tag>...` | Run cells with any of the given tags |
+| `:JovianRunAllExcept <tag>...` | Run cells whose tags don't intersect the given set |
 | `:JovianRunAbove` | Run all cells above cursor |
 | `:JovianRunLine` | Run current line |
 | `:JovianSendSelection` | Run visual selection |

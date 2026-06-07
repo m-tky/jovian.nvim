@@ -55,6 +55,11 @@ pub struct Cell {
     pub header_line: usize,
     /// 0-based exclusive line index of the cell's last source line + 1.
     pub end_line: usize,
+    /// Jupyter-style tags, parsed from `tags=["slow","skip"]` on the
+    /// header line. Empty when no tags are declared. Drives the
+    /// :JovianRunOnly / :JovianRunAllExcept commands on the Lua side
+    /// and round-trips through the .ipynb metadata.tags field.
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -76,24 +81,44 @@ pub struct Source {
 static HEADER_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^#\s*%%\s*(?:\[(?P<kind>[a-zA-Z]+)\])?\s*(?P<rest>.*)$").unwrap());
 static ID_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"id="(?P<id>[A-Za-z0-9_\-]+)""#).unwrap());
+// tags=["a","b"] — match Jupyter / jupytext's syntax. The inner regex
+// extracts each quoted token; we don't require the outer brackets to be
+// well-formed since we're parsing user-edited source.
+static TAGS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"tags=\[(?P<list>[^\]]*)\]"#).unwrap());
+static TAG_TOKEN_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#""([^"]*)""#).unwrap());
+
+fn parse_tags(rest: &str) -> Vec<String> {
+    let Some(caps) = TAGS_RE.captures(rest) else {
+        return Vec::new();
+    };
+    let Some(list) = caps.name("list") else {
+        return Vec::new();
+    };
+    TAG_TOKEN_RE
+        .captures_iter(list.as_str())
+        .filter_map(|c| c.get(1).map(|m| m.as_str().to_string()))
+        .filter(|s| !s.is_empty())
+        .collect()
+}
 
 impl Source {
     /// Parse a source buffer (as the user sees it in Neovim) into cells.
     pub fn parse(text: &str) -> Self {
         let lines: Vec<&str> = text.split('\n').collect();
-        let mut headers: Vec<(usize, CellType, Option<String>)> = Vec::new();
+        let mut headers: Vec<(usize, CellType, Option<String>, Vec<String>)> = Vec::new();
         for (i, line) in lines.iter().enumerate() {
             if let Some(cap) = HEADER_RE.captures(line) {
                 let kind = cap
                     .name("kind")
                     .map(|m| CellType::from_str(m.as_str()))
                     .unwrap_or(CellType::Code);
-                let id = cap
-                    .name("rest")
-                    .and_then(|m| ID_RE.captures(m.as_str()))
+                let rest = cap.name("rest").map(|m| m.as_str()).unwrap_or("");
+                let id = ID_RE
+                    .captures(rest)
                     .and_then(|c| c.name("id"))
                     .map(|m| m.as_str().to_string());
-                headers.push((i, kind, id));
+                let tags = parse_tags(rest);
+                headers.push((i, kind, id, tags));
             }
         }
 
@@ -113,10 +138,11 @@ impl Source {
                 source: src,
                 header_line: 0,
                 end_line: first_real,
+                tags: Vec::new(),
             });
         }
 
-        for (idx, (line, kind, id)) in headers.iter().enumerate() {
+        for (idx, (line, kind, id, tags)) in headers.iter().enumerate() {
             let next_header = headers.get(idx + 1).map(|h| h.0).unwrap_or(lines.len());
             let src_start = line + 1;
             let src_end = next_header;
@@ -131,6 +157,7 @@ impl Source {
                 source: src,
                 header_line: *line,
                 end_line: src_end,
+                tags: tags.clone(),
             });
         }
 
@@ -146,6 +173,7 @@ impl Source {
                     source: String::new(),
                     header_line: 0,
                     end_line: 0,
+                    tags: Vec::new(),
                 }],
             });
         }
@@ -336,6 +364,31 @@ mod tests {
         assert_eq!(s.cells.len(), 1);
         assert!(!s.cells[0].id.is_empty());
         assert_ne!(s.cells[0].id, "scratchpad");
+    }
+
+    #[test]
+    fn parses_tags() {
+        let src = "# %% id=\"a1\" tags=[\"slow\",\"skip\"]\nprint(1)\n";
+        let s = Source::parse(src);
+        assert_eq!(s.cells.len(), 1);
+        assert_eq!(
+            s.cells[0].tags,
+            vec!["slow".to_string(), "skip".to_string()]
+        );
+    }
+
+    #[test]
+    fn no_tags_when_absent() {
+        let src = "# %% id=\"a1\"\nprint(1)\n";
+        let s = Source::parse(src);
+        assert_eq!(s.cells[0].tags, Vec::<String>::new());
+    }
+
+    #[test]
+    fn tags_tolerant_of_whitespace_and_empty_list() {
+        let src = "# %% id=\"a1\" tags=[]\nprint(1)\n";
+        let s = Source::parse(src);
+        assert_eq!(s.cells[0].tags, Vec::<String>::new());
     }
 
     #[test]
