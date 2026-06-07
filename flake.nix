@@ -208,6 +208,9 @@
             echo ">>> Running Python Resolver Tests..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_python_resolve.lua
 
+            echo ">>> Running .ipynb Import/Export + Native Open Tests..."
+            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_ipynb.lua
+
             echo ">>> Running Rust Backend Phase 1 Smoke Test (Real Kernel)..."
             ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_rust_phase1.lua
 
