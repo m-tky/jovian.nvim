@@ -127,20 +127,42 @@ local function divider_line(label, width)
     return main .. string.rep("─", math.max(pad, 0)) .. "┤"
 end
 
+-- The Out[N] label, or Out[ ] when the cell has no execution count yet.
+local function exec_label(execution_count)
+    return execution_count and tostring(execution_count) or " "
+end
+
 --- Build the single-line "collapsed" placeholder used in place of the
 --- full output block when the user has toggled a cell collapsed via
 --- :JovianToggleCellOutput. Matches divider_line's styling so the
 --- frame still looks right; reads `├─ Out[N] (collapsed) ─┤`.
+--- Callers must have run setup_hl() so HL.Divider is current.
 ---
 --- @param execution_count number|nil
 --- @param width number total cell width
 --- @return table virt_line chunk array (one row)
 function M.build_collapsed_line(execution_count, width)
-    M.setup_hl(nil)
-    local exec_label = execution_count and tostring(execution_count) or " "
-    local label = "Out[" .. exec_label .. "] (collapsed)"
-    local line = divider_line(label, width)
-    return { { line, HL.Divider } }
+    local label = "Out[" .. exec_label(execution_count) .. "] (collapsed)"
+    return { { divider_line(label, width), HL.Divider } }
+end
+
+--- Build the inline output block for a cell: either the full output rows
+--- or, when `collapsed`, the single "(collapsed)" placeholder. This is the
+--- one entry point cell_frame calls so the collapse decision lives here
+--- alongside the rendering, not in the frame layer.
+---
+--- @param co table cell outputs { outputs, execution_count }
+--- @param width number total cell width
+--- @param border_hl string cell_frame border highlight group
+--- @param refresh_cb function|nil re-render hook for async image transmits
+--- @param cell_id string|nil
+--- @param collapsed boolean|nil
+--- @return table list of virt_line chunk arrays
+function M.build_output_block(co, width, border_hl, refresh_cb, cell_id, collapsed)
+    if collapsed then
+        return { M.build_collapsed_line(co.execution_count, width) }
+    end
+    return M.build_virt_lines(co.outputs, co.execution_count, width, border_hl, refresh_cb, cell_id)
 end
 
 -- Pick the first image MIME present in a display_data / execute_result's
@@ -179,12 +201,11 @@ function M.build_virt_lines(outputs, execution_count, width, border_hl, refresh_
     end
     local inner_w = math.max(width - 4, 1) -- "│ " + content + " │"
 
-    local exec_label = execution_count and tostring(execution_count) or " "
     -- Outputs loaded from the sidecar JSON without a fresh re-run in the
     -- current kernel session get a "(cached)" suffix so the user can tell
     -- them apart from this-session results.
     local State = require("jovian.state")
-    local label = "Out[" .. exec_label .. "]"
+    local label = "Out[" .. exec_label(execution_count) .. "]"
     if cell_id and not State.fresh_cells[cell_id] then
         label = label .. " (cached)"
     end

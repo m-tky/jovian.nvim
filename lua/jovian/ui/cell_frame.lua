@@ -23,6 +23,7 @@ local M = {}
 local Config = require("jovian.config")
 local Highlights = require("jovian.ui.hl_utils")
 local Debounce = require("jovian.ui.debounce")
+local State = require("jovian.state")
 
 local dw = Highlights.dw
 
@@ -399,26 +400,21 @@ function M.render(bufnr, winid)
             local src_path = vim.api.nvim_buf_get_name(bufnr)
             local co = OutRender.cell_outputs(src_path, h.id)
             if co and co.outputs and #co.outputs > 0 then
-                -- Per-cell collapse: when the user has toggled this cell
-                -- via :JovianToggleCellOutput, swap the full output block
-                -- for a single "(collapsed)" placeholder line.
-                local State = require("jovian.state")
+                -- Pass a refresh callback so async Kitty image transmits
+                -- can trigger a re-render once they land.
+                local refresh = function()
+                    if vim.api.nvim_buf_is_valid(bufnr) then
+                        M.schedule(bufnr)
+                    end
+                end
+                -- Per-cell collapse: when the user has toggled this cell via
+                -- :JovianToggleCellOutput, build_output_block swaps the full
+                -- block for a single "(collapsed)" placeholder line.
                 local buf_set = State.collapsed_outputs[bufnr]
-                if buf_set and buf_set[h.id] then
-                    table.insert(lines_below, OutRender.build_collapsed_line(co.execution_count, width))
-                else
-                    -- Pass a refresh callback so async Kitty image transmits
-                    -- can trigger a re-render once they land.
-                    local refresh = function()
-                        if vim.api.nvim_buf_is_valid(bufnr) then
-                            M.schedule(bufnr)
-                        end
-                    end
-                    local out_rows =
-                        OutRender.build_virt_lines(co.outputs, co.execution_count, width, hl, refresh, h.id)
-                    for _, row in ipairs(out_rows) do
-                        table.insert(lines_below, row)
-                    end
+                local collapsed = buf_set ~= nil and buf_set[h.id] == true
+                local out_rows = OutRender.build_output_block(co, width, hl, refresh, h.id, collapsed)
+                for _, row in ipairs(out_rows) do
+                    table.insert(lines_below, row)
                 end
             end
         end

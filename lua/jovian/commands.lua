@@ -465,22 +465,37 @@ function M.setup()
         end
     end
 
+    -- Run `fn(buf)` for every loaded python buffer. The Phase 2 visual
+    -- toggles all re-render across the whole edit session, not just the
+    -- current buffer.
+    local function for_each_python_buffer(fn)
+        for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+            if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "python" then
+                fn(buf)
+            end
+        end
+    end
+
+    -- Re-render (or clear) cell frames across all python buffers to match
+    -- the current `cell_frame` flag. Shared by the cell-frame and
+    -- inline-output toggles, which both turn the frame on/off.
+    local function rerender_all_cell_frames()
+        local CellFrame = require("jovian.ui.cell_frame")
+        for_each_python_buffer(function(buf)
+            if Config.options.cell_frame then
+                CellFrame.render(buf, vim.fn.win_findbuf(buf)[1])
+            else
+                CellFrame.clear(buf)
+            end
+        end)
+    end
+
     vim.api.nvim_create_user_command("JovianToggleCellFrame", function()
         Config.options.cell_frame = not Config.options.cell_frame
-        local CellFrame = require("jovian.ui.cell_frame")
         if Config.options.cell_frame then
             ensure_conceallevel()
         end
-        for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-            if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "python" then
-                if Config.options.cell_frame then
-                    local wins = vim.fn.win_findbuf(buf)
-                    CellFrame.render(buf, wins[1])
-                else
-                    CellFrame.clear(buf)
-                end
-            end
-        end
+        rerender_all_cell_frames()
         vim.notify("Cell frame: " .. (Config.options.cell_frame and "ON" or "OFF"), vim.log.levels.INFO)
     end, { desc = "Jovian: Toggle cell card frame" })
 
@@ -496,17 +511,7 @@ function M.setup()
             turned_on_frame = true
             ensure_conceallevel()
         end
-        local CellFrame = require("jovian.ui.cell_frame")
-        for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-            if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "python" then
-                local wins = vim.fn.win_findbuf(buf)
-                if Config.options.cell_frame then
-                    CellFrame.render(buf, wins[1])
-                else
-                    CellFrame.clear(buf)
-                end
-            end
-        end
+        rerender_all_cell_frames()
         local msg = "Inline outputs: " .. (Config.options.inline_outputs and "ON" or "OFF")
         if turned_on_frame then
             msg = msg .. " (also enabled cell_frame)"
@@ -538,15 +543,13 @@ function M.setup()
         if Config.options.markdown_cell_style then
             ensure_conceallevel()
         end
-        for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-            if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "python" then
-                if Config.options.markdown_cell_style then
-                    MarkdownCell.render(buf)
-                else
-                    MarkdownCell.clear(buf)
-                end
+        for_each_python_buffer(function(buf)
+            if Config.options.markdown_cell_style then
+                MarkdownCell.render(buf)
+            else
+                MarkdownCell.clear(buf)
             end
-        end
+        end)
         vim.notify(
             "Markdown cell styling: " .. (Config.options.markdown_cell_style and "ON" or "OFF"),
             vim.log.levels.INFO
