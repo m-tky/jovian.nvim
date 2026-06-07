@@ -8,11 +8,13 @@ once it leaves `0.x`.
 
 ## [Unreleased]
 
-## [0.2.0] — 2026-06-07
+## [0.10.0] — 2026-06-07
 
-A correctness + UX release. Same architecture as 0.1.0 (Rust core,
-single `jovian-core` binary, msgpack-RPC stdio), but a long backlog
-of reliability fixes and a handful of substantial new features.
+First release with a maintained CHANGELOG (prior 0.x tags exist on
+GitHub but predate this file). A correctness + UX release on top of
+v0.9.0: the architecture is unchanged (Rust core, single
+`jovian-core` binary, msgpack-RPC stdio), but a long backlog of
+reliability fixes and substantial new features have landed.
 
 ### Added
 - **Native `.ipynb` editing.** `:edit foo.ipynb` (or `nvim foo.ipynb`)
@@ -145,57 +147,11 @@ of reliability fixes and a handful of substantial new features.
   :JovianImport, :JovianExport, and the BufReadCmd / BufWriteCmd
   native-open round-trip via the real msgpack-RPC client.
 
-## [0.1.0] — pre-release
+## Earlier (v0.1.0 — v0.9.0)
 
-Project is still pre-1.0; the entries below are a rolling summary of major
-feature work. Each bullet groups multiple commits — see `git log` for the
-full chain.
+Pre-CHANGELOG history. See the GitHub releases page or `git log
+--tags --simplify-by-decoration` for the boundaries; substantive
+work in those tags is summarised by their annotated tag messages.
 
-### Backend
-- **Rust core (Phase 5):** replaced the legacy Python bridge + libzmq FFI
-  with a single `jovian-core` binary speaking the Jupyter wire protocol
-  directly over msgpack-RPC. Pure-Rust ZMQ; no system `libzmq`.
-- **Remote kernels through the Rust core:** SSH tunnel + remote kernel
-  launch live in `kernel.rs::launch_remote`; a PTY is forced so remote
-  kernels die on disconnect.
-- **CI release pipeline:** prebuilt `jovian-core` binaries for
-  `x86_64-linux`, `aarch64-linux`, `x86_64-darwin`, `aarch64-darwin` on
-  every `v*` tag push.
-
-### UI
-- **Inline cell output rendering** (opt-in `inline_outputs`): outputs read
-  from a single nbformat-shaped sidecar and rendered as virt_lines below
-  each cell.
-- **Cell card frames** (opt-in `cell_frame`): `┌─ Code [id] ─┐` borders,
-  configurable corner style and side-bar priority, scrollbar-aware right
-  padding.
-- **Markdown cell styling** (opt-in `markdown_cell_style`): headings,
-  bold/italic, inline `code`, bullets, blockquotes, data-URI and
-  file-path images via Kitty graphics.
-- **Markdown tables** in render-markdown.nvim style with `round` / `none` /
-  `heavy` / `double` border presets.
-- **LaTeX math** (`$…$` / `$$…$$`) converted to Unicode in place; built-in
-  converter with hooks for `latex2text` / `utftex`.
-- **Output window on-demand** (`output_window = "ondemand"` by default);
-  Variables pane moved out of the default layout.
-- **Kitty image pipeline:** images transmitted once via `a=T,U=1,c=N,r=N`,
-  rendered as Unicode-placeholder rows whose fg color encodes the image_id.
-  Preview and Output windows render images too. Auto-fit to the pane, never
-  upscaling past native size.
-
-### Python environment
-- **Auto-resolved interpreter:** `setup()` probes PATH / `$VIRTUAL_ENV` /
-  `$CONDA_PREFIX` / `.venv` / `venv` for an `ipykernel`-capable python.
-- **`:JovianPickPython`:** interactive picker listing every discovered
-  python and registered Jupyter kernelspec; restarts the kernel on switch.
-
-### Tests
-- `test_python_resolve`, `test_outputs_json_resilience`,
-  `test_remote_ssh`, `test_kitty_images`, `test_markdown_images`,
-  `test_markdown_table`, `test_math`, `test_cell_frame`,
-  `test_inline_outputs`, plus the existing async / commands / cells /
-  edge cases / Rust phase-1 / resize-layout suite.
-
-[Unreleased]: https://github.com/m-tky/jovian.nvim/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/m-tky/jovian.nvim/releases/tag/v0.2.0
-[0.1.0]: https://github.com/m-tky/jovian.nvim/releases/tag/v0.1.0
+[Unreleased]: https://github.com/m-tky/jovian.nvim/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/m-tky/jovian.nvim/releases/tag/v0.10.0

@@ -1,6 +1,6 @@
 [package]
 name = "jovian-core"
-version = "0.2.0"
+version = "0.10.0"
 edition = "2021"
 description = "Native backend for jovian.nvim — Jupyter kernels + Kitty graphics + nbformat sidecar I/O"
 
