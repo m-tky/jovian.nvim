@@ -21,7 +21,7 @@ use crate::session::Session;
 
 pub struct Server {
     sessions: DashMap<String, Arc<Session>>,
-    out_tx: Mutex<Option<tokio::sync::mpsc::UnboundedSender<Mp>>>,
+    out_tx: Mutex<Option<tokio::sync::mpsc::Sender<Mp>>>,
     shutdown: Arc<Notify>,
     kitty: Mutex<Option<KittyTty>>,
 }
@@ -37,7 +37,11 @@ impl Server {
     }
 
     pub async fn run_stdio(self: Arc<Self>) -> Result<()> {
-        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel::<Mp>();
+        // Bounded outgoing channel. 256 frames is enough headroom for a
+        // burst of cell_event notifications while the Lua side scheduled
+        // them onto its main loop, without leaking unbounded memory on
+        // pathological cases.
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::channel::<Mp>(256);
         *self.out_tx.lock().await = Some(out_tx);
 
         let writer = tokio::spawn(async move {
@@ -120,9 +124,16 @@ impl Server {
     }
 
     async fn send(&self, msg: Mp) {
-        let g = self.out_tx.lock().await;
-        if let Some(tx) = g.as_ref() {
-            let _ = tx.send(msg);
+        // Take a clone of the Sender out of the mutex so we can release the
+        // lock before .await on send() — otherwise a slow Lua reader holding
+        // up the channel would also serialize every other send through this
+        // mutex.
+        let tx = {
+            let g = self.out_tx.lock().await;
+            g.as_ref().cloned()
+        };
+        if let Some(tx) = tx {
+            let _ = tx.send(msg).await;
         }
     }
 

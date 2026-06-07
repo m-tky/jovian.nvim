@@ -233,15 +233,25 @@ pub struct Kernel {
     kill_tx: Mutex<Option<oneshot::Sender<()>>>,
     shell_tx: mpsc::UnboundedSender<ZmqMessage>,
     control_tx: mpsc::UnboundedSender<ZmqMessage>,
-    iopub_handle: tokio::task::JoinHandle<()>,
-    events: Mutex<Option<mpsc::UnboundedReceiver<KernelEvent>>>,
+    /// All long-running tasks tied to this kernel's lifetime (iopub
+    /// loop + shell/control socket owners). Aborted en masse in `kill()`
+    /// so a dropped Kernel doesn't leave a socket loop blocked on
+    /// `sock.recv()` forever (with the pure-rust zeromq impl, recv on a
+    /// dead socket can hang).
+    task_handles: Mutex<Vec<tokio::task::JoinHandle<()>>>,
+    events: Mutex<Option<mpsc::Receiver<KernelEvent>>>,
     pending: Arc<DashMap<String, oneshot::Sender<Value>>>,
+    /// Path to the connection file on disk. Deleted in `kill()`; without
+    /// this, `/tmp/jovian/kernel-<uuid>.json` accumulates over the life
+    /// of a Neovim session.
+    conn_file: Option<PathBuf>,
 }
 
 impl Kernel {
     pub async fn launch(spec: KernelSpec, cwd: Option<PathBuf>) -> Result<Self> {
         let conn = ConnectionInfo::new_localhost(&spec.name)?;
         let conn_path = write_connection_file(&conn)?;
+        let conn_file = Some(conn_path.clone());
         tracing::info!(?conn_path, kernel = %spec.name, "launching kernel");
 
         let argv: Vec<String> = spec
@@ -273,7 +283,7 @@ impl Kernel {
         let child = cmd
             .spawn()
             .with_context(|| format!("spawning {:?}", argv))?;
-        Self::from_child_and_conn(spec, conn, child).await
+        Self::from_child_and_conn(spec, conn, child, conn_file).await
     }
 
     /// Launch a kernel on a remote host over SSH and tunnel its ZMQ ports back
@@ -387,7 +397,10 @@ impl Kernel {
             signature_scheme: "hmac-sha256".to_string(),
             kernel_name: "python3".to_string(),
         };
-        Self::from_child_and_conn(remote_spec(host), conn, child).await
+        // No local conn file to clean up: the remote wrote its own
+        // tempfile via the bootstrap script, which we can't delete from
+        // here without another ssh round-trip. The OS will reap it.
+        Self::from_child_and_conn(remote_spec(host), conn, child, None).await
     }
 
     /// Wire up ZMQ sockets, channels, and the iopub loop around an
@@ -398,29 +411,37 @@ impl Kernel {
         spec: KernelSpec,
         conn: ConnectionInfo,
         mut child: Child,
+        conn_file: Option<PathBuf>,
     ) -> Result<Self> {
         let session = Uuid::new_v4().to_string();
 
         let (shell, control, iopub) = connect_sockets(&conn).await?;
 
-        let (tx, rx) = mpsc::unbounded_channel::<KernelEvent>();
-        let tx_iopub = tx.clone();
-        let tx_shell = tx.clone();
+        // Bounded events channel: a chatty cell (10 k-line print loop) used
+        // to push events at unlimited rate; if Lua was slow to drain (e.g.
+        // mid-redraw), they piled up unboundedly in memory. 1024 is enough
+        // to absorb realistic bursts while still applying backpressure
+        // upstream — when full, iopub_loop awaits on send(), which in turn
+        // backpressures the ZMQ socket recv buffer back to the kernel.
+        let (tx, rx) = mpsc::channel::<KernelEvent>(1024);
         let key = conn.key.as_bytes().to_vec();
-        let iopub_handle = tokio::spawn(iopub_loop(iopub, key.clone(), tx_iopub));
+        let iopub_handle: tokio::task::JoinHandle<()> =
+            tokio::spawn(iopub_loop(iopub, key.clone(), tx.clone()));
 
+        // shell_tx/control_tx stay unbounded: traffic is bounded by user
+        // input rate (one execute per :JovianRun), not the kernel.
         let (shell_tx, shell_rx) = mpsc::unbounded_channel::<ZmqMessage>();
         let (control_tx, control_rx) = mpsc::unbounded_channel::<ZmqMessage>();
         let pending: Arc<DashMap<String, oneshot::Sender<Value>>> = Arc::new(DashMap::new());
-        tokio::spawn(socket_owner(
+        let shell_handle = tokio::spawn(socket_owner(
             shell,
             shell_rx,
             key.clone(),
-            tx_shell,
+            tx.clone(),
             "shell",
             Some(pending.clone()),
         ));
-        tokio::spawn(socket_owner(
+        let control_handle = tokio::spawn(socket_owner(
             control,
             control_rx,
             key.clone(),
@@ -453,7 +474,7 @@ impl Kernel {
                 }
                 result = child.wait() => {
                     let code = result.ok().and_then(|s| s.code());
-                    let _ = died_tx.send(KernelEvent::KernelDied { exit_code: code });
+                    let _ = died_tx.send(KernelEvent::KernelDied { exit_code: code }).await;
                 }
             }
         });
@@ -471,9 +492,10 @@ impl Kernel {
             kill_tx: Mutex::new(Some(kill_tx)),
             shell_tx,
             control_tx,
-            iopub_handle,
+            task_handles: Mutex::new(vec![iopub_handle, shell_handle, control_handle]),
             events: Mutex::new(Some(rx)),
             pending,
+            conn_file,
         })
     }
 
@@ -481,7 +503,7 @@ impl Kernel {
         &self.spec
     }
 
-    pub async fn take_events(&self) -> Option<mpsc::UnboundedReceiver<KernelEvent>> {
+    pub async fn take_events(&self) -> Option<mpsc::Receiver<KernelEvent>> {
         self.events.lock().await.take()
     }
 
@@ -570,11 +592,22 @@ impl Kernel {
     }
 
     pub async fn kill(&self) -> Result<()> {
-        self.iopub_handle.abort();
+        // Abort every long-running task. Without aborting the shell /
+        // control owners, recv() on a dead socket can hang indefinitely
+        // with the pure-rust zeromq impl, leaking tasks across kernel
+        // restarts.
+        for h in self.task_handles.lock().await.drain(..) {
+            h.abort();
+        }
         if let Some(s) = self.kill_tx.lock().await.take() {
             // Send error is fine: the child-watcher may have already
             // exited because the kernel died first.
             let _ = s.send(());
+        }
+        // Drop the on-disk connection file. /tmp/jovian/kernel-*.json
+        // would otherwise accumulate one per kernel start.
+        if let Some(p) = &self.conn_file {
+            let _ = std::fs::remove_file(p);
         }
         Ok(())
     }
@@ -693,10 +726,14 @@ async fn socket_owner(
     mut sock: DealerSocket,
     mut out_rx: mpsc::UnboundedReceiver<ZmqMessage>,
     key: Vec<u8>,
-    tx: mpsc::UnboundedSender<KernelEvent>,
+    tx: mpsc::Sender<KernelEvent>,
     label: &'static str,
     pending: Option<Arc<DashMap<String, oneshot::Sender<Value>>>>,
 ) {
+    // Exponential backoff for socket recv errors. Without a cap we used
+    // to retry every 50 ms forever — fine for transient hiccups, but a
+    // dead socket spammed warn! at 20 lines/s.
+    let mut recv_backoff_ms: u64 = 50;
     loop {
         tokio::select! {
             biased;
@@ -716,6 +753,7 @@ async fn socket_owner(
             recv = sock.recv() => {
                 match recv {
                     Ok(zmsg) => {
+                        recv_backoff_ms = 50;
                         match Message::from_frames(zmsg.into_vec(), &key) {
                             Ok(reply) => {
                                 let parent = reply
@@ -740,25 +778,37 @@ async fn socket_owner(
                                     .get("execution_count")
                                     .and_then(|v| v.as_u64())
                                     .unwrap_or(0);
-                                if reply.header.msg_type == "kernel_info_reply" {
-                                    let _ = tx.send(KernelEvent::KernelInfo {
+                                let ev = if reply.header.msg_type == "kernel_info_reply" {
+                                    KernelEvent::KernelInfo {
                                         parent_msg_id: parent,
                                         info: reply.content,
-                                    });
+                                    }
                                 } else {
-                                    let _ = tx.send(KernelEvent::ExecuteReply {
+                                    KernelEvent::ExecuteReply {
                                         parent_msg_id: parent,
                                         status,
                                         execution_count: exec_count,
-                                    });
+                                    }
+                                };
+                                if tx.send(ev).await.is_err() {
+                                    tracing::info!("{label} event channel closed; owner exit");
+                                    return;
                                 }
                             }
                             Err(e) => tracing::warn!("{label} reply parse: {e}"),
                         }
                     }
                     Err(e) => {
-                        tracing::warn!("{label} recv error: {e}");
-                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        tracing::warn!("{label} recv error: {e} (backoff {recv_backoff_ms} ms)");
+                        tokio::time::sleep(Duration::from_millis(recv_backoff_ms)).await;
+                        // Exponential up to 5 s cap; if errors persist past
+                        // ~10 retries (~10 s cumulative), assume the socket
+                        // is unrecoverable and exit.
+                        recv_backoff_ms = (recv_backoff_ms * 2).min(5000);
+                        if recv_backoff_ms >= 5000 {
+                            tracing::error!("{label} recv keeps failing; owner exit");
+                            return;
+                        }
                     }
                 }
             }
@@ -766,23 +816,32 @@ async fn socket_owner(
     }
 }
 
-async fn iopub_loop(mut sock: SubSocket, key: Vec<u8>, tx: mpsc::UnboundedSender<KernelEvent>) {
+async fn iopub_loop(mut sock: SubSocket, key: Vec<u8>, tx: mpsc::Sender<KernelEvent>) {
+    let mut backoff_ms: u64 = 50;
     loop {
         match sock.recv().await {
-            Ok(zmsg) => match Message::from_frames(zmsg.into_vec(), &key) {
-                Ok(msg) => {
-                    if let Some(ev) = iopub_to_event(&msg) {
-                        if tx.send(ev).is_err() {
-                            tracing::info!("iopub event channel closed; loop exit");
-                            return;
+            Ok(zmsg) => {
+                backoff_ms = 50;
+                match Message::from_frames(zmsg.into_vec(), &key) {
+                    Ok(msg) => {
+                        if let Some(ev) = iopub_to_event(&msg) {
+                            if tx.send(ev).await.is_err() {
+                                tracing::info!("iopub event channel closed; loop exit");
+                                return;
+                            }
                         }
                     }
+                    Err(e) => tracing::warn!("iopub parse: {e}"),
                 }
-                Err(e) => tracing::warn!("iopub parse: {e}"),
-            },
+            }
             Err(e) => {
-                tracing::warn!("iopub recv: {e}");
-                tokio::time::sleep(Duration::from_millis(50)).await;
+                tracing::warn!("iopub recv: {e} (backoff {backoff_ms} ms)");
+                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                backoff_ms = (backoff_ms * 2).min(5000);
+                if backoff_ms >= 5000 {
+                    tracing::error!("iopub recv keeps failing; loop exit");
+                    return;
+                }
             }
         }
     }

@@ -51,7 +51,14 @@ pub struct Session {
     pub outputs: RwLock<OutputStoreFile>,
     pub kernel: AsyncRwLock<Option<Kernel>>,
     /// msg_id → cell_id, for routing iopub events back to the originating cell.
+    /// Entries are GC'd by `try_complete_msg` once both `status: idle` and
+    /// `execute_reply` have been seen for the msg_id — the standard Jupyter
+    /// "request done" signal pair.
     pub msg_to_cell: DashMap<String, String>,
+    /// Tracks (saw_idle, saw_reply) per in-flight msg_id so we can clean up
+    /// `msg_to_cell` after the request completes. Without this the map grows
+    /// unboundedly across a long session.
+    msg_completion: DashMap<String, (bool, bool)>,
     /// msg_id → output collector, for hidden execute requests (Vars/View).
     /// Events with a matching parent_msg_id are diverted into the collector
     /// instead of going through apply_event / cell_event notifications.
@@ -74,6 +81,7 @@ impl Session {
             outputs: RwLock::new(outputs),
             kernel: AsyncRwLock::new(None),
             msg_to_cell: DashMap::new(),
+            msg_completion: DashMap::new(),
             collect_pending: DashMap::new(),
             persist_signal: persist_signal.clone(),
         });
@@ -196,6 +204,30 @@ impl Session {
         outs.cells.clear();
     }
 
+    /// Mark one half of a request's completion signal (`status: idle` on
+    /// iopub, or `execute_reply` on shell). When both have been observed
+    /// for the same msg_id, the routing entry in `msg_to_cell` is removed
+    /// — this is what keeps the map from growing without bound across a
+    /// long session.
+    fn mark_msg_progress(&self, msg_id: &str, saw_idle: bool, saw_reply: bool) {
+        let mut entry = self
+            .msg_completion
+            .entry(msg_id.to_string())
+            .or_insert((false, false));
+        if saw_idle {
+            entry.0 = true;
+        }
+        if saw_reply {
+            entry.1 = true;
+        }
+        let done = entry.0 && entry.1;
+        drop(entry);
+        if done {
+            self.msg_completion.remove(msg_id);
+            self.msg_to_cell.remove(msg_id);
+        }
+    }
+
     /// Apply a kernel event to in-memory output state. Returns the (cell_id,
     /// frontend-shaped event payload) tuple so the RPC layer can notify Lua.
     pub fn apply_event(&self, ev: &KernelEvent) -> Option<(String, Value)> {
@@ -248,6 +280,9 @@ impl Session {
             KernelEvent::Status {
                 execution_state, ..
             } => {
+                if execution_state == "idle" {
+                    self.mark_msg_progress(parent, true, false);
+                }
                 json!({ "kind": "status", "state": execution_state })
             }
             KernelEvent::ExecuteReply {
@@ -255,6 +290,7 @@ impl Session {
                 execution_count,
                 ..
             } => {
+                self.mark_msg_progress(parent, false, true);
                 json!({ "kind": "execute_reply", "status": status, "execution_count": execution_count })
             }
             KernelEvent::ClearOutput { wait, .. } => {
