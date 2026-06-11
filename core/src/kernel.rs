@@ -557,6 +557,11 @@ impl Kernel {
     }
 
     async fn shell_request(&self, msg_type: &'static str, content: Value) -> Result<Value> {
+        // 2s is plenty for complete/inspect against an idle kernel. A busy
+        // kernel processes shell messages in order, so the request queues
+        // behind the running cell and times out — expected, not a dead
+        // kernel, which the error wording makes explicit.
+        let timeout = Duration::from_millis(2000);
         let msg_id = Uuid::new_v4().to_string();
         let (tx, rx) = oneshot::channel();
         self.pending.insert(msg_id.clone(), tx);
@@ -571,7 +576,7 @@ impl Kernel {
             return Err(anyhow!("shell channel closed"));
         }
 
-        match tokio::time::timeout(Duration::from_millis(2000), rx).await {
+        match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(reply)) => Ok(reply),
             Ok(Err(_)) => {
                 self.pending.remove(&msg_id);
@@ -579,7 +584,10 @@ impl Kernel {
             }
             Err(_) => {
                 self.pending.remove(&msg_id);
-                Err(anyhow!("{msg_type} timed out"))
+                Err(anyhow!(
+                    "{msg_type} timed out after {}ms (kernel may be busy)",
+                    timeout.as_millis()
+                ))
             }
         }
     }
