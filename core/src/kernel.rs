@@ -302,7 +302,9 @@ impl Kernel {
         // (argument injection, e.g. host = "-oProxyCommand=..."). ssh has no
         // portable `--` end-of-options before the destination, so guard here.
         if host.starts_with('-') {
-            return Err(anyhow!("invalid ssh host '{host}': must not start with '-'"));
+            return Err(anyhow!(
+                "invalid ssh host '{host}': must not start with '-'"
+            ));
         }
 
         let key = Uuid::new_v4().to_string();
