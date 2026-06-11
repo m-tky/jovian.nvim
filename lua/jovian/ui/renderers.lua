@@ -49,17 +49,23 @@ function M.render_variables_pane(vars)
 
     table.insert(fmt_lines, sep_line)
 
+    -- Record each data row's BYTE column boundaries as we build it. The
+    -- columns are padded to DISPLAY width, so a CJK name makes the byte and
+    -- display offsets diverge — highlighting by display width (the old
+    -- code) drew the column highlights at the wrong byte positions.
+    local row_cols = {}
     if #vars == 0 then
         table.insert(fmt_lines, State.job_id and "(No variables defined)" or "(Kernel not started)")
     else
         for _, v in ipairs(vars) do
-            local line = pad_str(v.name, max_name_w, PADDING)
-                .. SEPARATOR
-                .. pad_str(v.type, max_type_w, PADDING)
-                .. SEPARATOR
-                .. " "
-                .. (v.info or "")
+            local name_part = pad_str(v.name, max_name_w, PADDING)
+            local type_part = pad_str(v.type, max_type_w, PADDING)
+            local line = name_part .. SEPARATOR .. type_part .. SEPARATOR .. " " .. (v.info or "")
             table.insert(fmt_lines, line)
+            table.insert(row_cols, {
+                c1 = #name_part,
+                c2 = #name_part + #SEPARATOR + #type_part,
+            })
         end
     end
 
@@ -74,15 +80,14 @@ function M.render_variables_pane(vars)
     vim.api.nvim_buf_add_highlight(buf, -1, "JovianHeader", 0, 0, -1)
     vim.api.nvim_buf_add_highlight(buf, -1, "JovianSeparator", 1, 0, -1)
 
-    local col1_end = sep_len_name
-    local col2_end = col1_end + #SEPARATOR + sep_len_type
-
+    -- Data rows start at 0-based line 2; row_cols[line - 1] holds its offsets.
     for i = 2, #fmt_lines - 1 do
-        if #vars > 0 then
-            vim.api.nvim_buf_add_highlight(buf, -1, "JovianVariable", i, 0, col1_end)
-            vim.api.nvim_buf_add_highlight(buf, -1, "JovianType", i, col1_end + #SEPARATOR, col2_end)
-            vim.api.nvim_buf_add_highlight(buf, -1, "JovianSeparator", i, col1_end, col1_end + #SEPARATOR)
-            vim.api.nvim_buf_add_highlight(buf, -1, "JovianSeparator", i, col2_end, col2_end + #SEPARATOR)
+        local cols = row_cols[i - 1]
+        if cols then
+            vim.api.nvim_buf_add_highlight(buf, -1, "JovianVariable", i, 0, cols.c1)
+            vim.api.nvim_buf_add_highlight(buf, -1, "JovianType", i, cols.c1 + #SEPARATOR, cols.c2)
+            vim.api.nvim_buf_add_highlight(buf, -1, "JovianSeparator", i, cols.c1, cols.c1 + #SEPARATOR)
+            vim.api.nvim_buf_add_highlight(buf, -1, "JovianSeparator", i, cols.c2, cols.c2 + #SEPARATOR)
         end
     end
 end
@@ -100,9 +105,25 @@ function M.show_variables(msg, force_float)
         end
     end
 
-    local buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_name(buf, "JovianVariables")
-    vim.bo[buf].bufhidden = "wipe"
+    -- Reuse an existing floating "JovianVariables" window+buffer if one is
+    -- already open (e.g. paging via PageUp/PageDown). Creating a second
+    -- buffer with the same name raises E95, which is what crashed the
+    -- second page turn. The `relative ~= ""` guard restricts the match to
+    -- float windows so a docked pane showing the same name isn't picked up.
+    local win, buf
+    for _, w in ipairs(vim.api.nvim_list_wins()) do
+        local b = vim.api.nvim_win_get_buf(w)
+        if vim.api.nvim_win_get_config(w).relative ~= "" and vim.api.nvim_buf_get_name(b):match("JovianVariables$") then
+            win = w
+            buf = b
+            break
+        end
+    end
+    if not buf then
+        buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_name(buf, "JovianVariables")
+        vim.bo[buf].bufhidden = "wipe"
+    end
 
     local max_name_w, max_type_w = get_var_column_widths(vars)
 
@@ -130,6 +151,10 @@ function M.show_variables(msg, force_float)
         .. string.rep("─", sep_len_info)
     table.insert(fmt_lines, sep_line)
 
+    -- Per-row BYTE column boundaries (see render_variables_pane): columns are
+    -- padded to display width, so highlight by recorded byte offsets rather
+    -- than display width + a hardcoded "+3" (which assumed the 3-byte "│").
+    local row_cols = {}
     if #vars == 0 then
         local empty_msg = State.job_id and "(No variables defined)" or "(Kernel not started)"
         local line = pad_str("", max_name_w, PADDING)
@@ -141,13 +166,14 @@ function M.show_variables(msg, force_float)
         table.insert(fmt_lines, line)
     else
         for _, v in ipairs(vars) do
-            local line = pad_str(v.name, max_name_w, PADDING)
-                .. SEPARATOR
-                .. pad_str(v.type, max_type_w, PADDING)
-                .. SEPARATOR
-                .. " "
-                .. (v.info or "")
+            local name_part = pad_str(v.name, max_name_w, PADDING)
+            local type_part = pad_str(v.type, max_type_w, PADDING)
+            local line = name_part .. SEPARATOR .. type_part .. SEPARATOR .. " " .. (v.info or "")
             table.insert(fmt_lines, line)
+            table.insert(row_cols, {
+                c1 = #name_part,
+                c2 = #name_part + #SEPARATOR + #type_part,
+            })
         end
     end
 
@@ -155,37 +181,33 @@ function M.show_variables(msg, force_float)
     table.insert(fmt_lines, "")
     table.insert(fmt_lines, "PageUp/Down: Prev/Next | q: Close")
 
+    vim.bo[buf].modifiable = true
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, fmt_lines)
+    vim.bo[buf].modifiable = false
+
+    -- Reused buffers carry the previous page's highlights; clear first.
+    vim.api.nvim_buf_clear_namespace(buf, -1, 0, -1)
 
     -- Highlight
     vim.api.nvim_buf_add_highlight(buf, -1, "JovianHeader", 0, 0, -1)
     vim.api.nvim_buf_add_highlight(buf, -1, "JovianSeparator", 1, 0, -1)
     vim.api.nvim_buf_add_highlight(buf, -1, "Comment", #fmt_lines - 1, 0, -1)
 
-    local col1_end = sep_len_name
-    local col2_end = col1_end + 3 + sep_len_type
-
+    -- Data rows start at 0-based line 2; row_cols[line - 1] holds its offsets.
     for i = 2, #fmt_lines - 3 do
-        if #vars > 0 then
-            vim.api.nvim_buf_add_highlight(buf, -1, "JovianVariable", i, 0, col1_end)
-            vim.api.nvim_buf_add_highlight(buf, -1, "JovianType", i, col1_end + 3, col2_end)
-            vim.api.nvim_buf_add_highlight(buf, -1, "JovianSeparator", i, col1_end, col1_end + 3)
-            vim.api.nvim_buf_add_highlight(buf, -1, "JovianSeparator", i, col2_end, col2_end + 3)
+        local cols = row_cols[i - 1]
+        if cols then
+            vim.api.nvim_buf_add_highlight(buf, -1, "JovianVariable", i, 0, cols.c1)
+            vim.api.nvim_buf_add_highlight(buf, -1, "JovianType", i, cols.c1 + #SEPARATOR, cols.c2)
+            vim.api.nvim_buf_add_highlight(buf, -1, "JovianSeparator", i, cols.c1, cols.c1 + #SEPARATOR)
+            vim.api.nvim_buf_add_highlight(buf, -1, "JovianSeparator", i, cols.c2, cols.c2 + #SEPARATOR)
         end
     end
 
     local title = string.format("Jovian Variables [%d-%d / %d]", offset + 1, math.min(offset + limit, total), total)
 
-    -- In-place update check
-    local win
-    for _, w in ipairs(vim.api.nvim_list_wins()) do
-        local b = vim.api.nvim_win_get_buf(w)
-        if vim.api.nvim_buf_get_name(b):match("JovianVariables$") then
-            win = w
-            break
-        end
-    end
-
+    -- `win`/`buf` were resolved up front (reuse-or-create). Open a float
+    -- only when none was found; otherwise just refresh the title.
     if not win then
         local content_width = 0
         for _, line in ipairs(fmt_lines) do
@@ -200,7 +222,6 @@ function M.show_variables(msg, force_float)
         vim.wo[win].cursorline = true
         State.win.variables = win
     else
-        vim.api.nvim_win_set_buf(win, buf)
         vim.api.nvim_win_set_config(win, { title = title, title_pos = "center" })
     end
 
@@ -272,11 +293,16 @@ function M.show_dataframe(data)
         data.total_rows
     )
 
-    -- In-place update check
+    -- In-place update check. Compare the trailing buffer-name component
+    -- literally (vim.pesc would also work) — a DataFrame name with pattern
+    -- magic like "-", "(" or "%" would otherwise mis-match or error when
+    -- concatenated raw into a Lua pattern.
+    local want_suffix = "JovianDF_" .. data.name
     local win, buf
     for _, w in ipairs(vim.api.nvim_list_wins()) do
         local b = vim.api.nvim_win_get_buf(w)
-        if vim.api.nvim_buf_get_name(b):match("JovianDF_" .. data.name .. "$") then
+        local name = vim.api.nvim_buf_get_name(b)
+        if name:sub(-#want_suffix) == want_suffix then
             win = w
             buf = b
             break

@@ -11,7 +11,7 @@ use serde_json::{json, Value as Json};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::{Mutex, Notify};
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::kernel::{Kernel, KernelEvent};
@@ -22,7 +22,6 @@ use crate::session::Session;
 pub struct Server {
     sessions: DashMap<String, Arc<Session>>,
     out_tx: Mutex<Option<tokio::sync::mpsc::Sender<Mp>>>,
-    shutdown: Arc<Notify>,
     kitty: Mutex<Option<KittyTty>>,
 }
 
@@ -31,7 +30,6 @@ impl Server {
         Arc::new(Self {
             sessions: DashMap::new(),
             out_tx: Mutex::new(None),
-            shutdown: Arc::new(Notify::new()),
             kitty: Mutex::new(None),
         })
     }
@@ -92,6 +90,16 @@ impl Server {
                         break;
                     }
                     let len = u32::from_be_bytes([acc[0], acc[1], acc[2], acc[3]]) as usize;
+                    // Fail fast on an implausible frame length. A desync (or a
+                    // garbage byte) would otherwise have us buffer up to 4 GiB
+                    // waiting for a frame that never completes, never resyncing.
+                    const MAX_FRAME: usize = 256 * 1024 * 1024;
+                    if len > MAX_FRAME {
+                        tracing::error!(
+                            "rpc frame length {len} exceeds {MAX_FRAME}; stream desynced, stopping reader"
+                        );
+                        return;
+                    }
                     if acc.len() < 4 + len {
                         break;
                     }
@@ -116,9 +124,16 @@ impl Server {
         });
 
         tokio::select! {
-            _ = self.shutdown.notified() => {}
             _ = reader => {}
             _ = writer => {}
+        }
+        // Graceful shutdown (stdin EOF / writer gone): force-flush every
+        // session's sidecar so output still sitting in the debounce window
+        // is persisted rather than lost on exit.
+        for entry in self.sessions.iter() {
+            if let Err(e) = entry.value().persist_outputs() {
+                tracing::warn!("flush sidecar on shutdown: {e:?}");
+            }
         }
         Ok(())
     }
@@ -435,8 +450,12 @@ impl Server {
                     server.notify("kernel_event", note).await;
                     // The kernel is gone; drop the session so subsequent
                     // RPCs against the same session_id fail loudly instead
-                    // of hanging on a dead ZMQ socket.
-                    server.sessions.remove(&sid_clone);
+                    // of hanging on a dead ZMQ socket. Force-flush first so
+                    // any debounced output (often the crash's last words) is
+                    // persisted rather than lost with the session.
+                    if let Some((_, s)) = server.sessions.remove(&sid_clone) {
+                        let _ = s.persist_outputs();
+                    }
                     return;
                 }
                 if let Some((cell_id, payload)) = session_clone.apply_event(&ev) {
@@ -546,6 +565,13 @@ impl Server {
         kernel
             .execute_with_id_opts(code, msg_id.clone(), false, false)
             .await?;
+        // Release the kernel read lock BEFORE awaiting the reply (up to
+        // timeout_ms, default 5s). Only the send above needs the kernel;
+        // holding the read guard across the await would, under tokio's
+        // write-preferring RwLock, make a concurrent restart (write) block
+        // every subsequent read acquisition (execute/interrupt/complete),
+        // freezing the whole UI for the duration of a Vars/View probe.
+        drop(kernel_guard);
 
         let events =
             match tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), rx).await {
@@ -704,19 +730,29 @@ impl Server {
         // caller (Lua) typically passes its render dimensions.
         let cols = p.get("cols").and_then(|v| v.as_u64()).unwrap_or(56) as u32;
         let rows = p.get("rows").and_then(|v| v.as_u64()).unwrap_or(14) as u32;
-        let kitty_lock = self.kitty.lock().await;
-        let kitty = kitty_lock
-            .as_ref()
-            .ok_or_else(|| anyhow!("kitty_attach not called"))?;
+        // Clone the (Arc-backed) handle out of the lock so we don't hold the
+        // async mutex across the blocking tty writes.
+        let kitty = {
+            let g = self.kitty.lock().await;
+            g.as_ref()
+                .cloned()
+                .ok_or_else(|| anyhow!("kitty_attach not called"))?
+        };
         let png = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
             .map_err(|e| anyhow!("base64 decode: {e}"))?;
-        let id = match id_hint {
-            Some(i) => {
-                kitty.transmit_png_with_id(i, &png, cols, rows)?;
-                i
+        // The transmit does hundreds of synchronous tty writes; run it on the
+        // blocking pool so it doesn't stall a tokio worker thread.
+        let id = tokio::task::spawn_blocking(move || -> Result<u32> {
+            match id_hint {
+                Some(i) => {
+                    kitty.transmit_png_with_id(i, &png, cols, rows)?;
+                    Ok(i)
+                }
+                None => kitty.transmit_png(&png, cols, rows),
             }
-            None => kitty.transmit_png(&png, cols, rows)?,
-        };
+        })
+        .await
+        .map_err(|e| anyhow!("kitty transmit task: {e}"))??;
         Ok(json!({ "image_id": id }))
     }
 

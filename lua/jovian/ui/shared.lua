@@ -29,11 +29,12 @@ local function ensure_output_term()
     if Config.options.output_window == "off" then
         return false
     end
-    if State.term_chan and State.buf.output and vim.api.nvim_buf_is_valid(State.buf.output) then
-        return true
-    end
-    State.buf.output = require("jovian.ui.windows").get_or_create_buf("JovianOutput")
-    return State.term_chan ~= nil
+    -- ensure_output_buf owns the buffer↔chan pair: it (re)creates the
+    -- output buffer and (re)opens its terminal channel as needed, so a
+    -- stale/detached chan or a buffer left without a channel is repaired
+    -- here rather than silently dropping output.
+    local _, chan = require("jovian.ui.windows").ensure_output_buf()
+    return chan ~= nil
 end
 M.ensure_output_term = ensure_output_term
 
@@ -67,7 +68,6 @@ function M.append_to_repl(text, hl_group)
     end
 
     local lines = type(text) == "table" and text or vim.split(text, "\n")
-    local output = ""
 
     -- ANSI Color Code Definitions
     local RESET = "\x1b[0m"
@@ -81,13 +81,18 @@ function M.append_to_repl(text, hl_group)
     local color_start = ""
     local color_end = RESET
 
+    -- Accumulate into a parts table + table.concat instead of repeated `..`
+    -- concatenation (which rebuilt the whole string each iteration — O(n²)
+    -- on a big multi-line append).
+    local parts = {}
+
     if hl_group == "Type" then
         -- Prompt (In [abc]:) -> Green & Bold
         color_start = GREEN .. BOLD
 
         -- Tip: Insert a faint separator line before the prompt
         -- This makes the boundary with previous results clear
-        output = output .. GREY .. string.rep("─", 40) .. RESET .. "\r\n"
+        table.insert(parts, GREY .. string.rep("─", 40) .. RESET .. "\r\n")
     elseif hl_group == nil then
         -- Code body (no hl_group) -> Cyan (Distinguishable!)
         color_start = CYAN
@@ -103,8 +108,9 @@ function M.append_to_repl(text, hl_group)
     end
 
     for _, line in ipairs(lines) do
-        output = output .. color_start .. line .. color_end .. "\r\n"
+        table.insert(parts, color_start .. line .. color_end .. "\r\n")
     end
+    local output = table.concat(parts)
 
     -- Send to terminal
     local ok, err = pcall(vim.api.nvim_chan_send, State.term_chan, output)

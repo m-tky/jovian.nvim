@@ -126,13 +126,14 @@ impl Message {
             mac.update(parent_raw);
             mac.update(meta_raw);
             mac.update(content_raw);
-            let expected = hex::encode(mac.finalize().into_bytes());
-            let got = std::str::from_utf8(signature).unwrap_or("");
-            if expected != got {
-                return Err(anyhow!(
-                    "HMAC verification failed: expected {expected}, got {got}"
-                ));
-            }
+            // Decode the hex signature and let HMAC's verify_slice do the
+            // comparison: it's constant-time (resists timing attacks) and we
+            // never echo the expected signature back in the error.
+            let sig_hex = std::str::from_utf8(signature).unwrap_or("");
+            let sig_bytes =
+                hex::decode(sig_hex).map_err(|_| anyhow!("HMAC signature is not valid hex"))?;
+            mac.verify_slice(&sig_bytes)
+                .map_err(|_| anyhow!("HMAC verification failed"))?;
         }
 
         let header: Header = serde_json::from_slice(header_raw)?;

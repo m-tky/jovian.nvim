@@ -7,6 +7,23 @@ local Config = require("jovian.config")
 local SSHConfig = require("jovian.ssh_config")
 local State = require("jovian.state")
 
+-- Get the shared jovian-core client, spawning it if needed. BackendCore.ensure()
+-- raises (multi-line) when the binary is missing; wrap it so a user command
+-- shows a clean notification and bails instead of dumping a stack trace.
+local function try_ensure()
+    local BackendCore = require("jovian.backend.core")
+    local client = BackendCore.client()
+    if client then
+        return client
+    end
+    local ok, res = pcall(BackendCore.ensure)
+    if not ok or not res then
+        vim.notify("jovian-core unavailable: " .. tostring(res), vim.log.levels.ERROR)
+        return nil
+    end
+    return res
+end
+
 -- Navigation helpers
 local function goto_next_cell()
     local cursor = vim.api.nvim_win_get_cursor(0)[1]
@@ -376,8 +393,13 @@ function M.setup()
         table.insert(cmd, "--exclude=__pycache__")
         table.insert(cmd, "--exclude=.ipynb_checkpoints")
 
-        -- Source (trailing slash matters for directories)
+        -- Source (trailing slash matters for directories). Anchor a relative
+        -- path with "./" so rsync can't parse a name like "--delete" as an
+        -- option (argument injection via :JovianSync <arg>).
         local source = target
+        if not source:match("^/") and not source:match("^%./") then
+            source = "./" .. source
+        end
         if vim.fn.isdirectory(source) == 1 and not source:match("/$") then
             source = source .. "/"
         end
@@ -395,12 +417,19 @@ function M.setup()
         vim.fn.jobstart(cmd, {
             stdout_buffered = true,
             on_stdout = function(_, data)
-                if data and #data > 1 then
-                    -- Show summary of synced files
-                    vim.notify(
-                        "Jovian Sync: " .. #data .. " lines of output. Last: " .. data[#data - 1],
-                        vim.log.levels.INFO
-                    )
+                if data then
+                    -- jobstart appends a trailing "" (EOF marker); count and
+                    -- report the last NON-empty line rather than indexing a
+                    -- fixed offset that may land on the empty element.
+                    local last, n = nil, 0
+                    for _, l in ipairs(data) do
+                        if l ~= "" then
+                            last, n = l, n + 1
+                        end
+                    end
+                    if last then
+                        vim.notify(("Jovian Sync: %d lines of output. Last: %s"):format(n, last), vim.log.levels.INFO)
+                    end
                 end
             end,
             on_stderr = function(_, data)
@@ -582,7 +611,10 @@ function M.setup()
     -- terminal that just doesn't support graphics.
     vim.api.nvim_create_user_command("JovianDebugImages", function()
         local BackendCore = require("jovian.backend.core")
-        local client = BackendCore.client() or BackendCore.ensure()
+        local client = try_ensure()
+        if not client then
+            return
+        end
         -- 1x1 transparent PNG, base64-encoded
         local one_px = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgAAIAAAUAAeImBZsAAAAASUVORK5CYII="
         vim.notify("jovian: probing kitty pipeline...", vim.log.levels.INFO)
@@ -718,8 +750,10 @@ function M.setup()
         if vim.fn.filereadable(abs) == 0 then
             return vim.notify("Not readable: " .. abs, vim.log.levels.ERROR)
         end
-        local BackendCore = require("jovian.backend.core")
-        local client = BackendCore.client() or BackendCore.ensure()
+        local client = try_ensure()
+        if not client then
+            return
+        end
         client:request("import_ipynb", { path = abs }, function(err, result)
             vim.schedule(function()
                 if err then
@@ -746,8 +780,10 @@ function M.setup()
         else
             out = vim.fn.fnamemodify(out, ":p")
         end
-        local BackendCore = require("jovian.backend.core")
-        local client = BackendCore.client() or BackendCore.ensure()
+        local client = try_ensure()
+        if not client then
+            return
+        end
         client:request("export_ipynb", { py_path = vim.fn.fnamemodify(src, ":p"), ipynb_path = out }, function(err, _)
             vim.schedule(function()
                 if err then
@@ -762,10 +798,9 @@ function M.setup()
     -- changed something fundamental, redo the notebook from scratch"
     -- workflow from JupyterLab / VS Code.
     vim.api.nvim_create_user_command("JovianRestartAndRunAll", function()
-        local rust = require("jovian.backend.rust_kernel")
-        UI.append_to_repl("[Kernel Restarting...]", "WarningMsg")
-        UI.clear_status_extmarks(0)
-        rust.restart(function()
+        -- Delegate to restart_kernel (with an on_ready callback) rather than
+        -- re-implementing its body — keeps the restart sequence in one place.
+        Core.restart_kernel(function()
             Core.run_all_cells()
         end)
     end, { desc = "Restart the kernel and run every cell" })

@@ -1,6 +1,12 @@
 local M = {}
 local State = require("jovian.state")
 
+-- Get (or create) a plain scratch buffer by name. Used for the preview /
+-- pin / variables panes, which are rendered via nvim_buf_set_lines — NOT
+-- terminals. This must NOT touch State.term_chan: doing so (the previous
+-- behavior) hijacked the REPL's terminal channel so kernel output leaked
+-- into whichever pane was created last (e.g. :JovianPin). The output
+-- terminal is owned solely by ensure_output_buf below.
 function M.get_or_create_buf(name)
     local existing = vim.fn.bufnr(name)
     if existing ~= -1 and vim.api.nvim_buf_is_valid(existing) then
@@ -12,16 +18,36 @@ function M.get_or_create_buf(name)
     vim.bo[buf].buftype = "nofile"
     vim.bo[buf].modifiable = false
 
-    State.term_chan = vim.api.nvim_open_term(buf, {})
-
     return buf
+end
+
+-- The REPL output buffer is the ONE terminal buffer; it and its channel are
+-- held as a pair (State.buf.output, State.term_chan). Create/reuse the
+-- buffer and (re)open its terminal channel, returning both. Centralizing
+-- the open_term here means no other pane can clobber term_chan, and a
+-- detached channel can always be rebuilt against the right buffer.
+function M.ensure_output_buf()
+    local buf = State.buf.output
+    if not (buf and vim.api.nvim_buf_is_valid(buf)) then
+        buf = M.get_or_create_buf("JovianOutput")
+        State.buf.output = buf
+        State.term_chan = nil -- fresh buffer ⇒ needs a fresh channel
+    end
+    if not State.term_chan then
+        State.term_chan = vim.api.nvim_open_term(buf, {})
+    end
+    return State.buf.output, State.term_chan
 end
 
 function M.placeholder_buf()
     local buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[buf].modifiable = true
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "No pinned content" })
     vim.bo[buf].buftype = "nofile"
     vim.bo[buf].modifiable = false
+    -- Wipe on hide so repeated :JovianUnpin / pane closes don't pile up
+    -- throwaway scratch buffers.
+    vim.bo[buf].bufhidden = "wipe"
     return buf
 end
 

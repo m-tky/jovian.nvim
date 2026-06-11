@@ -83,13 +83,18 @@ local function wrap(line, max_w)
     if dw(line) <= max_w then
         return { line }
     end
-    local out, n = {}, vim.fn.strchars(line)
-    local pos = 0
-    while pos < n do
+    -- Split into a codepoint array ONCE. The old loop called
+    -- strcharpart(line, pos, 1) per character, and each call rescans from
+    -- the start of the string — O(n²), which froze on huge tracebacks.
+    local chars = vim.fn.split(line, "\\zs")
+    local n = #chars
+    local out = {}
+    local pos = 1 -- 1-based index into `chars`
+    while pos <= n do
         local start = pos
-        local cur_w, last_space = 0, -1
-        while pos < n do
-            local ch = vim.fn.strcharpart(line, pos, 1)
+        local cur_w, last_space = 0, nil
+        while pos <= n do
+            local ch = chars[pos]
             local cw = dw(ch)
             if cur_w + cw > max_w then
                 break
@@ -100,14 +105,15 @@ local function wrap(line, max_w)
             cur_w = cur_w + cw
             pos = pos + 1
         end
-        if pos < n and last_space > start then
-            table.insert(out, vim.fn.strcharpart(line, start, last_space - start))
+        if pos <= n and last_space and last_space > start then
+            -- Break at the last space, excluding it.
+            table.insert(out, table.concat(chars, "", start, last_space - 1))
             pos = last_space + 1
         else
             if pos == start then
                 pos = pos + 1
             end
-            table.insert(out, vim.fn.strcharpart(line, start, pos - start))
+            table.insert(out, table.concat(chars, "", start, pos - 1))
         end
     end
     return out

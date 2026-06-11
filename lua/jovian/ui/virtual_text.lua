@@ -42,9 +42,9 @@ function M.set_cell_status(bufnr, cell_id, status, msg)
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     for i, line in ipairs(lines) do
         if line:match("^# %%%%") and line:find('id="' .. cell_id .. '"', 1, true) then
-            -- BOLD SAFETY: If it's a header line AND says markdown anywhere, SKIP IT.
-
-            if line:lower():find("# %% [markdown]", 1, true) then
+            -- Never draw a run-status on a markdown header. Use the shared
+            -- detector so [md] and non-canonical headers are caught too.
+            if require("jovian.cell").is_markdown_header(line) then
                 return
             end
 
@@ -72,7 +72,11 @@ function M.set_cell_status(bufnr, cell_id, status, msg)
                 virt_text = { { "  " .. msg, hl_group } },
                 virt_text_pos = "eol",
             })
-            State.cell_status_extmarks[cell_id] = extmark_id
+            -- Store the bufnr alongside the id: two buffers can hold the same
+            -- cell_id, and clean_invalid_extmarks runs per-buffer — without
+            -- the bufnr it would check (and wrongly delete) an extmark id that
+            -- belongs to a different buffer.
+            State.cell_status_extmarks[cell_id] = { bufnr = bufnr, id = extmark_id }
             return
         end
     end
@@ -83,20 +87,24 @@ function M.clean_invalid_extmarks(bufnr)
         return
     end
 
-    -- Iterate over tracked extmarks
-    for cell_id, extmark_id in pairs(State.cell_status_extmarks) do
-        local mark = vim.api.nvim_buf_get_extmark_by_id(bufnr, State.status_ns, extmark_id, {})
-        if #mark > 0 then
-            local row = mark[1]
-            local lines = vim.api.nvim_buf_get_lines(bufnr, row, row + 1, false)
-            -- Strict check: Line must exist AND contain the correct cell_id
-            if #lines == 0 or not lines[1]:find('id="' .. cell_id .. '"', 1, true) then
-                vim.api.nvim_buf_del_extmark(bufnr, State.status_ns, extmark_id)
+    -- Iterate over tracked extmarks, but only those that belong to THIS
+    -- buffer — an entry for another buffer must not be checked (or deleted)
+    -- against bufnr's extmark namespace.
+    for cell_id, entry in pairs(State.cell_status_extmarks) do
+        if entry.bufnr == bufnr then
+            local mark = vim.api.nvim_buf_get_extmark_by_id(bufnr, State.status_ns, entry.id, {})
+            if #mark > 0 then
+                local row = mark[1]
+                local lines = vim.api.nvim_buf_get_lines(bufnr, row, row + 1, false)
+                -- Strict check: Line must exist AND contain the correct cell_id
+                if #lines == 0 or not lines[1]:find('id="' .. cell_id .. '"', 1, true) then
+                    vim.api.nvim_buf_del_extmark(bufnr, State.status_ns, entry.id)
+                    State.cell_status_extmarks[cell_id] = nil
+                end
+            else
+                -- Extmark already gone (deleted by nvim?)
                 State.cell_status_extmarks[cell_id] = nil
             end
-        else
-            -- Extmark already gone (deleted by nvim?)
-            State.cell_status_extmarks[cell_id] = nil
         end
     end
 end
@@ -115,12 +123,14 @@ function M.get_cell_status_extmark(bufnr, line)
     if not (bufnr and vim.api.nvim_buf_is_valid(bufnr)) then
         return nil
     end
-    -- Use {line, col} to ensure it's treated as a position, not an ID
+    -- Search only within line `line` (0-based row line-1). extmark ranges are
+    -- end-inclusive, so an end of { line, 0 } would also catch a mark at the
+    -- start of the NEXT line; { line - 1, -1 } keeps it to this row.
     local extmarks = vim.api.nvim_buf_get_extmarks(
         bufnr,
         State.status_ns,
         { line - 1, 0 },
-        { line, 0 },
+        { line - 1, -1 },
         { details = true }
     )
     if #extmarks > 0 then

@@ -29,6 +29,7 @@ use std::path::{Path, PathBuf};
 pub enum CellType {
     Code,
     Markdown,
+    Raw,
 }
 
 impl CellType {
@@ -36,11 +37,13 @@ impl CellType {
         match self {
             CellType::Code => "code",
             CellType::Markdown => "markdown",
+            CellType::Raw => "raw",
         }
     }
     pub fn from_str(s: &str) -> Self {
         match s {
             "markdown" | "md" => CellType::Markdown,
+            "raw" => CellType::Raw,
             _ => CellType::Code,
         }
     }
@@ -261,10 +264,32 @@ pub fn write_sidecar(source_path: &Path, store: &OutputStoreFile) -> Result<()> 
         std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
     }
     let s = serde_json::to_string_pretty(store)?;
-    let tmp = p.with_extension("json.tmp");
-    std::fs::write(&tmp, s + "\n").with_context(|| format!("write {}", tmp.display()))?;
-    std::fs::rename(&tmp, &p)
-        .with_context(|| format!("rename {} → {}", tmp.display(), p.display()))?;
+    // Unique tmp name per (process, write): a fixed `.json.tmp` is shared
+    // across processes, so two nvim instances editing the same file race on
+    // it. fsync before rename so a crash can't leave a torn/empty file
+    // visible after the rename.
+    let fname = p
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("outputs.json");
+    let tmp = p.with_file_name(format!(
+        "{fname}.{}.{}.tmp",
+        std::process::id(),
+        uuid::Uuid::new_v4().simple()
+    ));
+    {
+        use std::io::Write;
+        let mut f =
+            std::fs::File::create(&tmp).with_context(|| format!("create {}", tmp.display()))?;
+        f.write_all(s.as_bytes())
+            .and_then(|_| f.write_all(b"\n"))
+            .and_then(|_| f.sync_all())
+            .with_context(|| format!("write {}", tmp.display()))?;
+    }
+    if let Err(e) = std::fs::rename(&tmp, &p) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e).with_context(|| format!("rename {} → {}", tmp.display(), p.display()));
+    }
     Ok(())
 }
 

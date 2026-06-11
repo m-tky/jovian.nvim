@@ -23,12 +23,10 @@ M.status_ns = vim.api.nvim_create_namespace("JovianStatus")
 M.diag_ns = vim.api.nvim_create_namespace("JovianDiagnostics")
 
 -- Mappings
-M.msg_id_cell_map = {} -- { msg_id: cell_id }
 M.cell_buf_map = {} -- { cell_id: bufnr }
 M.cell_start_time = {} -- { cell_id: timestamp }
-M.cell_status_extmarks = {} -- { [cell_id] = extmark_id }
+M.cell_status_extmarks = {} -- { [cell_id] = { bufnr, id } }
 M.cell_hashes = {} -- { [cell_id] = hash_string }
-M.cell_start_line = {} -- { cell_id: line_num }
 
 M.on_ready_callbacks = {} -- List of functions to call when kernel is ready
 

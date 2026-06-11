@@ -41,17 +41,21 @@ fn search_dirs() -> Vec<PathBuf> {
             dirs.push(PathBuf::from(p).join("kernels"));
         }
     }
+    // Only the macOS Library path is genuinely home-relative. The env-prefix
+    // dirs (CONDA_PREFIX / VIRTUAL_ENV) must NOT depend on $HOME being set —
+    // CI/containers often run without it, and that's exactly where an
+    // activated venv's kernelspec needs to be discoverable.
     if let Some(home) = dirs::home_dir() {
         dirs.push(home.join("Library/Jupyter/kernels"));
-        if let Some(data) = dirs::data_dir() {
-            dirs.push(data.join("jupyter/kernels"));
-        }
-        if let Ok(prefix) = std::env::var("CONDA_PREFIX") {
-            dirs.push(PathBuf::from(&prefix).join("share/jupyter/kernels"));
-        }
-        if let Ok(prefix) = std::env::var("VIRTUAL_ENV") {
-            dirs.push(PathBuf::from(&prefix).join("share/jupyter/kernels"));
-        }
+    }
+    if let Some(data) = dirs::data_dir() {
+        dirs.push(data.join("jupyter/kernels"));
+    }
+    if let Ok(prefix) = std::env::var("CONDA_PREFIX") {
+        dirs.push(PathBuf::from(&prefix).join("share/jupyter/kernels"));
+    }
+    if let Ok(prefix) = std::env::var("VIRTUAL_ENV") {
+        dirs.push(PathBuf::from(&prefix).join("share/jupyter/kernels"));
     }
     dirs.push(PathBuf::from("/usr/share/jupyter/kernels"));
     dirs.push(PathBuf::from("/usr/local/share/jupyter/kernels"));

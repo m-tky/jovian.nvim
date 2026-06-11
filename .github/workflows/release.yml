@@ -58,10 +58,21 @@ jobs:
 
       - name: Stage asset
         shell: bash
-        run: cp "core/target/${{ matrix.target }}/release/jovian-core" "jovian-core-${{ matrix.target }}"
+        run: |
+          asset="jovian-core-${{ matrix.target }}"
+          cp "core/target/${{ matrix.target }}/release/jovian-core" "$asset"
+          # Publish a sha256 alongside the binary so install.lua can verify
+          # the download before trusting/executing it.
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$asset" > "$asset.sha256"
+          else
+            shasum -a 256 "$asset" > "$asset.sha256"
+          fi
 
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
-          files: jovian-core-${{ matrix.target }}
+          files: |
+            jovian-core-${{ matrix.target }}
+            jovian-core-${{ matrix.target }}.sha256
           fail_on_unmatched_files: true

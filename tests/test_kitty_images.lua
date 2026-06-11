@@ -27,7 +27,6 @@ require("jovian").setup({
     inline_outputs = true,
     image_rows = 6,
     image_cols = 20,
-    use_lua_native_shell = false,
 })
 
 local Kitty = require("jovian.ui.kitty")
@@ -149,16 +148,33 @@ assert_true(virt_lines ~= nil, "cell has virt_lines block")
 -- divider + 6 (reserved blank for image) + bottom = 8 minimum
 assert_true(#virt_lines >= 7, "reserved space for image during transmission")
 
--- Wait for the stubbed transmit to complete, then re-render and check we
--- now emit Kitty placeholder rows with image_id=777.
-vim.wait(200)
-CellFrame.render(buf, vim.api.nvim_get_current_win())
-marks = vim.api.nvim_buf_get_extmarks(buf, CellFrame._namespace, 0, -1, { details = true })
-for _, m in ipairs(marks) do
-    if m[4].virt_lines and m[2] == 1 then
-        virt_lines = m[4].virt_lines
+-- Wait (with a predicate, not a fixed sleep) for the stubbed transmit to
+-- complete: re-render until a placeholder row with image_id=777 appears.
+local function collect_virt_lines()
+    local ms = vim.api.nvim_buf_get_extmarks(buf, CellFrame._namespace, 0, -1, { details = true })
+    local vl
+    for _, m in ipairs(ms) do
+        if m[4].virt_lines and m[2] == 1 then
+            vl = m[4].virt_lines
+        end
     end
+    return vl
 end
+local function has_777(vl)
+    for _, row in ipairs(vl or {}) do
+        for _, chunk in ipairs(row) do
+            if chunk[2] == "JovianKittyImg_777" then
+                return true
+            end
+        end
+    end
+    return false
+end
+vim.wait(2000, function()
+    CellFrame.render(buf, vim.api.nvim_get_current_win())
+    return has_777(collect_virt_lines())
+end, 20)
+virt_lines = collect_virt_lines()
 
 local has_placeholder_hl = false
 for _, row in ipairs(virt_lines) do

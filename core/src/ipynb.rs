@@ -138,6 +138,14 @@ pub fn import_ipynb(ipynb_path: &Path) -> Result<std::path::PathBuf> {
         .ok_or_else(|| anyhow!("ipynb path has no stem"))?;
     let dir = ipynb_path.parent().unwrap_or_else(|| Path::new("."));
     let py_path = dir.join(format!("{stem}.py"));
+    // Don't silently clobber an existing .py (the user may have local edits
+    // not reflected in the notebook). The Lua side surfaces this error.
+    if py_path.exists() {
+        return Err(anyhow!(
+            "{} already exists; refusing to overwrite on import",
+            py_path.display()
+        ));
+    }
     std::fs::write(&py_path, py_source).with_context(|| format!("write {}", py_path.display()))?;
     notebook::write_sidecar(&py_path, &sidecar)?;
     Ok(py_path)
@@ -164,7 +172,9 @@ pub fn encode(py_source: &str, outputs: &OutputStoreFile) -> Result<String> {
         }
         let cell_type_str = cell.cell_type.as_str();
         let source_value = match cell.cell_type {
-            CellType::Markdown => json!(strip_markdown_prefix(&cell.source)),
+            // Markdown and raw cells both carry a `# ` prefix in the .py
+            // representation (see decode); strip it on the way back out.
+            CellType::Markdown | CellType::Raw => json!(strip_markdown_prefix(&cell.source)),
             CellType::Code => json!(cell.source),
         };
         let mut nb_cell = serde_json::Map::new();

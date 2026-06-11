@@ -298,6 +298,15 @@ impl Kernel {
     pub async fn launch_remote(host: &str, python: &str, cwd: Option<&str>) -> Result<Self> {
         use tokio::io::AsyncWriteExt;
 
+        // Reject a destination that ssh would parse as an option flag
+        // (argument injection, e.g. host = "-oProxyCommand=..."). ssh has no
+        // portable `--` end-of-options before the destination, so guard here.
+        if host.starts_with('-') {
+            return Err(anyhow!(
+                "invalid ssh host '{host}': must not start with '-'"
+            ));
+        }
+
         let key = Uuid::new_v4().to_string();
 
         // --- bootstrap: remote picks ports + writes the connection file ---
@@ -550,6 +559,11 @@ impl Kernel {
     }
 
     async fn shell_request(&self, msg_type: &'static str, content: Value) -> Result<Value> {
+        // 2s is plenty for complete/inspect against an idle kernel. A busy
+        // kernel processes shell messages in order, so the request queues
+        // behind the running cell and times out — expected, not a dead
+        // kernel, which the error wording makes explicit.
+        let timeout = Duration::from_millis(2000);
         let msg_id = Uuid::new_v4().to_string();
         let (tx, rx) = oneshot::channel();
         self.pending.insert(msg_id.clone(), tx);
@@ -564,7 +578,7 @@ impl Kernel {
             return Err(anyhow!("shell channel closed"));
         }
 
-        match tokio::time::timeout(Duration::from_millis(2000), rx).await {
+        match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(reply)) => Ok(reply),
             Ok(Err(_)) => {
                 self.pending.remove(&msg_id);
@@ -572,7 +586,10 @@ impl Kernel {
             }
             Err(_) => {
                 self.pending.remove(&msg_id);
-                Err(anyhow!("{msg_type} timed out"))
+                Err(anyhow!(
+                    "{msg_type} timed out after {}ms (kernel may be busy)",
+                    timeout.as_millis()
+                ))
             }
         }
     }
@@ -702,19 +719,40 @@ async fn connect_sockets(conn: &ConnectionInfo) -> Result<(DealerSocket, DealerS
 
     let attempts = 50;
     let delay = Duration::from_millis(100);
+    // Track per-socket success so a partial connect (e.g. shell up, iopub
+    // not yet) doesn't re-issue connect() on already-connected sockets —
+    // the pure-rust zeromq impl doesn't dedupe endpoints, so a duplicate
+    // SUB connect can double up iopub delivery (outputs shown twice).
+    let (mut ok_shell, mut ok_control, mut ok_iopub) = (false, false, false);
+    let (mut e1, mut e2, mut e3) = (None, None, None);
     for i in 0..attempts {
-        let r1 = shell.connect(&conn.endpoint(conn.shell_port)).await;
-        let r2 = control.connect(&conn.endpoint(conn.control_port)).await;
-        let r3 = iopub.connect(&conn.endpoint(conn.iopub_port)).await;
-        if r1.is_ok() && r2.is_ok() && r3.is_ok() {
+        if !ok_shell {
+            match shell.connect(&conn.endpoint(conn.shell_port)).await {
+                Ok(()) => ok_shell = true,
+                Err(e) => e1 = Some(e),
+            }
+        }
+        if !ok_control {
+            match control.connect(&conn.endpoint(conn.control_port)).await {
+                Ok(()) => ok_control = true,
+                Err(e) => e2 = Some(e),
+            }
+        }
+        if !ok_iopub {
+            match iopub.connect(&conn.endpoint(conn.iopub_port)).await {
+                Ok(()) => ok_iopub = true,
+                Err(e) => e3 = Some(e),
+            }
+        }
+        if ok_shell && ok_control && ok_iopub {
             return Ok((shell, control, iopub));
         }
         if i + 1 == attempts {
             return Err(anyhow!(
                 "could not connect kernel sockets: shell={:?} control={:?} iopub={:?}",
-                r1.err(),
-                r2.err(),
-                r3.err()
+                e1,
+                e2,
+                e3
             ));
         }
         tokio::time::sleep(delay).await;
@@ -840,6 +878,10 @@ async fn iopub_loop(mut sock: SubSocket, key: Vec<u8>, tx: mpsc::Sender<KernelEv
                 backoff_ms = (backoff_ms * 2).min(5000);
                 if backoff_ms >= 5000 {
                     tracing::error!("iopub recv keeps failing; loop exit");
+                    // The events channel won't close on its own (the shell/
+                    // control owners hold tx clones), so cells would hang in
+                    // "Running..." forever. Signal the frontend explicitly.
+                    let _ = tx.send(KernelEvent::KernelDied { exit_code: None }).await;
                     return;
                 }
             }

@@ -59,6 +59,23 @@ function M.spawn(opts)
 
     local handle, pid_or_err = uv.spawn(cmd, spawn_args, function(code, signal)
         self.running = false
+        -- Flush every in-flight request with an error so callers (and
+        -- request_sync's vim.wait) return immediately instead of blocking
+        -- until timeout when the core dies mid-request.
+        local pending = self.pending
+        self.pending = {}
+        for _, cb in pairs(pending) do
+            vim.schedule(function()
+                pcall(cb, "jovian-core exited", nil)
+            end)
+        end
+        -- Release the pipe handles — otherwise the fds leak and a later
+        -- write to the dead stdin raises.
+        for _, pipe in ipairs({ self.stdin, self.stdout, self.stderr }) do
+            if pipe and not pipe:is_closing() then
+                pcall(uv.close, pipe)
+            end
+        end
         for _, cb in ipairs(self.on_exit_cbs) do
             pcall(cb, code, signal)
         end
@@ -215,10 +232,15 @@ function Client:stop()
     if not self.running then
         return
     end
+    -- Drop running first so any in-flight :_send during the shutdown window
+    -- short-circuits instead of writing to a stdin we're about to close.
+    self.running = false
     local uv = vim.uv or vim.loop
     -- Closing stdin signals EOF to core's reader loop; it then exits cleanly.
     -- Fall back to SIGTERM if it ignores us.
-    pcall(uv.close, self.stdin)
+    if self.stdin and not self.stdin:is_closing() then
+        pcall(uv.close, self.stdin)
+    end
     local handle = self.handle
     vim.defer_fn(function()
         if handle and not handle:is_closing() then

@@ -24,36 +24,37 @@ pub fn alloc_id() -> u32 {
     NEXT_IMAGE_ID.fetch_add(1, Ordering::Relaxed)
 }
 
+#[derive(Clone)]
 pub struct KittyTty {
     inner: Arc<Mutex<KittyTtyInner>>,
 }
 
 struct KittyTtyInner {
-    path: PathBuf,
+    file: std::fs::File,
     in_tmux: bool,
 }
 
 impl KittyTty {
     pub fn open(path: Option<PathBuf>) -> Result<Self> {
         let p = path.unwrap_or_else(|| PathBuf::from("/dev/tty"));
-        OpenOptions::new()
+        // Keep the tty fd open for the lifetime of the attach instead of
+        // re-opening per chunk — a multi-MB PNG is ~hundreds of writes, and
+        // an open/write/close each time is needless syscall overhead.
+        let file = OpenOptions::new()
             .write(true)
             .open(&p)
             .with_context(|| format!("cannot open tty {}", p.display()))?;
         let in_tmux = std::env::var_os("TMUX").is_some()
             && std::env::var_os("JOVIAN_DISABLE_TMUX_PASSTHROUGH").is_none();
         Ok(Self {
-            inner: Arc::new(Mutex::new(KittyTtyInner { path: p, in_tmux })),
+            inner: Arc::new(Mutex::new(KittyTtyInner { file, in_tmux })),
         })
     }
 
     fn write(&self, bytes: &[u8]) -> Result<()> {
-        let inner = self.inner.lock();
-        let mut f = OpenOptions::new()
-            .write(true)
-            .open(&inner.path)
-            .map_err(|e| anyhow!("tty open: {e}"))?;
-        if inner.in_tmux {
+        let mut inner = self.inner.lock();
+        let in_tmux = inner.in_tmux;
+        if in_tmux {
             let mut wrapped = Vec::with_capacity(bytes.len() * 2 + 16);
             wrapped.extend_from_slice(b"\x1bPtmux;");
             for &b in bytes {
@@ -63,12 +64,17 @@ impl KittyTty {
                 }
             }
             wrapped.extend_from_slice(b"\x1b\\");
-            f.write_all(&wrapped)
+            inner
+                .file
+                .write_all(&wrapped)
                 .map_err(|e| anyhow!("tty write: {e}"))?;
         } else {
-            f.write_all(bytes).map_err(|e| anyhow!("tty write: {e}"))?;
+            inner
+                .file
+                .write_all(bytes)
+                .map_err(|e| anyhow!("tty write: {e}"))?;
         }
-        f.flush().ok();
+        inner.file.flush().ok();
         Ok(())
     }
 

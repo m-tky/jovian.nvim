@@ -6,7 +6,16 @@ function M.setup(opts)
     -- Flag for plugin/jovian.lua's auto-setup safety net: if the user
     -- called setup() themselves, the VimEnter fallback no-ops.
     vim.g.jovian_setup_done = 1
+    -- One augroup for every autocmd registered here, cleared on each
+    -- setup() so a second call (or a plugin re-source) replaces the
+    -- handlers instead of stacking a duplicate of each one.
+    local group = vim.api.nvim_create_augroup("Jovian", { clear = true })
     Config.setup(opts)
+    -- Restore the persisted active host AFTER Config.setup() rebuilt the
+    -- options table — the old module-load restore raced that and got wiped.
+    pcall(function()
+        require("jovian.hosts").restore_active()
+    end)
     require("jovian.diagnostics").setup()
     require("jovian.highlights").setup()
 
@@ -39,6 +48,7 @@ function M.setup(opts)
     M.Complete = require("jovian.complete")
 
     vim.api.nvim_create_autocmd("FileType", {
+        group = group,
         pattern = "python",
         callback = function(ev)
             M.Complete.setup_omnifunc()
@@ -57,31 +67,30 @@ function M.setup(opts)
     -- when stepping between cells. CursorMoved fires on every movement;
     -- a 150ms uv-timer debounce keeps the rate sane and check_cursor_cell
     -- itself early-returns when the cursor stays within the same cell.
-    local _cursor_timer = nil
+    -- One reusable debounce timer driven by stop()/start(). Creating a new
+    -- timer per event (and closing the previous one) raced: a scheduled
+    -- callback from a superseded timer could close the timer that replaced
+    -- it, dropping the pending refresh.
+    local _cursor_timer = (vim.uv or vim.loop).new_timer()
     vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+        group = group,
         pattern = "*",
         callback = function()
             if vim.bo.filetype ~= "python" then
                 return
             end
-            if _cursor_timer then
-                _cursor_timer:close()
-            end
-            _cursor_timer = (vim.uv or vim.loop).new_timer()
+            _cursor_timer:stop()
             _cursor_timer:start(
                 150,
                 0,
                 vim.schedule_wrap(function()
                     Session.check_cursor_cell()
-                    if _cursor_timer then
-                        pcall(_cursor_timer.close, _cursor_timer)
-                        _cursor_timer = nil
-                    end
                 end)
             )
         end,
     })
     vim.api.nvim_create_autocmd({ "BufWritePost", "VimLeavePre", "BufUnload", "BufWinEnter" }, {
+        group = group,
         pattern = "*.py",
         callback = function(ev)
             Session.clean_stale_cache(ev.buf)
@@ -92,6 +101,7 @@ function M.setup(opts)
     -- deleted, so cell ids from a previous incarnation don't linger in
     -- global maps and confuse future lookups for a recycled bufnr.
     vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
+        group = group,
         pattern = "*",
         callback = function(ev)
             local State = require("jovian.state")
@@ -119,12 +129,14 @@ function M.setup(opts)
         end,
     })
     vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+        group = group,
         pattern = "*.py",
         callback = function()
             Session.schedule_structure_check()
         end,
     })
     vim.api.nvim_create_autocmd({ "VimEnter", "VimLeavePre" }, {
+        group = group,
         pattern = "*",
         callback = function()
             -- Run for the current working directory
@@ -141,6 +153,7 @@ function M.setup(opts)
         end,
     })
     vim.api.nvim_create_autocmd("VimResized", {
+        group = group,
         pattern = "*",
         callback = function()
             require("jovian.ui").resize_windows()
@@ -192,6 +205,7 @@ function M.setup(opts)
     end
 
     vim.api.nvim_create_autocmd({ "BufWinEnter", "FileType" }, {
+        group = group,
         pattern = "*",
         callback = setup_cell_highlighting,
     })
@@ -236,6 +250,7 @@ function M.setup(opts)
         end
 
         vim.api.nvim_create_autocmd({ "BufWinEnter", "FileType", "WinEnter" }, {
+            group = group,
             pattern = "*",
             callback = function(ev)
                 if vim.bo[ev.buf].filetype == "python" then
@@ -247,6 +262,7 @@ function M.setup(opts)
         })
 
         vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+            group = group,
             pattern = "*.py",
             callback = function(ev)
                 refresh_buffer(ev.buf)
@@ -265,6 +281,7 @@ function M.setup(opts)
         -- cell-boundary crossings).
         local _md_line = {}
         vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+            group = group,
             pattern = "*.py",
             callback = function(ev)
                 local line = vim.api.nvim_win_get_cursor(0)[1]
@@ -287,6 +304,7 @@ function M.setup(opts)
         -- python window that wasn't focused (e.g. resizing the preview
         -- pane changed the source pane's width too).
         vim.api.nvim_create_autocmd({ "WinResized", "VimResized" }, {
+            group = group,
             pattern = "*",
             callback = function()
                 for _, win in ipairs(vim.api.nvim_list_wins()) do
@@ -328,6 +346,7 @@ function M.setup(opts)
         -- re-runs set_default_hl() on its next call; we just need to
         -- force a redraw so the re-resolution happens immediately.
         vim.api.nvim_create_autocmd("ColorScheme", {
+            group = group,
             pattern = "*",
             callback = function()
                 for _, buf in ipairs(vim.api.nvim_list_bufs()) do
@@ -341,6 +360,7 @@ function M.setup(opts)
     end
 
     vim.api.nvim_create_autocmd("VimLeavePre", {
+        group = group,
         pattern = "*",
         callback = function()
             pcall(function()

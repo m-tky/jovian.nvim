@@ -34,8 +34,11 @@ function M.has_ipykernel(python)
     if M._ipykernel_cache[python] ~= nil then
         return M._ipykernel_cache[python]
     end
-    local out = vim.fn.system({ python, "-c", "import ipykernel" })
-    local ok = vim.v.shell_error == 0 and not out:match("[Ee]rror")
+    -- Exit code is the authoritative signal. The old extra `out:match
+    -- "[Ee]rror"` check false-rejected a perfectly good interpreter whose
+    -- stderr happened to carry a warning containing "error"/"Error".
+    vim.fn.system({ python, "-c", "import ipykernel" })
+    local ok = vim.v.shell_error == 0
     M._ipykernel_cache[python] = ok
     return ok
 end

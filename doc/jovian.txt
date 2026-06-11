@@ -536,8 +536,8 @@ Inline images are blank or show garbage glyphs:~
 `jovian-core: not found`:~
 
   Either run `cd core && cargo build --release`, or trigger your plugin
-  manager's `build` hook (lazy.nvim runs `:JovianInstall` via
-  `lua/jovian/install.lua`).
+  manager's `build` hook (lazy.nvim runs `require("jovian.install").run`
+  from `lua/jovian/install.lua`).
 
 Outputs from an earlier session keep showing up:~
 

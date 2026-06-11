@@ -24,10 +24,18 @@ function M.complete(findstart, _)
 
     local line = vim.api.nvim_get_current_line()
     local col = vim.api.nvim_win_get_cursor(0)[2]
+    -- nvim_win_get_cursor returns a BYTE column, but Jupyter's
+    -- complete_request wants cursor_pos in code points. Convert so
+    -- completion lands at the right spot past multi-byte characters.
+    local cursor_pos = col
+    local ok, cp = pcall(vim.str_utfindex, line, col)
+    if ok then
+        cursor_pos = cp
+    end
     local result, err = client:request_sync("complete", {
         session_id = State.rust_session_id,
         code = line,
-        cursor_pos = col,
+        cursor_pos = cursor_pos,
     }, 500)
     if err or not result then
         return {}
