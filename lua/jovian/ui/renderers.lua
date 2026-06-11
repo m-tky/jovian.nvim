@@ -100,9 +100,25 @@ function M.show_variables(msg, force_float)
         end
     end
 
-    local buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_name(buf, "JovianVariables")
-    vim.bo[buf].bufhidden = "wipe"
+    -- Reuse an existing floating "JovianVariables" window+buffer if one is
+    -- already open (e.g. paging via PageUp/PageDown). Creating a second
+    -- buffer with the same name raises E95, which is what crashed the
+    -- second page turn. The `relative ~= ""` guard restricts the match to
+    -- float windows so a docked pane showing the same name isn't picked up.
+    local win, buf
+    for _, w in ipairs(vim.api.nvim_list_wins()) do
+        local b = vim.api.nvim_win_get_buf(w)
+        if vim.api.nvim_win_get_config(w).relative ~= "" and vim.api.nvim_buf_get_name(b):match("JovianVariables$") then
+            win = w
+            buf = b
+            break
+        end
+    end
+    if not buf then
+        buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_name(buf, "JovianVariables")
+        vim.bo[buf].bufhidden = "wipe"
+    end
 
     local max_name_w, max_type_w = get_var_column_widths(vars)
 
@@ -155,7 +171,12 @@ function M.show_variables(msg, force_float)
     table.insert(fmt_lines, "")
     table.insert(fmt_lines, "PageUp/Down: Prev/Next | q: Close")
 
+    vim.bo[buf].modifiable = true
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, fmt_lines)
+    vim.bo[buf].modifiable = false
+
+    -- Reused buffers carry the previous page's highlights; clear first.
+    vim.api.nvim_buf_clear_namespace(buf, -1, 0, -1)
 
     -- Highlight
     vim.api.nvim_buf_add_highlight(buf, -1, "JovianHeader", 0, 0, -1)
@@ -176,16 +197,8 @@ function M.show_variables(msg, force_float)
 
     local title = string.format("Jovian Variables [%d-%d / %d]", offset + 1, math.min(offset + limit, total), total)
 
-    -- In-place update check
-    local win
-    for _, w in ipairs(vim.api.nvim_list_wins()) do
-        local b = vim.api.nvim_win_get_buf(w)
-        if vim.api.nvim_buf_get_name(b):match("JovianVariables$") then
-            win = w
-            break
-        end
-    end
-
+    -- `win`/`buf` were resolved up front (reuse-or-create). Open a float
+    -- only when none was found; otherwise just refresh the title.
     if not win then
         local content_width = 0
         for _, line in ipairs(fmt_lines) do
@@ -200,7 +213,6 @@ function M.show_variables(msg, force_float)
         vim.wo[win].cursorline = true
         State.win.variables = win
     else
-        vim.api.nvim_win_set_buf(win, buf)
         vim.api.nvim_win_set_config(win, { title = title, title_pos = "center" })
     end
 

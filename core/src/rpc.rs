@@ -546,6 +546,13 @@ impl Server {
         kernel
             .execute_with_id_opts(code, msg_id.clone(), false, false)
             .await?;
+        // Release the kernel read lock BEFORE awaiting the reply (up to
+        // timeout_ms, default 5s). Only the send above needs the kernel;
+        // holding the read guard across the await would, under tokio's
+        // write-preferring RwLock, make a concurrent restart (write) block
+        // every subsequent read acquisition (execute/interrupt/complete),
+        // freezing the whole UI for the duration of a Vars/View probe.
+        drop(kernel_guard);
 
         let events =
             match tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), rx).await {

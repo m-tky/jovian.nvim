@@ -91,6 +91,30 @@ function M.run(plugin)
         return false
     end
 
+    -- Verify the download against the published sha256 before trusting it.
+    -- A missing checksum (e.g. a release predating this) or a mismatch
+    -- (corruption / tampering) both fall back to building from source.
+    local sum_out = vim.fn.system({ "curl", "-fsSL", "--retry", "3", "--retry-delay", "2", url .. ".sha256" })
+    local want = vim.v.shell_error == 0 and vim.trim(sum_out):match("^(%x+)") or nil
+    local got = nil
+    local f = io.open(dest, "rb")
+    if f then
+        got = vim.fn.sha256(f:read("*a"))
+        f:close()
+    end
+    if not want or not got or want:lower() ~= got:lower() then
+        os.remove(dest)
+        vim.notify(
+            ("jovian: checksum verification failed (want %s, got %s), falling back to cargo"):format(
+                tostring(want),
+                tostring(got)
+            ),
+            vim.log.levels.WARN
+        )
+        build_from_source(plugin_dir)
+        return false
+    end
+
     vim.fn.system({ "chmod", "+x", dest })
     if (vim.uv or vim.loop).os_uname().sysname == "Darwin" then
         vim.fn.system({ "xattr", "-cr", dest })
