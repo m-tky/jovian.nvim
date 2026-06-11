@@ -96,15 +96,19 @@ end
 
 -- ---------- Cell execution ----------
 
-function M.send_payload(code, cell_id, filename)
+function M.send_payload(code, cell_id, filename, bufnr)
+    -- Capture the issuing buffer up front. When the kernel is still starting
+    -- (async), the deferred re-invocation must reparse THIS buffer, not
+    -- whatever the user navigated to during the startup wait.
+    bufnr = bufnr or vim.api.nvim_get_current_buf()
     if not State.job_id then
         with_kernel(function()
-            M.send_payload(code, cell_id, filename)
+            M.send_payload(code, cell_id, filename, bufnr)
         end)
         return
     end
 
-    local current_buf = vim.api.nvim_get_current_buf()
+    local current_buf = bufnr
     State.cell_buf_map[cell_id] = current_buf
     -- hrtime() is monotonic nanoseconds since startup. Used for elapsed
     -- display in set_final; os.time() (whole seconds) was too coarse to
@@ -113,19 +117,11 @@ function M.send_payload(code, cell_id, filename)
     State.cell_hashes[cell_id] = Cell.get_cell_hash(code)
     State.running_cells[cell_id] = true
 
-    local lines = vim.api.nvim_buf_get_lines(current_buf, 0, -1, false)
-    for i, line in ipairs(lines) do
-        if line:find('id="' .. cell_id .. '"', 1, true) then
-            State.cell_start_line[cell_id] = i + 1
-            break
-        end
-    end
-
     vim.diagnostic.reset(State.diag_ns, current_buf)
     vim.api.nvim_buf_clear_namespace(current_buf, State.diag_ns, 0, -1)
     UI.set_cell_status(current_buf, cell_id, "running", Config.options.ui_symbols.running)
 
-    rust().execute(code, cell_id)
+    rust().execute(code, cell_id, current_buf)
 end
 
 function M.send_cell()
@@ -139,7 +135,7 @@ function M.send_cell()
     UI.flash_range(s, e)
     local lines = vim.api.nvim_buf_get_lines(0, s - 1, e, false)
     if #lines > 0 and lines[1]:match("^# %%%%") then
-        if lines[1]:lower():match("%[markdown%]") then
+        if Cell.is_markdown_header(lines[1]) then
             return vim.notify("Skipping markdown cell", vim.log.levels.INFO)
         end
         table.remove(lines, 1)
@@ -186,7 +182,9 @@ function M.run_line()
         return
     end
     UI.flash_range(vim.fn.line("."), vim.fn.line("."))
-    local id = "line_" .. os.time()
+    -- os.time() is whole-second; rapid run-line calls within the same second
+    -- collided and mixed their outputs. A random id keeps them distinct.
+    local id = "line_" .. Cell.generate_id()
     local fn = vim.fn.expand("%:t")
     M.send_payload(line, id, fn)
 end
@@ -220,7 +218,7 @@ function M._execute_lines(lines, filter)
             blk = {}
             current_bid = Cell.ensure_cell_id(i, line)
             current_tags = Cell.parse_header_tags(line)
-            is_code = not line:lower():find("# %% [markdown]", 1, true)
+            is_code = not Cell.is_markdown_header(line)
         elseif is_code then
             table.insert(blk, line)
         end
@@ -371,30 +369,6 @@ function M.eval_repl()
         end
         step()
     end)
-end
-
--- ---------- Error diagnostics ----------
-
-function M.show_error_diagnostics(bufnr, cell_id, error_info)
-    local start_line = State.cell_start_line[cell_id] or 1
-    local err_line = error_info.line or 1
-    local target_line = (start_line - 1) + (err_line - 1)
-    local line_count = vim.api.nvim_buf_line_count(bufnr)
-    if target_line >= line_count then
-        target_line = line_count - 1
-    end
-    if target_line < 0 then
-        target_line = 0
-    end
-    vim.diagnostic.set(State.diag_ns, bufnr, {
-        {
-            lnum = target_line,
-            col = 0,
-            message = error_info.msg,
-            severity = vim.diagnostic.severity.ERROR,
-            source = "Jovian",
-        },
-    })
 end
 
 -- ---------- Init ----------

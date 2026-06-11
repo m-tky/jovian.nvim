@@ -163,8 +163,12 @@ local function maybe_finalize_cell(cell_id)
     if not s or not s.got_reply or not s.got_idle then
         return
     end
-    set_final(cell_id, s.errored or _cell_had_error[cell_id])
+    -- Refresh BEFORE set_final: set_final clears State.cell_buf_map[cell_id],
+    -- and refresh_inline_outputs needs that mapping to find the buffer.
+    -- Doing it after would no-op, leaving a re-run that produced no output
+    -- still showing the previous run's stale output block.
     refresh_inline_outputs(cell_id)
+    set_final(cell_id, s.errored or _cell_had_error[cell_id])
     _cell_done_state[cell_id] = nil
 end
 
@@ -411,6 +415,14 @@ function M.start(on_ready)
             end)
             return
         end
+        if not result or not result.session_id then
+            vim.schedule(function()
+                State.is_starting_kernel = false
+                State.on_ready_callbacks = {}
+                vim.notify("jovian-core open: reply missing session_id", vim.log.levels.ERROR)
+            end)
+            return
+        end
         local sid = result.session_id
         local args = { session_id = sid }
         if Config.options.ssh_host and Config.options.ssh_host ~= "" then
@@ -455,15 +467,22 @@ end
 
 --- Send a cell's code to the kernel. Caller must have set up State.cell_buf_map
 --- and friends BEFORE calling — same contract as the legacy send_payload.
-function M.execute(code, cell_id)
+--- `bufnr` is the buffer that issued the run (defaults to current); passing
+--- it explicitly keeps the reparse anchored to the right file when the user
+--- navigates away during an async kernel start.
+function M.execute(code, cell_id, bufnr)
     local client = Core.client()
     if not client or not State.rust_session_id then
         vim.notify("jovian-core not started", vim.log.levels.WARN)
         return
     end
-    -- Sync the current buffer text so the Rust side has up-to-date cell models
-    -- (including any newly-inserted cells / freshly-assigned ids).
-    local text = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
+    bufnr = bufnr or 0
+    if not vim.api.nvim_buf_is_valid(bufnr) then
+        bufnr = 0
+    end
+    -- Sync the issuing buffer's text so the Rust side has up-to-date cell
+    -- models (including any newly-inserted cells / freshly-assigned ids).
+    local text = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
     client:notify("reparse", { session_id = State.rust_session_id, text = text })
     -- Pass `code` explicitly so the Rust side runs exactly what the caller
     -- intended even if the buffer doesn't carry a cell with that id
@@ -618,6 +637,9 @@ function M.show_variables(opts)
             end)
             return
         end
+        if not result then
+            return
+        end
         local errpayload = parse_marker(result.stdout, "__JOVIAN_ERR__")
         if errpayload then
             vim.schedule(function()
@@ -667,6 +689,12 @@ function M.eval(code, on_done)
         vim.schedule(function()
             if err then
                 UI.append_to_repl("[eval failed] " .. err, "ErrorMsg")
+                if on_done then
+                    on_done()
+                end
+                return
+            end
+            if not result then
                 if on_done then
                     on_done()
                 end
@@ -743,6 +771,9 @@ function M.view_dataframe(opts)
             vim.schedule(function()
                 vim.notify("jovian: dataframe fetch failed: " .. err, vim.log.levels.WARN)
             end)
+            return
+        end
+        if not result then
             return
         end
         local errpayload = parse_marker(result.stdout, "__JOVIAN_ERR__")

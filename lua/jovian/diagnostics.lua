@@ -1,6 +1,12 @@
 local M = {}
 local Config = require("jovian.config")
 
+-- Guards so repeated setup()/LspAttach don't stack wrappers. The global
+-- handlers must be wrapped once; each LSP client's handlers must be wrapped
+-- once per client (LspAttach fires per buffer×client).
+local _globals_wrapped = false
+local _wrapped_clients = {}
+
 -- Function to filter diagnostics
 local function filter_diagnostics(err, result, ctx, config, next_handler)
     if not result or not result.diagnostics then
@@ -67,6 +73,13 @@ local function filter_diagnostics(err, result, ctx, config, next_handler)
 end
 
 function M.setup()
+    -- Re-entrant setup() must not re-wrap the global handlers (each wrap
+    -- nests another filter layer).
+    if _globals_wrapped then
+        return
+    end
+    _globals_wrapped = true
+
     -- 1. Override global handler for Push Diagnostics
     local global_publish_handler = vim.lsp.handlers["textDocument/publishDiagnostics"]
     vim.lsp.handlers["textDocument/publishDiagnostics"] = function(err, result, ctx, config)
@@ -94,13 +107,20 @@ function M.setup()
         end
     end
 
-    -- 3. Override per-client handlers (if they exist)
+    -- 3. Override per-client handlers (if they exist). LspAttach fires once
+    -- per buffer×client, so guard per client id — otherwise each attached
+    -- buffer wraps the same client's handlers again, nesting N deep.
     vim.api.nvim_create_autocmd("LspAttach", {
+        group = vim.api.nvim_create_augroup("JovianDiagnostics", { clear = true }),
         callback = function(args)
             local client = vim.lsp.get_client_by_id(args.data.client_id)
             if not client then
                 return
             end
+            if _wrapped_clients[client.id] then
+                return
+            end
+            _wrapped_clients[client.id] = true
 
             -- Push
             local client_publish = client.handlers["textDocument/publishDiagnostics"]

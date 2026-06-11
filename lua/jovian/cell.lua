@@ -50,6 +50,15 @@ function M.parse_header_tags(line)
     return tags
 end
 
+-- True if a `# %%` header declares a markdown cell. Mirrors
+-- cell_frame.parse_header's [markdown]/[md] detection so send_cell and
+-- _execute_lines agree — a non-canonical markdown header must never be
+-- run as python (which produced SyntaxErrors on prose).
+function M.is_markdown_header(line)
+    local lower = line:lower()
+    return lower:find("%[markdown%]", 1, false) ~= nil or lower:find("%[md%]", 1, false) ~= nil
+end
+
 function M.fix_duplicate_ids(bufnr)
     local buf = bufnr or 0
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
@@ -83,31 +92,39 @@ function M.fix_duplicate_ids(bufnr)
     end
 end
 
+-- Cell range [s, e] (1-based, inclusive) containing line `lnum` (default:
+-- cursor line). Pure: reads buffer lines instead of moving the real cursor
+-- with vim.fn.search — the old version fired CursorMoved autocmds and threw
+-- on an out-of-range lnum. `lnum` is clamped into the buffer.
 function M.get_cell_range(lnum)
-    local original_cursor = vim.api.nvim_win_get_cursor(0)
-    if lnum then
-        vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+    lnum = lnum or vim.api.nvim_win_get_cursor(0)[1]
+    local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+    local total = #lines
+    if total == 0 then
+        return 1, 0
+    end
+    if lnum < 1 then
+        lnum = 1
+    elseif lnum > total then
+        lnum = total
     end
 
-    local total = vim.api.nvim_buf_line_count(0)
-
-    -- Find start of cell (including current line)
-    local s = vim.fn.search("^# %%", "bncW", 0)
-    if s == 0 then
-        s = 1
+    -- Start: nearest header at or above lnum (fallback to line 1).
+    local s = 1
+    for i = lnum, 1, -1 do
+        if lines[i]:match("^# %%%%") then
+            s = i
+            break
+        end
     end
 
-    -- Find end of cell (start of next cell - 1)
-    local next_s = vim.fn.search("^# %%", "nW", 0)
-    local e
-    if next_s == 0 then
-        e = total
-    else
-        e = next_s - 1
-    end
-
-    if lnum then
-        vim.api.nvim_win_set_cursor(0, original_cursor)
+    -- End: line before the next header after s (fallback to last line).
+    local e = total
+    for i = s + 1, total do
+        if lines[i]:match("^# %%%%") then
+            e = i - 1
+            break
+        end
     end
 
     return s, e
