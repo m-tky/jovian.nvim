@@ -166,56 +166,47 @@
           '';
 
           run-tests = pkgs.writeShellScriptBin "run-tests" ''
-            echo ">>> Running New Feature Integration Tests (Real Kernel)..."
-            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_features.lua
+            set -uo pipefail
 
-            echo ">>> Running Integration Tests (Real Kernel)..."
-            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/edge_cases.lua
+            # Track every test's exit code so a failure in any file (not just
+            # the last one) propagates to CI. Plain `set -e` would stop at the
+            # first failure and hide the rest; instead we run all tests and
+            # fail the script if any of them exited non-zero.
+            failed=()
+            run_test() {
+              local label="$1"; shift
+              echo ">>> $label"
+              if ! ${nvim-jovian}/bin/nvim-jovian --headless -l "$@"; then
+                echo "!!! FAILED: $label ($*)"
+                failed+=("$label")
+              fi
+            }
 
-            echo ">>> Running Command Tests (Mocked)..."
-            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_commands.lua
+            run_test "Running New Feature Integration Tests (Real Kernel)..." tests/test_features.lua
+            run_test "Running Integration Tests (Real Kernel)..." tests/edge_cases.lua
+            run_test "Running Command Tests (Mocked)..." tests/test_commands.lua
+            run_test "Running Cell Unit Tests..." tests/test_cell.lua
+            run_test "Running UI/Layout Tests..." tests/test_resize_layout.lua
+            run_test "Running Cell Frame + Markdown Styling Tests..." tests/test_cell_frame.lua
+            run_test "Running Inline Output Rendering Tests..." tests/test_inline_outputs.lua
+            run_test "Running outputs.json Resilience Tests..." tests/test_outputs_json_resilience.lua
+            run_test "Running Kitty Image Placeholder Tests..." tests/test_kitty_images.lua
+            run_test "Running Markdown Cell Image Tests..." tests/test_markdown_images.lua
+            run_test "Running Markdown Table Tests..." tests/test_markdown_table.lua
+            run_test "Running Math (LaTeX) Tests..." tests/test_math.lua
+            run_test "Running Python Resolver Tests..." tests/test_python_resolve.lua
+            run_test "Running .ipynb Import/Export + Native Open Tests..." tests/test_ipynb.lua
+            run_test "Running Rust Backend Phase 1 Smoke Test (Real Kernel)..." tests/test_rust_phase1.lua
+            run_test "Running Remote SSH Kernel Test (skipped unless JOVIAN_REMOTE_SSH_HOST set)..." tests/test_remote_ssh.lua
 
-            echo ">>> Running Cell Unit Tests..."
-            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_cell.lua
-
-            echo ">>> Running Async Flow Tests..."
-            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_async_flow.lua
-
-            echo ">>> Running UI/Layout Tests..."
-            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_resize_layout.lua
-
-            echo ">>> Running Cell Frame + Markdown Styling Tests..."
-            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_cell_frame.lua
-
-            echo ">>> Running Inline Output Rendering Tests..."
-            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_inline_outputs.lua
-
-            echo ">>> Running outputs.json Resilience Tests..."
-            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_outputs_json_resilience.lua
-
-            echo ">>> Running Kitty Image Placeholder Tests..."
-            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_kitty_images.lua
-
-            echo ">>> Running Markdown Cell Image Tests..."
-            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_markdown_images.lua
-
-            echo ">>> Running Markdown Table Tests..."
-            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_markdown_table.lua
-
-            echo ">>> Running Math (LaTeX) Tests..."
-            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_math.lua
-
-            echo ">>> Running Python Resolver Tests..."
-            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_python_resolve.lua
-
-            echo ">>> Running .ipynb Import/Export + Native Open Tests..."
-            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_ipynb.lua
-
-            echo ">>> Running Rust Backend Phase 1 Smoke Test (Real Kernel)..."
-            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_rust_phase1.lua
-
-            echo ">>> Running Remote SSH Kernel Test (skipped unless JOVIAN_REMOTE_SSH_HOST set)..."
-            ${nvim-jovian}/bin/nvim-jovian --headless -l tests/test_remote_ssh.lua
+            if [ ''${#failed[@]} -ne 0 ]; then
+              echo ""
+              echo ">>> ''${#failed[@]} test file(s) FAILED:"
+              for f in "''${failed[@]}"; do echo "    - $f"; done
+              exit 1
+            fi
+            echo ""
+            echo ">>> All test files passed."
           '';
         in
         {
