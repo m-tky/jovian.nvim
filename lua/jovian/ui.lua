@@ -40,25 +40,31 @@ M.append_to_repl = Shared.append_to_repl
 M.append_stream_text = Shared.append_stream_text
 
 function M.clear_repl()
-    if State.buf.output and vim.api.nvim_buf_is_valid(State.buf.output) then
-        local old_buf = State.buf.output
-
-        -- Create new buffer first
-        local new_buf = Windows.get_or_create_buf("JovianConsole")
-        State.buf.output = new_buf
-
-        -- If window is open, switch to new buffer immediately
-        if State.win.output and vim.api.nvim_win_is_valid(State.win.output) then
-            vim.api.nvim_win_set_buf(State.win.output, new_buf)
-            Windows.apply_window_options(State.win.output, { wrap = true })
-        end
-
-        -- Now safe to delete old buffer
-        vim.api.nvim_buf_delete(old_buf, { force = true })
-        -- State.term_chan is updated by get_or_create_buf
-
-        M.append_to_repl("[Jovian Console Cleared]", "Special")
+    if not (State.buf.output and vim.api.nvim_buf_is_valid(State.buf.output)) then
+        return
     end
+    local old_buf = State.buf.output
+
+    -- Drop the old pair and free the "JovianOutput" name BEFORE rebuilding:
+    -- otherwise ensure_output_buf → get_or_create_buf("JovianOutput") would
+    -- find this very buffer by name, hand it back, and we'd then force-delete
+    -- the buffer the window is showing (the old clear_repl bug, where the
+    -- second invocation deleted the live console).
+    State.buf.output = nil
+    State.term_chan = nil
+    pcall(vim.api.nvim_buf_set_name, old_buf, "")
+
+    local new_buf = Windows.ensure_output_buf()
+    if State.win.output and vim.api.nvim_win_is_valid(State.win.output) then
+        vim.api.nvim_win_set_buf(State.win.output, new_buf)
+        Windows.apply_window_options(State.win.output, { wrap = true })
+    end
+
+    if vim.api.nvim_buf_is_valid(old_buf) then
+        vim.api.nvim_buf_delete(old_buf, { force = true })
+    end
+
+    M.append_to_repl("[Jovian Console Cleared]", "Special")
 end
 
 return M

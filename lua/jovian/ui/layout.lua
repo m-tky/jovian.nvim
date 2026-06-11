@@ -75,10 +75,11 @@ local Elements = {
     },
     output = {
         open = function()
-            if not State.buf.output or not vim.api.nvim_buf_is_valid(State.buf.output) then
-                State.buf.output = Windows.get_or_create_buf("JovianOutput")
-            end
-            return State.buf.output
+            -- ensure_output_buf creates the buffer AND opens its terminal
+            -- channel as a pair, so the shown window is a live terminal
+            -- (get_or_create_buf alone no longer opens a term).
+            local buf = Windows.ensure_output_buf()
+            return buf
         end,
         setup = function(win)
             Windows.apply_window_options(win, { wrap = true })

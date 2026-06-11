@@ -29,11 +29,12 @@ local function ensure_output_term()
     if Config.options.output_window == "off" then
         return false
     end
-    if State.term_chan and State.buf.output and vim.api.nvim_buf_is_valid(State.buf.output) then
-        return true
-    end
-    State.buf.output = require("jovian.ui.windows").get_or_create_buf("JovianOutput")
-    return State.term_chan ~= nil
+    -- ensure_output_buf owns the buffer↔chan pair: it (re)creates the
+    -- output buffer and (re)opens its terminal channel as needed, so a
+    -- stale/detached chan or a buffer left without a channel is repaired
+    -- here rather than silently dropping output.
+    local _, chan = require("jovian.ui.windows").ensure_output_buf()
+    return chan ~= nil
 end
 M.ensure_output_term = ensure_output_term
 
