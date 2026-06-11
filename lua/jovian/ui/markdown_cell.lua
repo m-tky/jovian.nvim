@@ -404,7 +404,18 @@ local function resolve_image_path(buf, target)
     return nil
 end
 
+-- path -> { mtime, b64 }. The image re-renders on every CursorMoved-driven
+-- markdown refresh; without this each one re-read and re-base64'd the file.
+local _file_b64_cache = {}
+
 local function file_to_b64(path)
+    local uv = vim.uv or vim.loop
+    local stat = uv and uv.fs_stat(path)
+    local mtime = stat and stat.mtime and stat.mtime.sec or nil
+    local cached = _file_b64_cache[path]
+    if cached and cached.mtime == mtime then
+        return cached.b64
+    end
     local f = io.open(path, "rb")
     if not f then
         return nil
@@ -414,7 +425,9 @@ local function file_to_b64(path)
     if not data or data == "" or not (vim.base64 and vim.base64.encode) then
         return nil
     end
-    return vim.base64.encode(data)
+    local b64 = vim.base64.encode(data)
+    _file_b64_cache[path] = { mtime = mtime, b64 = b64 }
+    return b64
 end
 
 -- Whole-line conceal (conceal_lines, Neovim 0.11+) removes a line entirely.

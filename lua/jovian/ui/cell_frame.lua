@@ -253,10 +253,46 @@ end
 -- screen may temporarily show the cursor-cell's color until the user moves
 -- into them; that's the unavoidable trade-off, but the cell being edited
 -- always reads correctly.
+-- Original wrap-related window options, captured the first time we touch a
+-- window, so M.remove_wrap_chrome can restore them when cell_frame is turned
+-- off (otherwise the `│ ` showbreak / NonText color lingered forever).
+local _saved_wrap = {}
+
+local function save_wrap_chrome(winid)
+    if _saved_wrap[winid] ~= nil then
+        return
+    end
+    local function get(opt)
+        local ok, v = pcall(vim.api.nvim_get_option_value, opt, { win = winid })
+        return ok and v or nil
+    end
+    _saved_wrap[winid] = {
+        showbreak = get("showbreak"),
+        breakindent = get("breakindent"),
+        breakindentopt = get("breakindentopt"),
+        winhighlight = get("winhighlight"),
+    }
+end
+
+function M.remove_wrap_chrome(winid)
+    local saved = _saved_wrap[winid]
+    if not saved or not (winid and vim.api.nvim_win_is_valid(winid)) then
+        _saved_wrap[winid] = nil
+        return
+    end
+    for opt, val in pairs(saved) do
+        if val ~= nil then
+            pcall(vim.api.nvim_set_option_value, opt, val, { win = winid })
+        end
+    end
+    _saved_wrap[winid] = nil
+end
+
 local function apply_wrap_chrome(winid, bufnr)
     if not winid or not vim.api.nvim_win_is_valid(winid) then
         return
     end
+    save_wrap_chrome(winid)
     pcall(vim.api.nvim_set_option_value, "showbreak", "│ ", { win = winid })
     pcall(vim.api.nvim_set_option_value, "breakindent", true, { win = winid })
     -- Preserve any sibling settings the user may have (e.g. `min:20`); only
@@ -429,6 +465,12 @@ function M.clear(bufnr)
     bufnr = bufnr or vim.api.nvim_get_current_buf()
     if vim.api.nvim_buf_is_valid(bufnr) then
         vim.api.nvim_buf_clear_namespace(bufnr, NS, 0, -1)
+        -- Restore the wrap chrome (showbreak / NonText color / breakindent)
+        -- for every window showing this buffer — otherwise toggling the frame
+        -- off leaves the `│ ` wrap bar and the user's original settings lost.
+        for _, winid in ipairs(vim.fn.win_findbuf(bufnr)) do
+            M.remove_wrap_chrome(winid)
+        end
     end
 end
 

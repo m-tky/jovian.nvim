@@ -203,30 +203,82 @@ function M.to_unicode(latex)
 end
 
 local _cache = {}
+local _cache_count = 0
+local _pending = {} -- latex -> true while an async conversion is in flight
+local CACHE_MAX = 512
 
---- Convert a formula, using an external `math.converter` (render-markdown's
---- `utftex` / `latex2text`) when configured & available, else the built-in.
-function M.convert(latex)
-    if _cache[latex] then
-        return _cache[latex]
+local function cache_put(latex, result)
+    if _cache[latex] == nil then
+        if _cache_count >= CACHE_MAX then
+            -- Simple flush when full so the cache can't grow without bound.
+            _cache = {}
+            _cache_count = 0
+        end
+        _cache_count = _cache_count + 1
     end
-    local result
-    local cfg = (Config.options.math or {}).converter
-    if cfg then
-        local cmds = type(cfg) == "table" and cfg or { cfg }
-        for _, cmd in ipairs(cmds) do
-            if vim.fn.executable(cmd) == 1 then
-                local out = vim.fn.system({ cmd }, latex)
-                if vim.v.shell_error == 0 and out and vim.trim(out) ~= "" then
-                    result = vim.trim(out)
-                    break
-                end
-            end
+    _cache[latex] = result
+end
+
+-- Kick off the external converter asynchronously. The result lands in the
+-- cache and triggers a markdown re-render so the refined glyphs replace the
+-- built-in ones — without blocking the draw path on a synchronous system().
+local function refine_async(latex, cmds)
+    if _pending[latex] then
+        return
+    end
+    local cmd
+    for _, c in ipairs(cmds) do
+        if vim.fn.executable(c) == 1 then
+            cmd = c
+            break
         end
     end
-    result = result or M.to_unicode(latex)
-    _cache[latex] = result
-    return result
+    if not cmd or not vim.system then
+        return
+    end
+    _pending[latex] = true
+    vim.system({ cmd }, { stdin = latex, text = true }, function(res)
+        _pending[latex] = nil
+        if res.code ~= 0 or not res.stdout or vim.trim(res.stdout) == "" then
+            return
+        end
+        local refined = vim.trim(res.stdout)
+        vim.schedule(function()
+            cache_put(latex, refined)
+            -- Re-render visible python buffers so the refined math shows.
+            local ok, MC = pcall(require, "jovian.ui.markdown_cell")
+            if ok then
+                for _, win in ipairs(vim.api.nvim_list_wins()) do
+                    local b = vim.api.nvim_win_get_buf(win)
+                    if vim.bo[b].filetype == "python" then
+                        pcall(MC.schedule, b)
+                    end
+                end
+            end
+        end)
+    end)
+end
+
+--- Convert a formula. Returns immediately with the built-in conversion; when
+--- an external `math.converter` (render-markdown's `utftex` / `latex2text`)
+--- is configured, that runs asynchronously and replaces the result on the
+--- next render. Never blocks the draw path.
+function M.convert(latex)
+    local cached = _cache[latex]
+    if cached then
+        return cached
+    end
+    local builtin = M.to_unicode(latex)
+    local cfg = (Config.options.math or {}).converter
+    if not cfg then
+        cache_put(latex, builtin)
+        return builtin
+    end
+    -- External converter configured: refine in the background, render the
+    -- built-in now. Don't cache the built-in permanently so the async result
+    -- can take over.
+    refine_async(latex, type(cfg) == "table" and cfg or { cfg })
+    return builtin
 end
 
 return M
