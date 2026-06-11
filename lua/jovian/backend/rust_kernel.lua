@@ -1,5 +1,6 @@
--- Phase 1 wrapper: route kernel lifecycle and cell execution through the
--- jovian-core Rust backend. Active only when config.use_rust_core == true.
+-- Route kernel lifecycle and cell execution through the jovian-core Rust
+-- backend. This is the only backend since Phase 5 (the dual-path
+-- use_rust_core / use_lua_native_shell config was removed).
 --
 -- What this path handles end-to-end:
 --   - kernel spawn / shutdown / interrupt / restart

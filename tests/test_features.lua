@@ -32,6 +32,19 @@ local function run_tests()
         return false
     end
 
+    -- nvim_win_get_config().title is a string in some environments and a
+    -- list of {text, hl} chunks in others. Normalize to a plain string so the
+    -- two title checks below agree on the shape.
+    local function win_title_string(config)
+        local t = config and config.title
+        if type(t) == "string" then
+            return t
+        elseif type(t) == "table" and t[1] then
+            return t[1][1] or ""
+        end
+        return ""
+    end
+
     local ready = false
     table.insert(state.on_ready_callbacks, function()
         ready = true
@@ -66,8 +79,7 @@ local function run_tests()
             for _, win in ipairs(vim.api.nvim_list_wins()) do
                 if vim.api.nvim_win_get_buf(win) == df_buf then
                     local config = vim.api.nvim_win_get_config(win)
-                    -- config.title is a table in Neovim 0.9+
-                    if config.title and config.title[1] and config.title[1][1]:find("df [1-50 / 200]", 1, true) then
+                    if win_title_string(config):find("df [1-50 / 200]", 1, true) then
                         df_win = win
                         return true
                     end
@@ -90,14 +102,7 @@ local function run_tests()
 
     local paging_ok = vim.wait(5000, function()
         local config = vim.api.nvim_win_get_config(df_win)
-        -- In headless mode/some environments, config.title might be a string or a table of chunks
-        local title_str = ""
-        if type(config.title) == "string" then
-            title_str = config.title
-        elseif type(config.title) == "table" and config.title[1] then
-            title_str = config.title[1][1]
-        end
-        return title_str:find("df [51-100 / 200]", 1, true)
+        return win_title_string(config):find("df [51-100 / 200]", 1, true)
     end)
 
     if paging_ok then

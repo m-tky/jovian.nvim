@@ -36,10 +36,9 @@ local function detect_tag(plugin_dir)
     if vim.v.shell_error == 0 then
         return vim.trim(out)
     end
-    out = vim.fn.system({ "git", "-C", plugin_dir, "describe", "--tags", "--abbrev=0" })
-    if vim.v.shell_error == 0 then
-        return vim.trim(out)
-    end
+    -- No `--abbrev=0` fallback: it returned the nearest OLDER tag, so the
+    -- prebuilt binary's wire protocol could mismatch this checkout's Lua.
+    -- When HEAD isn't exactly on a tag, return nil and build from source.
     return nil
 end
 
@@ -74,19 +73,25 @@ function M.run(plugin)
     local dest = dest_dir .. "/jovian-core"
 
     vim.notify(("jovian: downloading prebuilt %s..."):format(tag), vim.log.levels.INFO)
-    local out = vim.fn.system({
-        "curl",
-        "-fsSL",
-        "--retry",
-        "3",
-        "--retry-delay",
-        "2",
-        "-o",
-        dest,
-        url,
-    })
-    if vim.v.shell_error ~= 0 then
-        vim.notify(("jovian: download failed (%s), falling back to cargo"):format(out), vim.log.levels.WARN)
+    local curl = { "curl", "-fsSL", "--retry", "3", "--retry-delay", "2", "-o", dest, url }
+    local failed, detail
+    if vim.system then
+        -- curl writes its error to stderr; vim.fn.system only returns stdout
+        -- (usually empty on failure), so the old warning was blank. Capture
+        -- stderr via vim.system.
+        local res = vim.system(curl, { text = true }):wait()
+        failed = res.code ~= 0
+        detail = (res.stderr ~= "" and res.stderr) or res.stdout or ("exit " .. tostring(res.code))
+    else
+        local out = vim.fn.system(curl)
+        failed = vim.v.shell_error ~= 0
+        detail = out
+    end
+    if failed then
+        vim.notify(
+            ("jovian: download failed (%s), falling back to cargo"):format(vim.trim(detail or "")),
+            vim.log.levels.WARN
+        )
         build_from_source(plugin_dir)
         return false
     end

@@ -28,7 +28,6 @@ end
 require("jovian").setup({
     cell_frame = true,
     inline_outputs = true,
-    use_lua_native_shell = false,
 })
 
 local CellFrame = require("jovian.ui.cell_frame")

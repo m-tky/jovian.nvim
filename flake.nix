@@ -24,7 +24,9 @@
         # files don't trigger spurious rebuilds.
         jovian-core = final.rustPlatform.buildRustPackage {
           pname = "jovian-core";
-          version = "0.10.0";
+          # Single source of truth: read the version from Cargo.toml so the
+          # two can't drift (they did once).
+          version = (builtins.fromTOML (builtins.readFile ./core/Cargo.toml)).package.version;
           # Only the core/ subtree is needed for the Rust build; using a
           # narrower src avoids invalidating the cargoSetupHook every time an
           # unrelated lua/ or test file changes.
@@ -173,10 +175,17 @@
             # first failure and hide the rest; instead we run all tests and
             # fail the script if any of them exited non-zero.
             failed=()
+            skipped=()
             run_test() {
               local label="$1"; shift
               echo ">>> $label"
-              if ! ${nvim-jovian}/bin/nvim-jovian --headless -l "$@"; then
+              ${nvim-jovian}/bin/nvim-jovian --headless -l "$@"
+              local rc=$?
+              if [ $rc -eq 2 ]; then
+                # Exit code 2 = the test skipped (missing optional dependency).
+                echo "~~~ SKIPPED: $label"
+                skipped+=("$label")
+              elif [ $rc -ne 0 ]; then
                 echo "!!! FAILED: $label ($*)"
                 failed+=("$label")
               fi
@@ -199,6 +208,11 @@
             run_test "Running Rust Backend Phase 1 Smoke Test (Real Kernel)..." tests/test_rust_phase1.lua
             run_test "Running Remote SSH Kernel Test (skipped unless JOVIAN_REMOTE_SSH_HOST set)..." tests/test_remote_ssh.lua
 
+            if [ ''${#skipped[@]} -ne 0 ]; then
+              echo ""
+              echo ">>> ''${#skipped[@]} test file(s) SKIPPED (missing optional deps):"
+              for s in "''${skipped[@]}"; do echo "    ~ $s"; done
+            fi
             if [ ''${#failed[@]} -ne 0 ]; then
               echo ""
               echo ">>> ''${#failed[@]} test file(s) FAILED:"

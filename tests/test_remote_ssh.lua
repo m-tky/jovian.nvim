@@ -35,8 +35,10 @@
 
 local HOST = os.getenv("JOVIAN_REMOTE_SSH_HOST")
 if not HOST or HOST == "" then
+    -- Exit code 2 = SKIP so run-tests reports it rather than counting a
+    -- silent pass (see test_rust_phase1.lua).
     print("SKIP: JOVIAN_REMOTE_SSH_HOST not set")
-    os.exit(0)
+    os.exit(2)
 end
 local REMOTE_PYTHON = os.getenv("JOVIAN_REMOTE_PYTHON")
 if not REMOTE_PYTHON or REMOTE_PYTHON == "" then

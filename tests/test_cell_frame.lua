@@ -33,7 +33,6 @@ end
 require("jovian").setup({
     cell_frame = true,
     markdown_cell_style = true,
-    use_lua_native_shell = false,
 })
 
 local CellFrame = require("jovian.ui.cell_frame")

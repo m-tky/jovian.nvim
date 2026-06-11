@@ -28,8 +28,10 @@ end
 
 local PYTHON = resolve_python()
 if not PYTHON then
+    -- Exit code 2 = SKIP (distinct from 0=pass / 1=fail) so run-tests can
+    -- report it instead of a missing dependency masquerading as a pass.
     print("SKIP: no python with ipykernel found")
-    os.exit(0)
+    os.exit(2)
 end
 print("using python:", PYTHON)
 
@@ -47,9 +49,7 @@ vim.api.nvim_buf_set_lines(0, 0, -1, false, {
 vim.cmd("write")
 
 require("jovian").setup({
-    use_rust_core = true,
     python_interpreter = PYTHON,
-    use_lua_native_shell = false,
 })
 
 local State = require("jovian.state")
