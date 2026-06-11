@@ -102,44 +102,15 @@ function M.check_structure_change()
     local current_cell_line = nil
     local current_cell_lines = {}
 
-    for i, line in ipairs(lines) do
-        local id = line:match('id="([%w%-_]+)"')
-        if id then
-            -- Process previous cell
-            if current_cell_id and #current_cell_lines > 0 then
-                local code = table.concat(current_cell_lines, "\n")
-                local current_hash = Cell.get_cell_hash(code)
-                local stored_hash = State.cell_hashes[current_cell_id]
-
-                if stored_hash and stored_hash ~= current_hash then
-                    local mark = UI.get_cell_status_extmark(bufnr, current_cell_line)
-                    if mark and (mark.status == "done" or mark.status == "error") then
-                        UI.set_cell_status(bufnr, current_cell_id, "stale", "? Stale")
-                    end
-                elseif stored_hash and stored_hash == current_hash then
-                    local mark = UI.get_cell_status_extmark(bufnr, current_cell_line)
-                    if mark and mark.status == "stale" then
-                        UI.set_cell_status(bufnr, current_cell_id, "done", Config.options.ui_symbols.done)
-                    end
-                end
-            end
-
-            current_cell_id = id
-            current_cell_line = i -- Record the line number of the header
-            current_cell_lines = {}
-        elseif current_cell_id then
-            if not line:match("^# %%%%") then
-                table.insert(current_cell_lines, line)
-            end
+    -- Finalize the cell currently being accumulated: compare its hash to the
+    -- stored one and flip done/error↔stale accordingly. Factored out so the
+    -- last cell uses the exact same logic as the rest (no duplicated block).
+    local function flush()
+        if not (current_cell_id and #current_cell_lines > 0) then
+            return
         end
-    end
-
-    -- Process last cell
-    if current_cell_id and #current_cell_lines > 0 then
-        local code = table.concat(current_cell_lines, "\n")
-        local current_hash = Cell.get_cell_hash(code)
+        local current_hash = Cell.get_cell_hash(table.concat(current_cell_lines, "\n"))
         local stored_hash = State.cell_hashes[current_cell_id]
-
         if stored_hash and stored_hash ~= current_hash then
             local mark = UI.get_cell_status_extmark(bufnr, current_cell_line)
             if mark and (mark.status == "done" or mark.status == "error") then
@@ -152,25 +123,31 @@ function M.check_structure_change()
             end
         end
     end
+
+    for i, line in ipairs(lines) do
+        if line:match("^# %%%%") then
+            -- ANY cell header is a boundary. Flush the previous cell first,
+            -- then start a new one. An id-less header yields current_cell_id =
+            -- nil, so its body stays untracked instead of leaking into the
+            -- previous cell's hash and falsely marking it Stale.
+            flush()
+            current_cell_id = line:match('id="([%w%-_]+)"')
+            current_cell_line = i
+            current_cell_lines = {}
+        elseif current_cell_id then
+            table.insert(current_cell_lines, line)
+        end
+    end
+    flush()
 end
 
-local structure_timer = nil
+-- One reusable debounce timer driven by stop()/start(); creating and closing
+-- a new timer per event raced (a superseded timer's scheduled callback could
+-- close the timer that replaced it).
+local structure_timer = uv.new_timer()
 function M.schedule_structure_check()
-    if structure_timer then
-        structure_timer:close()
-    end
-    structure_timer = uv.new_timer()
-    structure_timer:start(
-        200,
-        0,
-        vim.schedule_wrap(function()
-            M.check_structure_change()
-            if structure_timer then
-                structure_timer:close()
-                structure_timer = nil
-            end
-        end)
-    )
+    structure_timer:stop()
+    structure_timer:start(200, 0, vim.schedule_wrap(M.check_structure_change))
 end
 
 -- Preview-on-cursor: render the cell under the cursor into the preview

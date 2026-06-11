@@ -26,6 +26,22 @@ function M.parse(filepath)
                 else
                     current_host = nil
                 end
+            elseif key == "include" then
+                -- Checked BEFORE `current_host` so an Include that appears
+                -- after a Host block is still followed (the old ordering let
+                -- the active-host branch swallow it, making Include dead).
+                local pattern = parts[2]
+                if pattern then
+                    if pattern:sub(1, 1) ~= "/" then
+                        pattern = vim.fn.expand("~/.ssh/") .. pattern
+                    end
+                    local files = vim.fn.glob(pattern, false, true)
+                    for _, f in ipairs(files) do
+                        for _, sh in ipairs(M.parse(f)) do
+                            table.insert(hosts, sh)
+                        end
+                    end
+                end
             elseif current_host then
                 if key == "hostname" then
                     current_host.hostname = parts[2]
@@ -37,19 +53,6 @@ function M.parse(filepath)
                     current_host.identity_file = parts[2]
                 elseif key == "proxyjump" then
                     current_host.proxy_jump = parts[2]
-                end
-            elseif key == "include" then
-                -- Handle Include (recursive)
-                local pattern = parts[2]
-                if pattern:sub(1, 1) ~= "/" then
-                    pattern = vim.fn.expand("~/.ssh/") .. pattern
-                end
-                local files = vim.fn.glob(pattern, false, true)
-                for _, f in ipairs(files) do
-                    local sub_hosts = M.parse(f)
-                    for _, sh in ipairs(sub_hosts) do
-                        table.insert(hosts, sh)
-                    end
                 end
             end
         end
@@ -76,8 +79,9 @@ function M.get_tailscale_hosts()
 
     local hosts = {}
     for _, peer in pairs(decoded.Peer) do
-        -- Only show online Linux nodes (common for Jupyter)
-        if peer.Online and peer.OS == "linux" then
+        -- Only show online Linux nodes (common for Jupyter). DNSName can be
+        -- absent for some peers, so guard before gsub.
+        if peer.Online and peer.OS == "linux" and peer.DNSName then
             local name = peer.DNSName:gsub("%.$", "") -- Remove trailing dot
             table.insert(hosts, {
                 name = name,

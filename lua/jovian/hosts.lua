@@ -20,7 +20,17 @@ function M.load_hosts()
     else
         local content = table.concat(vim.fn.readfile(M.hosts_file), "\n")
         local ok, decoded = pcall(vim.json.decode, content)
-        data = ok and decoded or { configs = {}, current = "local_default" }
+        data = (ok and type(decoded) == "table") and decoded or {}
+    end
+
+    -- Normalize the shape: a hosts.json missing `configs` (hand-edited or
+    -- from an older version) would otherwise nil-index below and take down
+    -- every host command.
+    if type(data.configs) ~= "table" then
+        data.configs = {}
+    end
+    if not data.current then
+        data.current = "local_default"
     end
 
     -- Ensure local_default exists and is synced with configured python
@@ -97,6 +107,31 @@ function M.use_host(name)
     local State = require("jovian.state")
     if State.job_id then
         Core.restart_kernel()
+    end
+end
+
+-- Apply the persisted "current" host to Config.options at startup. Same
+-- option mapping as use_host, but without saving / notifying / restarting —
+-- meant to be called from setup() AFTER Config.setup() has rebuilt the
+-- options table, so the restored values aren't immediately clobbered.
+function M.restore_active()
+    local ok, data = pcall(M.load_hosts)
+    if not ok or not data.current then
+        return
+    end
+    local config = data.configs[data.current]
+    if not config then
+        return
+    end
+    if config.type == "ssh" then
+        Config.options.ssh_host = config.host
+        Config.options.ssh_python = config.python
+        Config.options.remote_cwd = config.remote_cwd or "."
+        Config.options.python_interpreter = config.python
+    else
+        Config.options.ssh_host = nil
+        Config.options.ssh_python = nil
+        Config.options.python_interpreter = config.python
     end
 end
 

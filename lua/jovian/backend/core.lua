@@ -62,10 +62,16 @@ function M.ensure(opts)
 
     local env = nil
     if opts and opts.log_level then
-        env = { "JOVIAN_LOG=" .. opts.log_level }
+        -- Copy the inherited environment first, then append JOVIAN_LOG so our
+        -- value wins. (Listing it first let an inherited JOVIAN_LOG override
+        -- it via last-key-wins.)
+        env = {}
         for k, v in pairs(vim.fn.environ()) do
-            table.insert(env, k .. "=" .. v)
+            if k ~= "JOVIAN_LOG" then
+                table.insert(env, k .. "=" .. v)
+            end
         end
+        table.insert(env, "JOVIAN_LOG=" .. opts.log_level)
     end
 
     _client = RPC.spawn({ cmd = bin, env = env })

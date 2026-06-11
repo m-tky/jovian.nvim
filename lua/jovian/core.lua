@@ -12,8 +12,8 @@ local Cell = require("jovian.cell")
 
 -- Host management — discovers/persists SSH host config. When a host is
 -- active, rust_kernel.start passes it to jovian-core, which owns the SSH
--- tunnel + remote kernel launch directly (no Lua-side tunneling).
-local Hosts = require("jovian.hosts")
+-- tunnel + remote kernel launch directly (no Lua-side tunneling). Restored
+-- into Config.options from init.setup() via Hosts.restore_active().
 
 local RustKernel = nil
 local function rust()
@@ -73,10 +73,15 @@ function M.stop_kernel()
     rust().stop()
 end
 
-function M.restart_kernel()
+function M.restart_kernel(on_ready)
+    -- Bound directly to :JovianRestart, which would pass the command-opts
+    -- table as the first arg — only forward an actual callback.
+    if type(on_ready) ~= "function" then
+        on_ready = nil
+    end
     UI.append_to_repl("[Kernel Restarting...]", "WarningMsg")
     UI.clear_status_extmarks(0)
-    rust().restart()
+    rust().restart(on_ready)
 end
 
 function M.interrupt_kernel()
@@ -371,25 +376,9 @@ function M.eval_repl()
     end)
 end
 
--- ---------- Init ----------
-
--- Load any stored host config on startup. When an SSH host is the active
--- config, these Config.options fields are what rust_kernel.start forwards to
--- jovian-core's remote launch.
-vim.schedule(function()
-    local ok, data = pcall(Hosts.load_hosts)
-    if ok and data.current and data.configs[data.current] then
-        local cfg = data.configs[data.current]
-        if cfg.type == "ssh" then
-            Config.options.ssh_host = cfg.host
-            Config.options.ssh_python = cfg.python
-            Config.options.python_interpreter = cfg.python
-        else
-            Config.options.ssh_host = nil
-            Config.options.ssh_python = nil
-            Config.options.python_interpreter = cfg.python
-        end
-    end
-end)
+-- NOTE: persisted host config is restored from init.setup() via
+-- Hosts.restore_active(), AFTER Config.setup() rebuilds the options table.
+-- A previous module-load-time vim.schedule restore raced that rebuild and
+-- got clobbered (and never restored remote_cwd).
 
 return M

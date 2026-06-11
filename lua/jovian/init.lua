@@ -11,6 +11,11 @@ function M.setup(opts)
     -- handlers instead of stacking a duplicate of each one.
     local group = vim.api.nvim_create_augroup("Jovian", { clear = true })
     Config.setup(opts)
+    -- Restore the persisted active host AFTER Config.setup() rebuilt the
+    -- options table — the old module-load restore raced that and got wiped.
+    pcall(function()
+        require("jovian.hosts").restore_active()
+    end)
     require("jovian.diagnostics").setup()
     require("jovian.highlights").setup()
 
