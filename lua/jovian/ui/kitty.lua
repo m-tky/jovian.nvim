@@ -372,6 +372,12 @@ end
 --- at render time.
 function M.build_virt_lines(image_id, rows, cols)
     local hl = ensure_image_hl(image_id)
+    -- Clamp to the diacritic table size: beyond it, row_chunk falls back to
+    -- DIACRITICS[1], which re-encodes row/col 0 and duplicates the image's
+    -- top/left edge (visible on full-width previews in very wide terminals).
+    local maxd = #DIACRITICS
+    rows = math.min(rows, maxd)
+    cols = math.min(cols, maxd)
     local out = {}
     for r = 0, rows - 1 do
         table.insert(out, row_chunk(r, cols, hl))
@@ -387,15 +393,12 @@ end
 
 local function quick_hash(s)
     if not s or s == "" then
-        return "0:0"
+        return "0"
     end
-    local n = #s
-    local h = 5381
-    local step = math.max(1, math.floor(n / 64))
-    for i = 1, n, step do
-        h = (h * 33 + s:byte(i)) % 0x7FFFFFFF
-    end
-    return h .. ":" .. n
+    -- Full content hash. The previous stride-sample-plus-length scheme
+    -- collided for distinct same-size PNGs, so a rerun could show the wrong
+    -- (already-transmitted) image.
+    return vim.fn.sha256(s)
 end
 
 -- Cache: hash → image_id (transmitted), or "pending" for in-flight requests.

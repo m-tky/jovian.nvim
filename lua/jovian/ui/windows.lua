@@ -41,9 +41,13 @@ end
 
 function M.placeholder_buf()
     local buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[buf].modifiable = true
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "No pinned content" })
     vim.bo[buf].buftype = "nofile"
     vim.bo[buf].modifiable = false
+    -- Wipe on hide so repeated :JovianUnpin / pane closes don't pile up
+    -- throwaway scratch buffers.
+    vim.bo[buf].bufhidden = "wipe"
     return buf
 end
 
