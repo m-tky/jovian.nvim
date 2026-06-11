@@ -64,10 +64,25 @@ pub struct Session {
     /// Events with a matching parent_msg_id are diverted into the collector
     /// instead of going through apply_event / cell_event notifications.
     pub collect_pending: DashMap<String, Mutex<Collector>>,
+    /// cell_id set with a pending `clear_output(wait=true)`. The clear is
+    /// deferred to the moment the next output arrives (progress widgets
+    /// like tqdm emit clear-then-redraw); without honoring it, every redraw
+    /// appended a fresh copy and the sidecar grew without bound.
+    clear_pending: DashMap<String, ()>,
     /// Wake signal for the debounced sidecar persister task. apply_event
     /// calls request_persist() instead of writing synchronously; the task
     /// sleeps PERSIST_DEBOUNCE_MS after each wake, coalescing bursts.
     persist_signal: Arc<Notify>,
+    /// Fires when the session is dropped, so the debounced persister task
+    /// (which parks on `persist_signal.notified()`) is woken and can exit
+    /// instead of leaking for the lifetime of the process.
+    shutdown: Arc<Notify>,
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        self.shutdown.notify_waiters();
+    }
 }
 
 impl Session {
@@ -75,6 +90,7 @@ impl Session {
         let source = Source::read(&path)?;
         let outputs = notebook::read_sidecar(&path)?;
         let persist_signal = Arc::new(Notify::new());
+        let shutdown = Arc::new(Notify::new());
         let session = Arc::new(Self {
             id,
             path,
@@ -84,15 +100,22 @@ impl Session {
             msg_to_cell: DashMap::new(),
             msg_completion: DashMap::new(),
             collect_pending: DashMap::new(),
+            clear_pending: DashMap::new(),
             persist_signal: persist_signal.clone(),
+            shutdown: shutdown.clone(),
         });
         // Debounced flush task. Holds a Weak<Session> so it doesn't keep
-        // the session alive; when the session is dropped the next
-        // `upgrade()` fails and the task exits.
+        // the session alive; when the session is dropped Drop fires
+        // `shutdown`, waking the parked task so it can exit instead of
+        // blocking forever on `persist_signal.notified()` (no further
+        // notifications come once the session is gone).
         let weak = Arc::downgrade(&session);
         tokio::spawn(async move {
             loop {
-                persist_signal.notified().await;
+                tokio::select! {
+                    _ = persist_signal.notified() => {}
+                    _ = shutdown.notified() => return,
+                }
                 tokio::time::sleep(Duration::from_millis(PERSIST_DEBOUNCE_MS)).await;
                 let Some(s) = weak.upgrade() else {
                     return;
@@ -239,6 +262,19 @@ impl Session {
         let mut outs = self.outputs.write();
         let cell = outs.cells.entry(cell_id.clone()).or_default();
 
+        // Honor a deferred clear_output(wait=true): the wipe was postponed
+        // to the moment real output next arrives for this cell.
+        let is_output = matches!(
+            ev,
+            KernelEvent::Stream { .. }
+                | KernelEvent::DisplayData { .. }
+                | KernelEvent::ExecuteResult { .. }
+                | KernelEvent::Error { .. }
+        );
+        if is_output && self.clear_pending.remove(&cell_id).is_some() {
+            cell.outputs.clear();
+        }
+
         let payload = match ev {
             KernelEvent::Stream { name, text, .. } => {
                 notebook::append_stream(&mut cell.outputs, name, text);
@@ -277,6 +313,8 @@ impl Session {
             } => {
                 cell.execution_count = Some(*execution_count);
                 cell.outputs.clear();
+                // A new execution supersedes any deferred clear.
+                self.clear_pending.remove(&cell_id);
                 json!({ "kind": "execute_input", "execution_count": execution_count })
             }
             KernelEvent::Status {
@@ -298,6 +336,9 @@ impl Session {
             KernelEvent::ClearOutput { wait, .. } => {
                 if !wait {
                     cell.outputs.clear();
+                } else {
+                    // Defer the clear until the next output arrives.
+                    self.clear_pending.insert(cell_id.clone(), ());
                 }
                 json!({ "kind": "clear_output", "wait": wait })
             }
