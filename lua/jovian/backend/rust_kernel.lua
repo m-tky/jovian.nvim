@@ -21,7 +21,11 @@ local strip_ansi = require("jovian.ui.shared").strip_ansi
 
 local M = {}
 
-local _event_handler_registered = false
+-- The client object our cell_event/kernel_event/on_exit handlers are bound
+-- to. After a core crash + respawn the client is a NEW object, so comparing
+-- against it (rather than a one-shot boolean) re-registers handlers on the
+-- fresh client instead of silently leaving the new core handler-less.
+local _handlers_client = nil
 -- Per-execution flag: an `error` event arrived between execute_input and the
 -- final reply, so we should land the cell in "error" state when the reply hits.
 local _cell_had_error = {}
@@ -283,6 +287,45 @@ local function on_cell_event(params)
     -- update_display_data, kernel_info, clear_output: no-op
 end
 
+-- Clear all per-run execution bookkeeping (running cells, batch progress,
+-- completion gating). When `status`/`msg` are given, any cell still shown
+-- as "running" gets that final status so the UI doesn't hang on
+-- "Running..." forever. Does NOT drop the kernel session — used by
+-- interrupt, where the kernel keeps running.
+local function clear_run_state(status, msg)
+    if status and msg then
+        for cell_id, buf in pairs(State.cell_buf_map) do
+            if buf and vim.api.nvim_buf_is_valid(buf) then
+                UI.set_cell_status(buf, cell_id, status, msg)
+            end
+        end
+    end
+    State.cell_buf_map = {}
+    State.running_cells = {}
+    State.cell_start_time = {}
+    State.batch = nil
+    -- Reassign (not wipe-in-place) so the closures that capture these
+    -- upvalues see the fresh tables too.
+    _cell_had_error = {}
+    _cell_done_state = {}
+end
+
+-- Full session teardown: clear run state AND drop the kernel session so the
+-- next :JovianStart begins fresh. Called from stop, kernel_died, and core
+-- process exit. Also clears any queued on_ready callbacks so a stale cell
+-- run can't fire against a later, unrelated kernel start.
+local function teardown_session(status, msg)
+    clear_run_state(status, msg)
+    State.rust_active = false
+    State.rust_session_id = nil
+    State.job_id = nil
+    State.is_starting_kernel = false
+    State.on_ready_callbacks = {}
+    -- Outputs from the dead kernel are now historical; drop the fresh flag
+    -- so renderers tag them "(cached)".
+    State.fresh_cells = {}
+end
+
 -- Handle kernel_event notifications from the core. The interesting kind
 -- is kernel_died, which fires when the kernel process exits on its own
 -- (segfault, OOM, user kills it from another terminal). We reset state
@@ -300,32 +343,34 @@ local function on_kernel_event(params)
             "jovian: kernel process exited (code=" .. code_str .. "). Run :JovianRestart to start a new one.",
             vim.log.levels.ERROR
         )
-        -- Mark every running cell as errored so the UI doesn't leave them
-        -- in "Running..." forever.
-        for cell_id, buf in pairs(State.cell_buf_map) do
-            if buf and vim.api.nvim_buf_is_valid(buf) then
-                UI.set_cell_status(buf, cell_id, "error", Config.options.ui_symbols.error .. " (kernel died)")
-            end
-        end
-        State.cell_buf_map = {}
-        State.running_cells = {}
-        State.rust_active = false
-        State.rust_session_id = nil
-        State.job_id = nil
+        teardown_session("error", Config.options.ui_symbols.error .. " (kernel died)")
     end)
 end
 
 local function ensure_event_handler()
-    if _event_handler_registered then
-        return
-    end
     local client = Core.client()
     if not client then
         return
     end
+    -- Already bound to this exact client? Nothing to do. After a core
+    -- crash + respawn this is a different object, so we fall through and
+    -- bind the new one (the old client is gone with the dead process).
+    if _handlers_client == client then
+        return
+    end
     client:on("cell_event", on_cell_event)
     client:on("kernel_event", on_kernel_event)
-    _event_handler_registered = true
+    -- The core PROCESS exiting (not just the kernel) tears down everything:
+    -- mark running cells errored, drop the session, and clear queued
+    -- callbacks so the next start is clean. Without this the State keeps
+    -- a dead session id and cells hang in "Running..." until nvim restarts.
+    client:on_exit(function()
+        _handlers_client = nil
+        vim.schedule(function()
+            teardown_session("error", Config.options.ui_symbols.error .. " (core exited)")
+        end)
+    end)
+    _handlers_client = client
 end
 
 local function session_path()
@@ -342,13 +387,26 @@ end
 
 --- Spawn the kernel via jovian-core. Calls `on_ready()` when the kernel is up.
 function M.start(on_ready)
-    local client = Core.ensure()
+    -- Core.ensure() raises when the binary can't be found (the typical
+    -- first-run path). Catch it so is_starting_kernel doesn't stay latched
+    -- on — otherwise every later :JovianRun/:JovianStart just silently
+    -- queues a callback and the plugin appears dead.
+    local ok, client = pcall(Core.ensure)
+    if not ok or not client then
+        vim.schedule(function()
+            State.is_starting_kernel = false
+            State.on_ready_callbacks = {}
+            vim.notify("jovian-core unavailable: " .. tostring(client), vim.log.levels.ERROR)
+        end)
+        return
+    end
     ensure_event_handler()
 
     client:request("open", { path = session_path() }, function(err, result)
         if err then
             vim.schedule(function()
                 State.is_starting_kernel = false
+                State.on_ready_callbacks = {}
                 vim.notify("jovian-core open failed: " .. err, vim.log.levels.ERROR)
             end)
             return
@@ -373,6 +431,7 @@ function M.start(on_ready)
             vim.schedule(function()
                 State.is_starting_kernel = false
                 if err2 then
+                    State.on_ready_callbacks = {}
                     vim.notify("jovian-core start_kernel failed: " .. err2, vim.log.levels.ERROR)
                     return
                 end
@@ -430,13 +489,9 @@ function M.interrupt()
     end
     client:notify("interrupt_kernel", { session_id = State.rust_session_id })
     UI.append_to_repl("[Kernel Interrupted!]", "WarningMsg")
-    for cell_id, buf in pairs(State.cell_buf_map) do
-        if buf and vim.api.nvim_buf_is_valid(buf) then
-            UI.set_cell_status(buf, cell_id, "error", Config.options.ui_symbols.interrupted)
-        end
-    end
-    State.cell_buf_map = {}
-    State.running_cells = {}
+    -- Kernel stays alive after an interrupt — only drop the in-flight run
+    -- bookkeeping (batch progress, completion gating), not the session.
+    clear_run_state("error", Config.options.ui_symbols.interrupted)
 end
 
 function M.stop()
@@ -444,12 +499,7 @@ function M.stop()
     if client and State.rust_session_id then
         client:notify("close", { session_id = State.rust_session_id })
     end
-    State.rust_active = false
-    State.rust_session_id = nil
-    State.job_id = nil
-    -- Outputs from the killed kernel are now historical — flag them
-    -- as cached so the user can tell they're not from the new session.
-    State.fresh_cells = {}
+    teardown_session()
 end
 
 function M.restart(on_ready)
