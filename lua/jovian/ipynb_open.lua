@@ -72,6 +72,7 @@ function M.read(buf, path)
     if not client then
         vim.notify("jovian-core unavailable; showing raw .ipynb JSON", vim.log.levels.WARN)
         set_buf_lines(buf, raw)
+        M._mark_raw(buf)
         return
     end
     client:request("ipynb_decode", { json = raw }, function(err, result)
@@ -81,6 +82,7 @@ function M.read(buf, path)
                 -- Fall back to raw JSON so the user can at least see the
                 -- file rather than getting an empty buffer.
                 set_buf_lines(buf, raw)
+                M._mark_raw(buf)
                 return
             end
             set_buf_lines(buf, result.py_source or "")
@@ -100,34 +102,46 @@ end
 -- Hijack: write the buffer back as a Jupyter notebook. Reads current
 -- buffer text + sidecar, encodes via the Rust core, writes the JSON
 -- atomically over the on-disk .ipynb.
+--
+-- This MUST be synchronous: BufWriteCmd has to finish the write on this
+-- tick. An async encode callback can be cut off by `:wq`/VimLeave —
+-- scheduled callbacks don't run after VimLeave, so the notebook would
+-- silently never be written. Any failure is raised with error() so Vim
+-- aborts the write (buffer stays 'modified', E message shown) instead of
+-- reporting success while losing data.
 function M.write(buf, path)
     local abs = vim.fn.fnamemodify(path, ":p")
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local py_source = table.concat(lines, "\n")
     local sidecar = read_file(sidecar_path_for(abs)) or ""
 
+    -- If the buffer is showing raw .ipynb JSON (decode failed / core was
+    -- unavailable at open), the lines are NOT `# %%` cell source — feeding
+    -- them to ipynb_encode would corrupt the notebook. Refuse the save.
+    if vim.b[buf].jovian_ipynb_raw then
+        error("refusing to save: buffer shows raw .ipynb JSON (decode failed); reopen once jovian-core is available")
+    end
+
     local client = backend().client() or backend().ensure()
     if not client then
-        return vim.notify("jovian-core unavailable; cannot save .ipynb", vim.log.levels.ERROR)
+        error("jovian-core unavailable; cannot save .ipynb")
     end
-    client:request("ipynb_encode", {
+    local result, err = client:request_sync("ipynb_encode", {
         py_source = py_source,
         sidecar_json = sidecar,
-    }, function(err, result)
-        vim.schedule(function()
-            if err then
-                vim.notify("ipynb_encode failed: " .. err, vim.log.levels.ERROR)
-                return
-            end
-            local ok, werr = write_file(abs, result.json or "")
-            if not ok then
-                vim.notify("ipynb write: " .. werr, vim.log.levels.ERROR)
-                return
-            end
-            M._mark_pristine(buf)
-            vim.notify("Wrote " .. abs, vim.log.levels.INFO)
-        end)
-    end)
+    }, 10000)
+    if err then
+        error("ipynb_encode failed: " .. tostring(err))
+    end
+    if not result then
+        error("ipynb_encode failed: no result from jovian-core")
+    end
+    local ok, werr = write_file(abs, result.json or "")
+    if not ok then
+        error("ipynb write: " .. tostring(werr))
+    end
+    M._mark_pristine(buf)
+    vim.notify("Wrote " .. abs, vim.log.levels.INFO)
 end
 
 -- Mark the buffer as saved and not modified. Used after a successful
@@ -137,6 +151,20 @@ function M._mark_pristine(buf)
     if not vim.api.nvim_buf_is_valid(buf) then
         return
     end
+    vim.b[buf].jovian_ipynb_raw = nil
+    vim.api.nvim_buf_call(buf, function()
+        vim.bo[buf].modified = false
+    end)
+end
+
+-- Mark the buffer as showing raw .ipynb JSON (a decode-failure fallback).
+-- Clears 'modified' so `:q` doesn't E37, and sets a flag so M.write
+-- refuses to overwrite the notebook with raw-JSON-as-cell-source.
+function M._mark_raw(buf)
+    if not vim.api.nvim_buf_is_valid(buf) then
+        return
+    end
+    vim.b[buf].jovian_ipynb_raw = true
     vim.api.nvim_buf_call(buf, function()
         vim.bo[buf].modified = false
     end)
