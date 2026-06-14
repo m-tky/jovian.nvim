@@ -141,6 +141,44 @@ local l0, r0 = has_side_bars_on(0)
 assert_eq(l0, false, "code1 header line has no left bar")
 assert_eq(r0, false, "code1 header line has no right bar")
 
+-- ---------------------------- header status ----------------------------
+-- When cell_frame is enabled, run status belongs inside the top border.
+-- A separate eol status extmark starts at the raw `# %% ...` end column and
+-- can visually land on top of the card label/dashes in narrow windows.
+print("\n-- header status --")
+local VirtualText = require("jovian.ui.virtual_text")
+VirtualText.set_cell_status(buf, "code1", "running", "Running...")
+CellFrame.render(buf, winid)
+local function header_has_running_status()
+    local status_marks = vim.api.nvim_buf_get_extmarks(buf, CellFrame._namespace, 0, -1, { details = true })
+    for _, m in ipairs(status_marks) do
+        if m[2] == 0 and m[4].virt_text and m[4].virt_text_pos == "overlay" then
+            for _, ch in ipairs(m[4].virt_text) do
+                if ch[1]:find("Running", 1, true) and ch[2] == "WarningMsg" then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+local legacy_status = false
+local legacy_marks = vim.api.nvim_buf_get_extmarks(buf, require("jovian.state").status_ns, 0, -1, { details = true })
+for _, m in ipairs(legacy_marks) do
+    local vt = m[4].virt_text
+    if vt and vt[1] and vt[1][1]:find("Running", 1, true) then
+        legacy_status = true
+    end
+end
+assert_true(header_has_running_status(), "running status is rendered inside the card header")
+assert_eq(legacy_status, false, "cell_frame suppresses separate eol status extmark")
+VirtualText.toggle_status_visibility(buf)
+CellFrame.render(buf, winid)
+assert_eq(header_has_running_status(), false, "status toggle hides card-header status")
+VirtualText.toggle_status_visibility(buf)
+CellFrame.render(buf, winid)
+assert_true(header_has_running_status(), "status toggle restores card-header status")
+
 -- ---------------------------- markdown ----------------------------
 print("\n-- markdown_cell.render --")
 MarkdownCell.render(buf)

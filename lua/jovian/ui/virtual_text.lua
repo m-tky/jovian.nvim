@@ -30,6 +30,17 @@ function M.set_cell_status(bufnr, cell_id, status, msg)
     -- Always update cache
     State.cell_status_cache[cell_id] = { status = status, msg = msg, bufnr = bufnr }
 
+    if Config.options.cell_frame then
+        for i, line in ipairs(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)) do
+            if line:match("^# %%%%") and line:find('id="' .. cell_id .. '"', 1, true) then
+                vim.api.nvim_buf_clear_namespace(bufnr, State.status_ns, i - 1, i)
+                State.cell_status_extmarks[cell_id] = nil
+                require("jovian.ui.cell_frame").schedule(bufnr)
+                return
+            end
+        end
+    end
+
     -- If buffer is hidden, skip drawing
     if State.virt_text_hidden_bufs[bufnr] then
         -- We still want to clear the namespace if status is idle,
@@ -189,6 +200,9 @@ function M.toggle_status_visibility(bufnr)
         -- Hide: clear namespace
         State.virt_text_hidden_bufs[bufnr] = true
         vim.api.nvim_buf_clear_namespace(bufnr, State.status_ns, 0, -1)
+        if Config.options.cell_frame then
+            require("jovian.ui.cell_frame").schedule(bufnr)
+        end
         vim.notify("Jovian: status hidden", vim.log.levels.INFO)
     end
 end

@@ -88,6 +88,29 @@ local function repeat_dash(n)
     return string.rep("─", n)
 end
 
+local function truncate_to_width(text, max_width)
+    text = text or ""
+    if max_width <= 0 then
+        return ""
+    end
+    if dw(text) <= max_width then
+        return text
+    end
+    if max_width == 1 then
+        return "…"
+    end
+
+    local out = ""
+    for i = 0, vim.fn.strchars(text) - 1 do
+        local ch = vim.fn.strcharpart(text, i, 1)
+        if dw(out .. ch .. "…") > max_width then
+            break
+        end
+        out = out .. ch
+    end
+    return out .. "…"
+end
+
 local CORNERS = {
     square = { tl = "┌", tr = "┐", bl = "└", br = "┘" },
     rounded = { tl = "╭", tr = "╮", bl = "╰", br = "╯" },
@@ -98,14 +121,77 @@ local function corners()
     return CORNERS[style] or CORNERS.square
 end
 
--- Build the top border as a single colored string. The label inherits
--- the same highlight as the frame so the whole outline reads as one
--- coherent box (no contrast band at the top edge).
-local function top_border(width, label)
+local function status_hl_for(status)
+    if status == "running" then
+        return "WarningMsg"
+    elseif status == "done" then
+        return "String"
+    elseif status == "error" then
+        return "ErrorMsg"
+    end
+    return "Comment"
+end
+
+local function visible_status_for(bufnr, cell_id)
+    if not cell_id or State.virt_text_hidden_bufs[bufnr] then
+        return nil
+    end
+    local cached = State.cell_status_cache[cell_id]
+    if not cached or cached.bufnr ~= bufnr then
+        return nil
+    end
+    if cached.status == "idle" or cached.msg == "" then
+        return nil
+    end
+    return cached
+end
+
+-- Build the top border. When a run status exists, it is rendered as part of
+-- the card header instead of as separate eol virtual text, so it cannot sit
+-- on top of the cell label.
+local function top_border_chunks(width, label, border_hl, status)
     local c = corners()
-    local main = c.tl .. "─ " .. label .. " "
-    local pad = width - dw(main) - 1 -- 1 for the closing corner
-    return main .. repeat_dash(math.max(pad, 0)) .. c.tr
+    local left_prefix = c.tl .. "─ "
+    local gap = " "
+    local right_suffix = c.tr
+
+    if not status then
+        local label_text = truncate_to_width(label, math.max(width - dw(left_prefix) - dw(gap) - dw(right_suffix), 0))
+        local main = left_prefix .. label_text .. gap
+        local pad = width - dw(main) - dw(right_suffix)
+        return { { main .. repeat_dash(math.max(pad, 0)) .. right_suffix, border_hl } }
+    end
+
+    local status_text = " " .. status.msg .. " "
+    local min_label_w = 1
+    local fixed = dw(left_prefix) + dw(gap) + dw(right_suffix)
+    local available = width - fixed
+    if available <= 0 then
+        return {
+            {
+                left_prefix .. repeat_dash(math.max(width - dw(left_prefix) - dw(right_suffix), 0)) .. right_suffix,
+                border_hl,
+            },
+        }
+    end
+
+    local status_w = math.min(dw(status_text), math.max(available - min_label_w, 0))
+    local label_w = math.max(available - status_w, min_label_w)
+    local label_text = truncate_to_width(label, label_w)
+    status_text = truncate_to_width(status_text, status_w)
+
+    local used = dw(left_prefix) + dw(label_text) + dw(gap) + dw(status_text) + dw(right_suffix)
+    local pad = repeat_dash(math.max(width - used, 0))
+    return {
+        { left_prefix .. label_text .. gap .. pad, border_hl },
+        { status_text, status_hl_for(status.status) },
+        { right_suffix, border_hl },
+    }
+end
+
+local function top_border(width, label)
+    local chunks = top_border_chunks(width, label, HL_BORDER_CODE, nil)
+    return chunks[1][1]
 end
 
 local function bottom_border(width)
@@ -382,8 +468,9 @@ function M.render(bufnr, winid)
         --    the underlying chars visually; conceal handles any tail that
         --    sticks out past the overlay (rare unless the source header is
         --    longer than the window).
+        local status = h.kind == "Code" and visible_status_for(bufnr, h.id) or nil
         vim.api.nvim_buf_set_extmark(bufnr, NS, h.line, 0, {
-            virt_text = { { top_border(width, label), hl } },
+            virt_text = top_border_chunks(width, label, hl, status),
             virt_text_pos = "overlay",
             hl_mode = "combine",
             priority = 199,
