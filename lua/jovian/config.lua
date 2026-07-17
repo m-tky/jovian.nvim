@@ -42,6 +42,17 @@ M.defaults = {
     dataframe_page_size = 50,
     remote_cwd = ".",
 
+    -- Matplotlib display mode.  The Jupyter inline backend is used by
+    -- default, so figures are rendered in Jovian's preview/inline surfaces.
+    -- Set to "native" (or use :JovianTogglePlot) to launch plots in the OS
+    -- GUI window that `plt.show()` normally opens.  Changing this requires a
+    -- kernel restart; the toggle performs that restart automatically.
+    plot_mode = "inline", -- "inline" | "native"
+    -- Matplotlib backend used for native plots.  TkAgg is widely available;
+    -- set this to "QtAgg", "MacOSX", etc. when that is the GUI toolkit
+    -- installed on the machine.
+    native_plot_backend = "TkAgg",
+
     -- Output (REPL) window visibility:
     --   "ondemand" : not shown by default — toggle with :JovianToggleOutput.
     --                Output still accumulates in the background buffer so the

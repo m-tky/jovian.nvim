@@ -400,6 +400,24 @@ require("jovian.commands").setup()
 
 section("Cell navigation")
 
+section("Plot display mode")
+ok("JovianTogglePlot is registered", _G.commands.JovianTogglePlot ~= nil)
+local plot_config = require("jovian.config").options
+local plot_core = require("jovian.core")
+local plot_state = require("jovian.state")
+local original_restart = plot_core.restart_kernel
+local restart_count = 0
+plot_config.plot_mode = "inline"
+plot_state.job_id = "rust"
+plot_core.restart_kernel = function()
+    restart_count = restart_count + 1
+end
+run("JovianTogglePlot")
+ok("JovianTogglePlot enables native plot mode", plot_config.plot_mode == "native")
+ok("JovianTogglePlot restarts the running kernel", restart_count == 1)
+plot_core.restart_kernel = original_restart
+plot_state.job_id = nil
+
 reset_lines(DEFAULT_LINES)
 cursor_pos = { 2, 0 }
 local last_cursor

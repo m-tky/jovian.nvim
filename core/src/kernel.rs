@@ -248,7 +248,11 @@ pub struct Kernel {
 }
 
 impl Kernel {
-    pub async fn launch(spec: KernelSpec, cwd: Option<PathBuf>) -> Result<Self> {
+    pub async fn launch(
+        spec: KernelSpec,
+        cwd: Option<PathBuf>,
+        mplbackend: Option<&str>,
+    ) -> Result<Self> {
         let conn = ConnectionInfo::new_localhost(&spec.name)?;
         let conn_path = write_connection_file(&conn)?;
         let conn_file = Some(conn_path.clone());
@@ -271,6 +275,9 @@ impl Kernel {
         cmd.args(&argv[1..]);
         for (k, v) in &spec.env {
             cmd.env(k, v);
+        }
+        if let Some(backend) = mplbackend.filter(|b| !b.is_empty()) {
+            cmd.env("MPLBACKEND", backend);
         }
         if let Some(d) = cwd {
             cmd.current_dir(d);
@@ -295,7 +302,12 @@ impl Kernel {
     ///
     /// Auth is key/agent-based only (`BatchMode=yes`); there is no interactive
     /// password prompt.
-    pub async fn launch_remote(host: &str, python: &str, cwd: Option<&str>) -> Result<Self> {
+    pub async fn launch_remote(
+        host: &str,
+        python: &str,
+        cwd: Option<&str>,
+        mplbackend: Option<&str>,
+    ) -> Result<Self> {
         use tokio::io::AsyncWriteExt;
 
         // Reject a destination that ssh would parse as an option flag
@@ -358,15 +370,22 @@ impl Kernel {
         let local = pick_ports(5)?;
         let local_ports: [u16; 5] = [local[0], local[1], local[2], local[3], local[4]];
 
+        let backend_env = mplbackend
+            .filter(|b| !b.is_empty())
+            .map(|b| format!("MPLBACKEND={} ", shell_quote(b)))
+            .unwrap_or_default();
+        let exec_prefix = format!("{}exec ", backend_env);
         let remote_cmd = match cwd {
             Some(d) if !d.is_empty() => format!(
-                "cd {} && exec {} -m ipykernel_launcher -f {}",
+                "cd {} && {}{} -m ipykernel_launcher -f {}",
                 shell_quote(d),
+                exec_prefix,
                 shell_quote(python),
                 shell_quote(&conn_path)
             ),
             _ => format!(
-                "exec {} -m ipykernel_launcher -f {}",
+                "{}{} -m ipykernel_launcher -f {}",
+                exec_prefix,
                 shell_quote(python),
                 shell_quote(&conn_path)
             ),

@@ -426,6 +426,14 @@ function M.start(on_ready)
         end
         local sid = result.session_id
         local args = { session_id = sid }
+        -- `matplotlib_inline` is Jupyter's normal backend.  A native GUI
+        -- backend must instead be selected *before* pyplot is imported, so
+        -- forward it while spawning the fresh kernel (not by executing code
+        -- after startup).  The command toggle restarts the kernel for this
+        -- exact reason.
+        if Config.options.plot_mode == "native" then
+            args.mplbackend = Config.options.native_plot_backend or "TkAgg"
+        end
         if Config.options.ssh_host and Config.options.ssh_host ~= "" then
             -- Remote kernel: jovian-core spawns the kernel over SSH and tunnels
             -- its ZMQ ports back to localhost. ssh_host / ssh_python / remote_cwd

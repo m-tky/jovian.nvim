@@ -210,6 +210,13 @@ To bypass the hijack (e.g. you want to edit the raw JSON), set
 :JovianToggleOutput     Toggle the Output (REPL) window. Output keeps
                         accumulating in the background buffer when hidden.
 
+                                                            *:JovianTogglePlot*
+:JovianTogglePlot       Toggle `plt.show()` between Jovian's inline output
+                        and an OS-native Matplotlib GUI window. The kernel is
+                        restarted because Matplotlib's backend is selected
+                        before pyplot is imported. Configure the native
+                        backend with `native_plot_backend` (default: "TkAgg").
+
                                                              *:JovianToggleVars*
 :JovianToggleVars       Toggle the Variables pane.
 
@@ -411,6 +418,10 @@ Cell-frame visuals (opt-in):~
                                      virt_lines. Requires `cell_frame = true`.
 `inline_output_max_lines`       20   Cap for inline text output (longer is
                                      elided).
+`plot_mode`                "inline"  "inline" renders figures in Jovian;
+                                     "native" opens an OS GUI window.
+`native_plot_backend`        "TkAgg" Matplotlib backend for native plots
+                                     (for example "QtAgg" or "MacOSX").
 
 Image sizing:~
 

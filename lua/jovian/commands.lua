@@ -466,6 +466,29 @@ function M.setup()
     vim.api.nvim_create_user_command("JovianToggleOutput", UI.toggle_output_window, {
         desc = "Jovian: Toggle the Output (REPL) window",
     })
+    vim.api.nvim_create_user_command("JovianTogglePlot", function()
+        local was_running = State.job_id ~= nil
+        Config.options.plot_mode = Config.options.plot_mode == "native" and "inline" or "native"
+        local mode = Config.options.plot_mode
+        local msg
+        if mode == "native" then
+            msg = "Native plot windows: ON (backend: " .. (Config.options.native_plot_backend or "TkAgg") .. ")"
+        else
+            msg = "Native plot windows: OFF (inline rendering)"
+        end
+
+        -- MPLBACKEND is read before pyplot is imported.  Always create a
+        -- fresh kernel so this takes effect reliably; an inactive kernel is
+        -- simply started in the selected mode.
+        if was_running then
+            Core.restart_kernel()
+            msg = msg .. "; kernel restarted (variables were cleared)"
+        else
+            Core.start_kernel()
+            msg = msg .. "; kernel started"
+        end
+        vim.notify(msg, vim.log.levels.INFO)
+    end, { desc = "Jovian: Toggle native Matplotlib plot windows (restarts kernel)" })
     vim.api.nvim_create_user_command("JovianEval", function(opts)
         require("jovian.core").eval(opts.args)
     end, {

@@ -345,6 +345,11 @@ require("jovian").setup({
     -- Output (REPL) window: "ondemand" (default) | "always" | "off"
     output_window = "ondemand",
 
+    -- `plt.show()` display: "inline" (Jovian/terminal) or "native" (OS GUI).
+    -- :JovianTogglePlot switches modes and restarts the kernel.
+    plot_mode = "inline",
+    native_plot_backend = "TkAgg", -- e.g. "QtAgg" or "MacOSX"
+
     -- Opt-in visual layers (all off by default)
     cell_frame = false,
     cell_frame_right_pad = 0,      -- reserve N columns to the right of the
@@ -479,6 +484,7 @@ while keeping the source plain, diff-friendly, and source-controllable.
 | :--- | :--- |
 | `:JovianOpen` / `:JovianToggle` | Open / toggle the panels |
 | `:JovianToggleOutput` | Toggle the Output (REPL) window |
+| `:JovianTogglePlot` | Toggle OS-native Matplotlib windows; restarts the kernel |
 | `:JovianToggleVars` | Toggle the Variables pane |
 | `:JovianToggleStatus` | Toggle cell status virtual text |
 | `:JovianToggleCellFrame` | Toggle bordered cell cards |

@@ -362,6 +362,7 @@ impl Server {
             .ok_or_else(|| anyhow!("session not found"))?
             .clone();
 
+        let mplbackend = p.get("mplbackend").and_then(|v| v.as_str());
         let kernel = if let Some(host) = p.get("host").and_then(|v| v.as_str()) {
             // Remote kernel over SSH. jovian-core owns the tunnel; the local
             // ZMQ sockets connect to forwarded localhost ports.
@@ -370,7 +371,7 @@ impl Server {
                 .and_then(|v| v.as_str())
                 .unwrap_or("python3");
             let remote_cwd = p.get("remote_cwd").and_then(|v| v.as_str());
-            Kernel::launch_remote(host, remote_python, remote_cwd).await?
+            Kernel::launch_remote(host, remote_python, remote_cwd, mplbackend).await?
         } else {
             let spec = if let Some(py) = p.get("python_path").and_then(|v| v.as_str()) {
                 let py = py.to_string();
@@ -407,7 +408,7 @@ impl Server {
             };
 
             let cwd = session.path.parent().map(|p| p.to_path_buf());
-            Kernel::launch(spec, cwd).await?
+            Kernel::launch(spec, cwd, mplbackend).await?
         };
         let kernel_name = kernel.spec().name.clone();
         let mut rx = kernel
