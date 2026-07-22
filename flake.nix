@@ -140,7 +140,6 @@
               packages.myVimPackage = {
                 start = [
                   pkgs.vimPlugins.jovian-nvim
-                  pkgs.vimPlugins.jupytext-nvim
                   pkgs.vimPlugins.nvim-lspconfig
                   (pkgs.vimPlugins.nvim-treesitter.withPlugins (p: [
                     p.python

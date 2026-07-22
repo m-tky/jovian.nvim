@@ -82,7 +82,10 @@ pub fn decode(ipynb_json: &str) -> Result<(String, OutputStoreFile)> {
         let source_text = cell_source_to_string(cell.get("source"));
         match cell_type {
             "markdown" | "raw" => {
-                for line in source_text.split('\n') {
+                // `split_terminator` omits the artificial empty element after a
+                // trailing newline. Rendering that element as `#` would turn
+                // each open → save cycle into one additional blank source line.
+                for line in source_text.split_terminator('\n') {
                     if line.is_empty() {
                         py_source.push_str("#\n");
                     } else {

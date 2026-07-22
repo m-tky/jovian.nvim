@@ -190,5 +190,56 @@ do
     assert_true(a1.outputs[1].text == "hi\n", "original outputs preserved through round-trip")
 end
 
+print("\n-- native open/save preserves markdown and raw trailing newlines --")
+do
+    local dir = fresh_dir()
+    local ipynb = dir .. "/trailing-newline.ipynb"
+    write_file(
+        ipynb,
+        vim.json.encode({
+            cells = {
+                {
+                    cell_type = "markdown",
+                    id = "markdown",
+                    metadata = vim.empty_dict(),
+                    source = "Markdown ending in a newline\n",
+                },
+                {
+                    cell_type = "raw",
+                    id = "raw",
+                    metadata = vim.empty_dict(),
+                    source = "Raw ending in a newline\n",
+                },
+            },
+            metadata = vim.empty_dict(),
+            nbformat = 4,
+            nbformat_minor = 5,
+        })
+    )
+
+    for _ = 1, 3 do
+        vim.cmd("edit " .. ipynb)
+        assert_true(
+            spin_until(function()
+                local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+                return lines[1] and lines[1]:find('id="markdown"') ~= nil
+            end, 5000),
+            "notebook decoded before saving"
+        )
+        vim.cmd("write")
+        vim.cmd("bdelete!")
+    end
+
+    local roundtripped = vim.json.decode(read_file(ipynb))
+    assert_true(
+        roundtripped.cells[1].source == "Markdown ending in a newline\n",
+        "markdown trailing newline is stable across repeated open/save"
+    )
+    assert_true(
+        roundtripped.cells[2].source == "Raw ending in a newline\n",
+        "raw trailing newline is stable across repeated open/save"
+    )
+end
+
 print(string.format("\n%d passed, %d failed", pass, fail))
 os.exit(fail == 0 and 0 or 1)

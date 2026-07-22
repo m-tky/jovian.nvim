@@ -125,8 +125,6 @@ The native backend. You get it one of three ways, in order of preference:
   output is unaffected.
 - **[nvim-treesitter](https://github.com/nvim-treesitter/nvim-treesitter)** —
   for code highlighting and markdown injection inside cells.
-- **[jupytext.nvim](https://github.com/GCBallesteros/jupytext.nvim)** — to open
-  and edit `.ipynb` files as `# %%` Python.
 
 ---
 
