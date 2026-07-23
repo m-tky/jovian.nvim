@@ -50,6 +50,8 @@ vim.cmd("write")
 
 require("jovian").setup({
     python_interpreter = PYTHON,
+    cell_frame = true,
+    inline_outputs = true,
 })
 
 local State = require("jovian.state")
@@ -80,11 +82,18 @@ end
 UI.open_windows()
 
 local cell_done = false
+local output_persisted_at_completion = false
 local original_set_status = UI.set_cell_status
 UI.set_cell_status = function(buf, cell_id, status, msg)
     print(string.format("[status] cell=%s status=%s msg=%q", cell_id, status, msg or ""))
     if cell_id == "probe1" and (status == "done" or status == "error") then
         cell_done = true
+        local sidecar_path = vim.fn.fnamemodify(tmp, ":h")
+            .. "/.jovian_cache/"
+            .. vim.fn.fnamemodify(tmp, ":t")
+            .. "/outputs.json"
+        local lines = vim.fn.readfile(sidecar_path)
+        output_persisted_at_completion = table.concat(lines, "\n"):find("hello from rust path: 2", 1, true) ~= nil
     end
     return original_set_status(buf, cell_id, status, msg)
 end
@@ -112,6 +121,7 @@ while not cell_done and vim.uv.now() < deadline do
     vim.wait(100)
 end
 assert(cell_done, "cell did not finish within 10s")
+assert(output_persisted_at_completion, "output sidecar was not fresh when the cell completed")
 
 -- Check captured stream content
 local joined = table.concat(captured, "\n")

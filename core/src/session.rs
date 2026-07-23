@@ -349,11 +349,28 @@ impl Session {
             // (it has no parent), so it never reaches this match.
             KernelEvent::KernelDied { .. } => unreachable!(),
         };
-        // Persist via the debounced flusher: a burst of stream events
-        // collapses to a single write ~100 ms later. Synchronous callers
-        // (clear_outputs / close) still force-flush via persist_outputs.
+        // Persist stream bursts via the debounced flusher, but make the
+        // completed cell's sidecar durable before forwarding its `idle`
+        // notification.  The Lua inline renderer deliberately reads the
+        // sidecar as its single source of truth; without this final flush it
+        // can render between apply_event() and the 100 ms debounce write,
+        // then receive no later event to trigger another render.  That made
+        // a cell's first execution appear blank until it was run again.
         drop(outs);
-        self.request_persist();
+        let is_idle = matches!(
+            ev,
+            KernelEvent::Status {
+                execution_state,
+                ..
+            } if execution_state == "idle"
+        );
+        if is_idle {
+            if let Err(e) = self.persist_outputs() {
+                tracing::warn!("persist sidecar on cell completion: {e:?}");
+            }
+        } else {
+            self.request_persist();
+        }
         Some((cell_id, payload))
     }
 }
