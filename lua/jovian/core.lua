@@ -21,24 +21,6 @@ local function rust()
     return RustKernel
 end
 
--- "Is the jovian UI set up?" The Output window is now on-demand, so this
--- checks the persistent panels (preview / output / variables / pin) — any
--- one being open means :JovianOpen has run and results have somewhere to go
--- (inline rendering aside).
-local function is_window_open()
-    for _, win in ipairs({
-        State.win.preview,
-        State.win.output,
-        State.win.variables,
-        State.win.pin,
-    }) do
-        if win and vim.api.nvim_win_is_valid(win) then
-            return true
-        end
-    end
-    return false
-end
-
 -- ---------- Kernel lifecycle ----------
 
 function M.start_kernel(on_ready)
@@ -130,9 +112,6 @@ function M.send_payload(code, cell_id, filename, bufnr)
 end
 
 function M.send_cell()
-    if not is_window_open() then
-        return vim.notify("Jovian windows are closed. Use :JovianOpen or :JovianToggle first.", vim.log.levels.WARN)
-    end
     if not State.job_id then
         M.start_kernel()
     end
@@ -154,9 +133,6 @@ function M.send_cell()
 end
 
 function M.send_selection()
-    if not is_window_open() then
-        return vim.notify("Jovian windows are closed.", vim.log.levels.WARN)
-    end
     if not State.job_id then
         M.start_kernel()
     end
@@ -176,9 +152,6 @@ function M.send_selection()
 end
 
 function M.run_line()
-    if not is_window_open() then
-        return vim.notify("Jovian windows are closed.", vim.log.levels.WARN)
-    end
     if not State.job_id then
         M.start_kernel()
     end
@@ -258,9 +231,6 @@ function M._execute_lines(lines, filter)
 end
 
 function M.run_all_cells()
-    if not is_window_open() then
-        return
-    end
     with_kernel(function()
         local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
         M._execute_lines(lines)
@@ -269,9 +239,6 @@ end
 
 -- Run only cells whose tag list intersects `wanted` (set of tag strings).
 function M.run_only_tagged(wanted)
-    if not is_window_open() then
-        return
-    end
     with_kernel(function()
         local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
         M._execute_lines(lines, function(tags)
@@ -287,9 +254,6 @@ end
 
 -- Run every cell whose tag list does NOT intersect `excluded`.
 function M.run_all_except_tagged(excluded)
-    if not is_window_open() then
-        return
-    end
     with_kernel(function()
         local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
         M._execute_lines(lines, function(tags)
@@ -304,9 +268,6 @@ function M.run_all_except_tagged(excluded)
 end
 
 function M.run_cells_above()
-    if not is_window_open() then
-        return
-    end
     with_kernel(function()
         local cursor_line = vim.fn.line(".")
         local cur_s, _ = Cell.get_cell_range(cursor_line)

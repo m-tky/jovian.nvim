@@ -78,9 +78,6 @@ UI.append_stream_text = function(text, stream)
     pcall(original_stream, text, stream)
 end
 
--- Open the output window so send_cell's is_window_open() guard passes
-UI.open_windows()
-
 local cell_done = false
 local output_persisted_at_completion = false
 local original_set_status = UI.set_cell_status

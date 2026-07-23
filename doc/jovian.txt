@@ -110,6 +110,10 @@ Cells without an id get one on first run.
 ------------------------------------------------------------------------------
 5.1 Execution                                            *jovian-cmd-execution*
 
+Execution does not require the preview or other UI panels to be open. Use
+`:JovianOpen` only when you want those panels; cell status and cached outputs
+continue to work while they are closed.
+
                                                                   *:JovianStart*
 :JovianStart            Start or connect to the kernel for the current buffer.
 

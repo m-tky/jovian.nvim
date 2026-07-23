@@ -220,6 +220,9 @@ require('blink.cmp').setup({
 - `:JovianStart` connects a kernel (or it starts lazily on first run).
 - `:JovianRun` runs the current cell; `:JovianRunAndNext`, `:JovianRunAll`,
   `:JovianRunAbove`, `:JovianRunLine`, and `:JovianSendSelection` cover the rest.
+- No preview or side panel is required to execute code. Open `:JovianOpen` only
+  when you want the preview/pinned-output panels; results and status still
+  persist without them.
 - Cell headers show virtual-text status: `Running…`, `Done`, `Error`, `Stale`.
 
 ### Inspecting data
